@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nemo — Live Voice</title>
+    <meta
+      name="description"
+      content="Talk with an OpenAI Realtime speech-to-speech assistant in your browser."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true"></div>
+
+    <main class="stage">
+      <header class="brand">
+        <p class="brand-mark">Nemo</p>
+        <p class="brand-line">Live voice chat · OpenAI Realtime</p>
+      </header>
+
+      <section class="booth" aria-label="Voice conversation controls">
+        <div class="capsule" id="capsule" data-state="idle">
+          <div class="rings" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <button
+            type="button"
+            class="talk-btn"
+            id="talkBtn"
+            aria-pressed="false"
+            aria-describedby="statusText"
+          >
+            <span class="talk-label" id="talkLabel">Start talking</span>
+          </button>
+        </div>
+
+        <p class="status" id="statusText">Ready when you are</p>
+
+        <div class="controls">
+          <label class="field">
+            <span>Voice</span>
+            <select id="voiceSelect" aria-label="Assistant voice">
+              <option value="marin" selected>Marin</option>
+              <option value="cedar">Cedar</option>
+              <option value="alloy">Alloy</option>
+              <option value="ash">Ash</option>
+              <option value="ballad">Ballad</option>
+              <option value="coral">Coral</option>
+              <option value="echo">Echo</option>
+              <option value="sage">Sage</option>
+              <option value="shimmer">Shimmer</option>
+              <option value="verse">Verse</option>
+            </select>
+          </label>
+
+          <button type="button" class="ghost-btn" id="muteBtn" disabled>
+            Mute mic
+          </button>
+        </div>
+      </section>
+
+      <section class="transcript-panel" aria-label="Live transcript">
+        <div class="transcript-head">
+          <h2>Transcript</h2>
+          <button type="button" class="ghost-btn small" id="clearBtn">
+            Clear
+          </button>
+        </div>
+        <div class="transcript" id="transcript" role="log" aria-live="polite">
+          <p class="empty">Your conversation will appear here as you talk.</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- Hidden audio element for the assistant's voice -->
+    <audio id="remoteAudio" autoplay playsinline></audio>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
