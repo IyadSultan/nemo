@@ -219,14 +219,16 @@ def is_silence(text: str) -> bool:
 
 def question_after_wake(text: str) -> str | None:
     """
-    If the text contains the wake phrase, return the words that follow it.
-    'Hey my brain what is on my list' -> 'what is on my list'
-    None means the wake phrase was not heard.
+    Hey at the start is enough. Hey my brain still works.
+    'Hey what is on my list' -> 'what is on my list'
+    None means Hey was not at the start.
     """
     words = normalize(text).split()
-    if len(words) < 3 or " ".join(words[:3]) != "hey my brain":
+    if not words or words[0] != "hey":
         return None
-    return " ".join(words[3:]).strip()
+    if len(words) >= 3 and words[1] == "my" and words[2] == "brain":
+        return " ".join(words[3:]).strip()
+    return " ".join(words[1:]).strip()
 
 
 def ask_brain(question: str) -> str:

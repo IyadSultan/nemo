@@ -48,6 +48,8 @@ let cancelAnswer = false;
 let currentAnswerBubble = null;
 let listenEpoch = 0;
 let activeReader = null;
+let queuedQuestion = "";
+let micBusy = false;
 const handledCalls = new Set();
 const countedResponses = new Set();
 let catalog = null;
@@ -112,7 +114,8 @@ function listenForNewQuestion() {
     for (const track of micStream.getAudioTracks()) track.enabled = !muted;
   }
   syncCallButtons();
-  setStatus("Say Hey my brain, then your new question.");
+  queuedQuestion = "";
+  setStatus("Say Hey, then your new question.");
   setCapsuleState(muted ? "muted" : "listening");
 }
 
@@ -162,7 +165,7 @@ muteBtn.addEventListener("click", () => {
 });
 
 clearBtn.addEventListener("click", () => {
-  transcriptEl.innerHTML = '<p class="empty">Press Start talking. Say Hey my brain, then your question.</p>';
+  transcriptEl.innerHTML = '<p class="empty">Press Start talking. Say Hey, then your question.</p>';
   assistantPartialEl = null;
   userPartialEl = null;
 });
@@ -263,15 +266,17 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const WAKE_STATUS = "Listening. I only answer when you start with Hey my brain.";
+const WAKE_STATUS = "Listening. I only answer when you start with Hey.";
+// A short breath is not the end of the sentence. Wait this long before stopping the recording.
+const END_PAUSE_MS = 2000;
 
 /**
- * The words after "Hey my brain", or null when the phrase is not at the start.
- * An empty string means they said only the wake phrase.
+ * The words after "Hey", or null when the sentence does not start with Hey.
+ * "Hey my brain" still works. An empty string means they said only Hey.
  */
 function questionAfterWake(text) {
   const cleaned = String(text || "").replace(/^[\s"'“”]+/, "").trim();
-  const match = cleaned.match(/^hey\s+my\s+brain\b[\s,.:;!?\-]*/i);
+  const match = cleaned.match(/^hey\b(?:\s+my\s+brain\b)?[\s,.:;!?\-]*/i);
   if (!match) return null;
   return cleaned.slice(match[0].length).trim();
 }
@@ -362,9 +367,9 @@ function recordUntilSilence(stream) {
         quietSince = 0;
       } else if (heard && now - started > 400) {
         if (!quietSince) quietSince = now;
-        if (now - quietSince > 650) finish();
+        if (now - quietSince > END_PAUSE_MS) finish();
       }
-      if (now - started > 15000) finish();
+      if (now - started > 45000) finish();
     }, 80);
 
     function finish() {
@@ -378,6 +383,138 @@ function recordUntilSilence(stream) {
       }
     }
   });
+}
+
+async function transcribeClip(clip) {
+  const response = await fetch("/transcribe", {
+    method: "POST",
+    headers: { "Content-Type": clip.type || "audio/webm" },
+    body: clip,
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "The local voice model could not hear that.");
+  return (data.text || "").trim();
+}
+
+/**
+ * While an answer is playing, listen for Hey.
+ * Hey stops the voice. The rest of that sentence, including a short pause, becomes the next question.
+ */
+function watchWhileAnswering(stream) {
+  if (!stream || micBusy) return;
+  micBusy = true;
+  try {
+  const epoch = listenEpoch;
+  const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+    ? "audio/webm;codecs=opus"
+    : "audio/webm";
+  const rec = new MediaRecorder(stream, { mimeType: mime });
+  const chunks = [];
+  let heyIndex = -1;
+  let stopped = false;
+  let transcribing = false;
+  let pendingSlice = null;
+  let sliceLoud = false;
+
+  const ctx = new AudioContext();
+  const source = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;
+  source.connect(analyser);
+  const samples = new Uint8Array(analyser.fftSize);
+
+  function level() {
+    analyser.getByteTimeDomainData(samples);
+    let sum = 0;
+    for (const value of samples) {
+      const sample = (value - 128) / 128;
+      sum += sample * sample;
+    }
+    return Math.sqrt(sum / samples.length);
+  }
+
+  async function pump() {
+    if (transcribing || !pendingSlice || heyIndex >= 0 || stopped) return;
+    transcribing = true;
+    const job = pendingSlice;
+    pendingSlice = null;
+    try {
+      const text = await transcribeClip(job.blob);
+      if (stopped || epoch !== listenEpoch || heyIndex >= 0) return;
+      if (questionAfterWake(text) === null && !/\bhey\b/i.test(text)) return;
+      heyIndex = job.index;
+      stopSpeaking();
+      cancelAnswer = true;
+      askAbort?.abort();
+      try { activeReader?.cancel(); } catch { /* already finished */ }
+      setStatus("Go ahead. A short pause is fine.");
+      setCapsuleState("listening");
+    } catch (err) {
+      console.error("Failed while listening for Hey:", err);
+    } finally {
+      transcribing = false;
+      if (pendingSlice && heyIndex < 0) pump();
+    }
+  }
+
+  rec.ondataavailable = (event) => {
+    if (!event.data?.size) return;
+    const index = chunks.length;
+    chunks.push(event.data);
+    if (heyIndex >= 0 || !sliceLoud) {
+      sliceLoud = false;
+      return;
+    }
+    sliceLoud = false;
+    pendingSlice = { index, blob: event.data };
+    pump();
+  };
+
+  rec.start(900);
+
+  let quietSince = 0;
+  const timer = setInterval(() => {
+    if (stopped) return;
+    if (level() > 0.02) {
+      sliceLoud = true;
+      quietSince = 0;
+    } else if (heyIndex >= 0) {
+      if (!quietSince) quietSince = performance.now();
+    }
+    const heardHey = heyIndex >= 0;
+    const pauseDone = heardHey && quietSince && performance.now() - quietSince > END_PAUSE_MS;
+    const callEnded = epoch !== listenEpoch || !connected || localStop;
+    const answerFinished = !brainBusy && !heardHey;
+    if (pauseDone) finish(true);
+    else if (callEnded || answerFinished) finish(false);
+  }, 80);
+
+  function finish(keepQuestion) {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(timer);
+    rec.onstop = async () => {
+      try { source.disconnect(); } catch { /* already disconnected */ }
+      ctx.close().catch(() => {});
+      try {
+        if (keepQuestion && heyIndex >= 0) {
+          const text = await transcribeClip(new Blob(chunks.slice(heyIndex), { type: mime }));
+          const question = questionAfterWake(text);
+          if (question) queuedQuestion = question;
+        }
+      } catch (err) {
+        console.error("Failed while saving the new question:", err);
+      } finally {
+        micBusy = false;
+      }
+    };
+    if (rec.state !== "inactive") rec.stop();
+    else micBusy = false;
+  }
+  } catch (err) {
+    console.error("Failed while listening during the answer:", err);
+    micBusy = false;
+  }
 }
 
 /**
@@ -412,6 +549,15 @@ async function startLocalListen() {
   }
 
   while (connected && !localStop) {
+    while (micBusy) await sleep(40);
+    if (!connected || localStop) break;
+    if (queuedQuestion) {
+      const question = queuedQuestion;
+      queuedQuestion = "";
+      addBubble("user", question, false);
+      await answerWithBrain(question);
+      continue;
+    }
     if (paused) {
       await sleep(250);
       continue;
@@ -432,14 +578,7 @@ async function startLocalListen() {
     setCapsuleState("thinking");
     let text = "";
     try {
-      const response = await fetch("/transcribe", {
-        method: "POST",
-        headers: { "Content-Type": clip.type || "audio/webm" },
-        body: clip,
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "The local voice model could not hear that.");
-      text = (data.text || "").trim();
+      text = await transcribeClip(clip);
     } catch (err) {
       console.error("Failed while transcribing locally:", err);
       setStatus(err.message || "The local voice model could not hear that.");
@@ -850,6 +989,7 @@ function handleServerEvent(event) {
   }
   if (type === "input_audio_buffer.speech_stopped") {
     setStatus("Thinking…");
+    setCapsuleState("thinking");
     return;
   }
   if (type === "response.created" || type === "response.output_item.added") {
@@ -891,12 +1031,18 @@ function handleServerEvent(event) {
   ) {
     const text = event.transcript || event.item?.content?.[0]?.transcript || "";
     const question = questionAfterWake(text.trim());
-    if (!question) {
+    if (question === null) {
       if (userPartialEl) {
         userPartialEl.remove();
         userPartialEl = null;
       }
       setStatus(WAKE_STATUS);
+      return;
+    }
+    stopSpeaking();
+    if (!question) {
+      setStatus("Go ahead. A short pause is fine.");
+      setCapsuleState("listening");
       return;
     }
     finalizeUser(question);
@@ -944,6 +1090,7 @@ async function answerFromNotes(event) {
   }
 
   setStatus("Looking through your notes…");
+  setCapsuleState("thinking");
   let notes = "No matching notes.";
   try {
     const response = await fetch(`/notes?q=${encodeURIComponent(query)}`);
@@ -970,7 +1117,9 @@ async function answerWithBrain(question) {
   cancelAnswer = false;
   currentAnswerBubble = null;
   askAbort = new AbortController();
+  if (micStream && !muted) watchWhileAnswering(micStream);
   setStatus(`Thinking with ${selectedModel()?.label || "the selected model"}…`);
+  setCapsuleState("thinking");
   // Local models (Bonsai) always use the Kokoro voice on this Mac: free, no OpenAI.
   const macOnly = Boolean(selectedModel()?.local);
   const speakerReady = macOnly ? null : ensureSpeaker();
@@ -1051,6 +1200,7 @@ async function answerWithBrain(question) {
         }
         if (event.type === "status") {
           setStatus(event.message || "Looking on the web…");
+          setCapsuleState("thinking");
         } else if (event.type === "delta") {
           const text = event.text || "";
           answer += text;
@@ -1077,7 +1227,7 @@ async function answerWithBrain(question) {
       setStatus(macOnly
         ? WAKE_STATUS
         : voiceBlocked
-        ? "Listening. Say Hey my brain, then your question. Voice control has no credits, so the Mac voice spoke."
+        ? "Listening. Say Hey, then your question. Voice control has no credits, so the Mac voice spoke."
         : WAKE_STATUS);
     }
   } catch (err) {

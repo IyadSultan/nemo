@@ -851,7 +851,7 @@ function voiceInstructions() {
     "His to-dos are all in wiki/todo.md. He may call that file to-do dot md.",
     "wiki/index.md is the index of all wiki pages. He may call that file index dot md.",
     "wiki/log.md is the history of the wiki. He may call that file logs dot md. There is no separate logs.md.",
-    "Stay silent unless the user's words start with Hey my brain. Otherwise do not speak.",
+    "Stay silent unless the user's words start with Hey. Otherwise do not speak.",
     "You can hear the user through the microphone. Never say you cannot hear audio.",
     "Finish each reply. Do not stop mid-sentence.",
     "Whenever a folder is in use, follow its code.md. Those rulebooks are included below.",
@@ -1155,7 +1155,7 @@ app.post("/session", async (req, res) => {
           // Low eagerness so the speaker's own voice does not cut the reply off.
           eagerness: "low",
           interrupt_response: !speakOnly,
-          // The page decides when to answer. It only does that after "Hey my brain".
+          // The page decides when to answer. It only does that after "Hey".
           create_response: false,
         },
         transcription: {

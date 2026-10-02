@@ -7,24 +7,46 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/voice.css" />
   </head>
   <body>
-    <div class="atmosphere" aria-hidden="true"></div>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <p class="brand-name">Hey my brain</p>
+          <p class="brand-line">Voice assistant for your notes</p>
+        </div>
+      </div>
 
-    <main class="stage">
-      <header class="brand">
-        <p class="brand-mark">Hey my 🧠</p>
-        <p class="brand-line">GPT-OSS writes · the Mac voice speaks</p>
-      </header>
+      <section class="meter" aria-label="Tokens for this whole chat">
+        <h2 class="sr-only">This chat</h2>
+        <dl class="counts">
+          <div><dt>In</dt><dd id="inTokens">0</dd></div>
+          <div><dt>Out</dt><dd id="outTokens">0</dd></div>
+          <div><dt>Thinking</dt><dd id="thinkTokens">0</dd></div>
+          <div><dt>Cost</dt><dd id="chatPrice">$0.00</dd></div>
+        </dl>
+      </section>
+    </header>
 
-      <section class="booth" aria-label="Voice conversation controls">
+    <main class="layout">
+      <section class="panel booth" aria-label="Voice conversation controls">
         <div class="capsule" id="capsule" data-state="idle">
-          <div class="rings" aria-hidden="true">
-            <span></span><span></span><span></span>
+          <div class="rings" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div class="orbit" aria-hidden="true"></div>
+          <div class="halo" aria-hidden="true">
+            <span style="--i: 0"></span><span style="--i: 1"></span><span style="--i: 2"></span>
+            <span style="--i: 3"></span><span style="--i: 4"></span><span style="--i: 5"></span>
+            <span style="--i: 6"></span><span style="--i: 7"></span><span style="--i: 8"></span>
+            <span style="--i: 9"></span><span style="--i: 10"></span><span style="--i: 11"></span>
+            <span style="--i: 12"></span><span style="--i: 13"></span><span style="--i: 14"></span>
+            <span style="--i: 15"></span><span style="--i: 16"></span><span style="--i: 17"></span>
+            <span style="--i: 18"></span><span style="--i: 19"></span><span style="--i: 20"></span>
+            <span style="--i: 21"></span><span style="--i: 22"></span><span style="--i: 23"></span>
           </div>
           <button
             type="button"
@@ -37,69 +59,63 @@
           </button>
         </div>
 
+        <span class="state-pill" aria-hidden="true"></span>
         <p class="status" id="statusText">Ready when you are</p>
 
-        <div class="settings">
-          <div class="field folder-list-wrap">
-            <span>Second brains</span>
-            <div id="folderList" class="folder-list"></div>
-          </div>
-          <label class="field folder-add">
-            <span>Add a folder</span>
-            <span class="add-row">
-              <input id="folderPath" type="text" placeholder="Paste a full folder path" aria-label="Folder path" />
-              <button type="button" class="ghost-btn" id="addFolderBtn">Add</button>
-            </span>
-          </label>
-          <label class="field">
-            <span>Model</span>
-            <select id="modelSelect" aria-label="Model"></select>
-          </label>
-          <label class="field">
-            <span>Thinking</span>
-            <select id="reasoningSelect" aria-label="Thinking level"></select>
-          </label>
-        </div>
-        <p class="rates" id="rates">Pick a model to see its price.</p>
-
         <div class="controls">
-          <label class="field">
-            <span>Voice</span>
-            <select id="voiceSelect" aria-label="Assistant voice">
-              <option value="marin" selected>Marin</option>
-              <option value="cedar">Cedar</option>
-              <option value="alloy">Alloy</option>
-              <option value="ash">Ash</option>
-              <option value="coral">Coral</option>
-              <option value="sage">Sage</option>
-            </select>
-          </label>
           <button type="button" class="ghost-btn" id="muteBtn" disabled>Mute mic</button>
-          <button type="button" class="ghost-btn" id="pauseBtn" disabled title="Stop this answer. Then say Hey my brain to ask a new question.">Pause</button>
-          <button type="button" class="ghost-btn" id="stopBtn" disabled title="Stop this answer. Then say Hey my brain to ask a new question.">Stop</button>
+          <button type="button" class="ghost-btn" id="pauseBtn" disabled title="Stop this answer. Then say Hey to ask a new question.">Pause</button>
+          <button type="button" class="ghost-btn" id="stopBtn" disabled title="Stop this answer. Then say Hey to ask a new question.">Stop</button>
           <button type="button" class="ghost-btn" id="restartBtn" disabled>Restart last</button>
         </div>
+
+        <details class="settings-wrap">
+          <summary>Settings</summary>
+          <div class="settings">
+            <label class="field">
+              <span>Model</span>
+              <select id="modelSelect" aria-label="Model"></select>
+            </label>
+            <label class="field">
+              <span>Thinking</span>
+              <select id="reasoningSelect" aria-label="Thinking level"></select>
+            </label>
+            <label class="field">
+              <span>Voice</span>
+              <select id="voiceSelect" aria-label="Assistant voice">
+                <option value="marin" selected>Marin</option>
+                <option value="cedar">Cedar</option>
+                <option value="alloy">Alloy</option>
+                <option value="ash">Ash</option>
+                <option value="coral">Coral</option>
+                <option value="sage">Sage</option>
+              </select>
+            </label>
+            <p class="rates" id="rates">Pick a model to see its price.</p>
+            <div class="field wide">
+              <span>Second brains</span>
+              <div id="folderList" class="folder-list"></div>
+            </div>
+            <label class="field wide">
+              <span>Add a folder</span>
+              <span class="add-row">
+                <input id="folderPath" type="text" placeholder="Paste a full folder path" aria-label="Folder path" />
+                <button type="button" class="ghost-btn" id="addFolderBtn">Add</button>
+              </span>
+            </label>
+          </div>
+        </details>
       </section>
 
-      <section class="meter" aria-label="Tokens for this whole chat">
-        <h2>This chat</h2>
-        <dl class="counts">
-          <div><dt>Input tokens</dt><dd id="inTokens">0</dd></div>
-          <div><dt>Output tokens</dt><dd id="outTokens">0</dd></div>
-          <div><dt>Thinking tokens</dt><dd id="thinkTokens">0</dd></div>
-          <div><dt>Price</dt><dd id="chatPrice">$0.00</dd></div>
-        </dl>
-        <p class="breakdown" id="breakdown">These totals add up for the whole call, from Start talking until you end it.</p>
-      </section>
-
-      <section class="transcript-panel" aria-label="Live transcript">
+      <section class="panel transcript-panel" aria-label="Live transcript">
         <div class="transcript-head">
           <h2>Transcript</h2>
           <button type="button" class="ghost-btn small" id="clearBtn">Clear</button>
         </div>
         <div class="transcript" id="transcript" role="log" aria-live="polite">
-          <p class="empty">Press Start talking. Say Hey my brain, then your question.</p>
+          <p class="empty">Press Start talking. Say Hey, then your question.</p>
         </div>
+        <p class="breakdown" id="breakdown">These totals add up for the whole call, from Start talking until you end it.</p>
       </section>
     </main>
 
