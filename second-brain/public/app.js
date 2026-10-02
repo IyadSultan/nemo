@@ -25,6 +25,11 @@ const chatPriceEl = document.getElementById("chatPrice");
 const breakdownEl = document.getElementById("breakdown");
 const sessionPriceEl = document.getElementById("sessionPrice");
 
+let chosenModelId = "";
+let chatTurns = [];
+let chatMemory = "";
+let compressAbort = null;
+let compressGen = 0;
 let busy = false;
 let catalog = null;
 let defaultModelId = "gpt-oss:20b";
@@ -122,8 +127,35 @@ function fillModels() {
     if (model.id === defaultModelId) option.selected = true;
     modelSelect.append(option);
   }
+  chosenModelId = modelSelect.value;
   fillReasoning();
   showRates();
+}
+
+async function releasePreviousLocalModel(previousId) {
+  const previous = catalog?.models.find((model) => model.id === previousId);
+  const next = selectedModel();
+  if (!previous?.local || !next?.local || previous.id === next.id) return;
+  compressAbort?.abort();
+  compressGen += 1;
+  setStatus(`Stopping ${previous.label}…`);
+  try {
+    const response = await fetch("/stop-model", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: previous.id }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not stop the previous model.");
+    if (data.stopped) {
+      setStatus(`${previous.label} was stopped. It is no longer using memory.`);
+      return;
+    }
+    setStatus(`${previous.label} was already out of memory.`);
+  } catch (err) {
+    console.error("Failed while stopping the previous local model:", err);
+    setStatus(err.message || `Could not stop ${previous.label}.`);
+  }
 }
 
 function resetChatMeter() {
@@ -228,6 +260,8 @@ async function ask() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         question,
+        history: chatTurns,
+        memory: chatMemory,
         model: modelSelect.value,
         reasoning: reasoningSelect.value,
       }),
@@ -300,9 +334,45 @@ async function ask() {
       activeTurn.answerLine.textContent = err.message || "Something went wrong.";
     }
   } finally {
+    if (question) {
+      chatTurns.push({
+        question,
+        answer: latestAnswer.trim() || "(The answer was stopped.)",
+      });
+      if (chatTurns.length > 8) chatTurns = chatTurns.slice(-8);
+      compressInBackground();
+    }
     busy = false;
     askBtn.disabled = false;
   }
+}
+
+function compressInBackground() {
+  const size = chatMemory.length + chatTurns.reduce((sum, turn) => sum + turn.question.length + turn.answer.length, 0);
+  if (size < 500) return;
+  compressAbort?.abort();
+  const controller = new AbortController();
+  compressAbort = controller;
+  const generation = ++compressGen;
+  const snapshot = chatTurns.slice();
+  const prior = chatMemory;
+  fetch("/compress", {
+    method: "POST",
+    signal: controller.signal,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ history: snapshot, memory: prior }),
+  }).then(async (response) => {
+    if (!response.ok || generation !== compressGen) return;
+    const data = await response.json();
+    if (!data.memory || generation !== compressGen) return;
+    chatMemory = data.memory;
+    const last = snapshot[snapshot.length - 1];
+    const stillThere = chatTurns.findIndex((turn) => turn.question === last?.question && turn.answer === last?.answer);
+    if (stillThere >= 0) chatTurns = chatTurns.slice(stillThere);
+  }).catch((err) => {
+    if (err?.name === "AbortError") return;
+    console.error("Failed while compressing the chat:", err);
+  });
 }
 
 function setupMic() {
@@ -368,8 +438,11 @@ readBtn.addEventListener("click", () => {
 });
 
 modelSelect.addEventListener("change", () => {
+  const previousId = chosenModelId;
+  chosenModelId = modelSelect.value;
   fillReasoning();
   showRates();
+  releasePreviousLocalModel(previousId);
 });
 reasoningSelect.addEventListener("change", showRates);
 

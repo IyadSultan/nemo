@@ -143,3 +143,15 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 
 - 2026-10-02 milestone: voice.html/voice.css redesigned to a compact two-column console (orb + controls + collapsible settings | transcript; token meter in top bar). Orb has three state animations: listening = teal ripples, speaking = amber equalizer halo, thinking/searching = violet sweeping arc + orbiting dot. voice.js got 4 `setCapsuleState("thinking")` calls (model answer start, web-search status, note search, realtime speech_stopped). Not committed.
 **Response:** Clean. Wrapping up: error log, session log, gitignore check.
+
+## 2026-10-02 17:51 — talk_to_your_brain
+
+**Prompt:** is there anything we can do to make responses faster?
+**Response:** `gpt-oss` ignores `think:false` and reasons anyway. Testing `think:"low"`:
+
+## 2026-10-02 18:00 — talk_to_your_brain
+
+**Prompt:** apply all 4, add timer to the token showing average time to answer and time to answer last question (From end of question to start of talking)
+
+- 2026-10-02 milestone: speed pass on second-brain voice. server.js: gpt-oss "none" → think "low"; notes 6→4 hits, excerpts 1800→900 chars; web search only for fresh-fact questions, snippets only (news reads 1 page), timeouts 3s. voice.js: END_PAUSE_MS 2000→1200; new Last answer / Avg answer timers (end of question → first spoken word). Timed /ask first-delta: to-do 14.7s→3.2s, general 8.1s→0.7–2.0s warm, news ~5s. Server restarted via launchctl kickstart. Not committed.
+**Response:** Warm numbers are good. Checking the timer UI:

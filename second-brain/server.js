@@ -49,6 +49,7 @@ const KOKORO_URL = "http://127.0.0.1:8179";
 const FFMPEG_BIN = "/opt/homebrew/bin/ffmpeg";
 // Ollama runs local models on this Mac. Bonsai is already installed there.
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
+let loadedLocalId = "";
 const DEFAULT_VOICE = "marin";
 const PORT = Number(process.env.BRAIN_PORT) || 3001;
 
@@ -181,7 +182,7 @@ function queryTerms(question) {
  * Score notes by how often the question words appear.
  * A hit in the title counts more than a hit buried in the page.
  */
-function searchNotes(question, limit = 6) {
+function searchNotes(question, limit = 4) {
   const terms = queryTerms(question);
   if (!terms.length) return [];
 
@@ -209,7 +210,7 @@ function searchNotes(question, limit = 6) {
 }
 
 /** Keep a window of text around the first matching word, so we don't send the whole note. */
-function excerpt(text, terms, maxLen = 1800) {
+function excerpt(text, terms, maxLen = 900) {
   const lower = text.toLowerCase();
   let at = -1;
   for (const term of terms) {
@@ -223,7 +224,7 @@ function excerpt(text, terms, maxLen = 1800) {
   return slice;
 }
 
-function buildPrompt(question, hits, pages = []) {
+function buildPrompt(question, hits, pages = [], history = [], memory = "") {
   const blocks = hits.map(({ note, terms }) => {
     return [
       `Note: ${note.title}`,
@@ -243,8 +244,26 @@ function buildPrompt(question, hits, pages = []) {
     ? "This question is about the user's own second brain. Answer from the notes, especially wiki/todo.md for tasks. Do not use the web. Do not say a listed file is missing if its text is below."
     : "";
 
+  const earlier = history.length
+    ? history.map((turn, index) => {
+        const label = index === history.length - 1 ? "Last question" : `Earlier question ${index + 1}`;
+        return `${label}: ${turn.question}\nAnswer: ${turn.answer}`;
+      }).join("\n\n")
+    : "(this is the first question in this chat)";
+  const chatNote = history.length
+    ? "If the user asks what they asked last time, what you just said, or a follow-up, answer from Earlier in this conversation. Do not say that is missing from the notes."
+    : "";
+
+  const memoryBlock = memory
+    ? `Compressed memory of older turns:\n${memory}`
+    : "";
+
   return [
     `Today's date is ${todayLabel()}.`,
+    memoryBlock,
+    "Earlier in this conversation:",
+    earlier,
+    "",
     `Question: ${question}`,
     "",
     "Notes:",
@@ -258,10 +277,32 @@ function buildPrompt(question, hits, pages = []) {
     "Ask one short clarifying question only when there is no topic, for example a noise or 'can you hear me'.",
     newsNote,
     vaultNote,
+    chatNote,
   ].filter(Boolean).join("\n");
 }
 
-/** Questions about the user's own files, not the public web. */
+/** Questions about this chat, not the wiki or the web. */
+function isChatQuestion(question) {
+  const q = question.toLowerCase();
+  return /\b(last time|previous|just asked|did i ask|i ask you|i said|you said|you tell|you told|earlier|a moment ago|before that|repeat that|say that again|what did i)\b/.test(q);
+}
+
+/** Keep only recent, short turns. The page sends these with the next question. */
+function cleanHistory(raw) {
+  if (!Array.isArray(raw)) return [];
+  const turns = [];
+  for (const item of raw) {
+    const question = typeof item?.question === "string" ? item.question.trim().slice(0, 500) : "";
+    const answer = typeof item?.answer === "string" ? item.answer.trim().slice(0, 1500) : "";
+    if (!question) continue;
+    turns.push({ question, answer: answer || "(no answer yet)" });
+  }
+  return turns.slice(-6);
+}
+
+function cleanMemory(raw) {
+  return typeof raw === "string" ? raw.trim().slice(0, 2000) : "";
+}
 function isVaultQuestion(question) {
   const q = question.toLowerCase();
   return /\b(todos?|to-dos?|to do|tasks?|plate|have to do|index|logs?|history|wikis?|finished|second brain)\b/.test(q);
@@ -357,7 +398,15 @@ function wantsNews(question) {
   return false;
 }
 
-/** Greetings and one-word noise do not need a web search. */
+/** Questions whose answer changes over time, or that ask for the web outright. */
+function needsFreshFacts(question) {
+  const q = question.toLowerCase();
+  if (wantsNews(question)) return true;
+  if (/\b(search|google|look up|online|on the web|internet)\b/.test(q)) return true;
+  return /\b(today|tonight|tomorrow|yesterday|now|current|currently|latest|recent|recently|this (week|month|year)|price|prices|cost of|weather|forecast|score|stock|exchange rate|who won|released?|20[2-9]\d)\b/.test(q);
+}
+
+/** The web is slow (1-14s). Look only when the answer needs fresh facts. */
 function shouldBrowse(question) {
   const cleaned = question.toLowerCase().replace(/[^a-z0-9\s']/g, " ").replace(/\s+/g, " ").trim();
   const skip = new Set([
@@ -369,9 +418,9 @@ function shouldBrowse(question) {
     "thank you",
     "thanks",
   ]);
-  if (skip.has(cleaned)) return false;
+  if (skip.has(cleaned) || isChatQuestion(question)) return false;
   if (isVaultQuestion(question) && !wantsNews(question)) return false;
-  return cleaned.split(" ").filter(Boolean).length >= 2;
+  return cleaned.split(" ").filter(Boolean).length >= 2 && needsFreshFacts(question);
 }
 
 function decodeHtml(text) {
@@ -453,7 +502,7 @@ async function readLimitedText(response, maxBytes = 180_000) {
 async function fetchPage(result) {
   try {
     const response = await fetch(result.url, {
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(3000),
       redirect: "follow",
       headers: {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
@@ -474,7 +523,8 @@ async function fetchPage(result) {
 
 /**
  * Look the question up on the web from this Mac.
- * DuckDuckGo returns a list of pages. We keep four, and read the first two.
+ * DuckDuckGo returns a list of pages. We keep four and use their snippets.
+ * Only news reads one full page, since headlines need more than a snippet.
  * The model never connects to the internet itself.
  */
 async function searchWeb(question) {
@@ -483,7 +533,7 @@ async function searchWeb(question) {
   try {
     const query = wantsNews(question) ? `top news headlines ${todayLabel()}` : question;
     const response = await fetch(`https://html.duckduckgo.com/html/?${new URLSearchParams({ q: query })}`, {
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(3000),
       headers: {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         Accept: "text/html",
@@ -516,8 +566,9 @@ async function searchWeb(question) {
   }
   if (!results.length) return [];
 
-  const opened = await Promise.all(results.slice(0, 2).map((result) => fetchPage(result)));
-  const rest = results.slice(2).map((result) => ({ ...result, text: result.snippet }));
+  const read = wantsNews(question) ? 1 : 0;
+  const opened = await Promise.all(results.slice(0, read).map((result) => fetchPage(result)));
+  const rest = results.slice(read).map((result) => ({ ...result, text: result.snippet }));
   return [...opened, ...rest].filter((page) => page.text);
 }
 
@@ -543,7 +594,7 @@ const INSTRUCTIONS = [
   "First decide whether the question makes sense.",
   "If the wording is clumsy but a topic is clear, answer that topic. A request for the latest news means a short briefing of today's headlines.",
   "Ask what they mean only when there is no topic at all, such as a noise or 'can you hear me'.",
-  "Only when the question is clear and neither the notes nor the web pages cover it, say briefly that you could not find it.",
+  "The prompt includes Earlier in this conversation. Use that for follow-up questions and for questions about the chat, such as what the user asked last time. Do not say a chat question is missing from the notes.",
   "Be brief and direct. Use a note only when that note actually states the fact. If the fact is only on a web page, say you found it on the web. Do not call a web page a note.",
   "Do not invent people, dates, or tasks.",
 ].join(" ");
@@ -657,8 +708,10 @@ async function streamAnswer(apiKey, prompt, res, model, reasoning, spoken) {
 }
 
 /** Turn the Thinking menu into Ollama's think setting. Off means no hidden thinking. */
-function ollamaThink(reasoning) {
-  if (!reasoning || reasoning === "none") return false;
+function ollamaThink(reasoning, model) {
+  // GPT-OSS ignores think:false and reasons anyway (~650 hidden tokens, up to 10s).
+  // "low" is the least it will do: about 4x fewer thinking tokens.
+  if (!reasoning || reasoning === "none") return model?.id.startsWith("gpt-oss") ? "low" : false;
   if (reasoning === "low" || reasoning === "medium" || reasoning === "high") return reasoning;
   return "high";
 }
@@ -676,7 +729,7 @@ async function streamLocalAnswer(prompt, res, model, reasoning, spoken) {
       body: JSON.stringify({
         model: model.id,
         stream: true,
-        think: ollamaThink(reasoning),
+        think: ollamaThink(reasoning, model),
         messages: [
           {
             role: "system",
@@ -1210,6 +1263,109 @@ function safeJson(text) {
   }
 }
 
+function ollamaNamesMatch(runningName, modelId) {
+  const name = String(runningName || "").toLowerCase();
+  const want = String(modelId || "").toLowerCase();
+  if (!name || !want) return false;
+  return name === want || name.startsWith(`${want}:`) || want.startsWith(`${name}:`);
+}
+
+async function ollamaLoadedModels() {
+  const response = await fetch(`${OLLAMA_URL}/api/ps`);
+  if (!response.ok) return [];
+  const data = await response.json();
+  return Array.isArray(data.models) ? data.models : [];
+}
+
+/** Tell Ollama to drop a local model so it no longer uses memory. */
+async function stopOllamaModel(modelId) {
+  const running = await ollamaLoadedModels();
+  const hit = running.find((item) => ollamaNamesMatch(item.name || item.model, modelId));
+  if (!hit) return { stopped: false, wasLoaded: false };
+  const name = hit.name || hit.model || modelId;
+  const response = await fetch(`${OLLAMA_URL}/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: name, keep_alive: 0 }),
+  });
+  if (!response.ok) {
+    const details = await response.text();
+    console.error("Failed while stopping a local model:", response.status, details);
+    throw new Error("Ollama could not stop the previous model.");
+  }
+  await response.text();
+  if (loadedLocalId && ollamaNamesMatch(loadedLocalId, modelId)) loadedLocalId = "";
+  return { stopped: true, wasLoaded: true, name };
+}
+
+app.post("/stop-model", async (req, res) => {
+  const id = typeof req.body?.model === "string" ? req.body.model.trim() : "";
+  const model = getModel(id);
+  if (!model?.local) return res.json({ stopped: false, wasLoaded: false });
+  try {
+    const result = await stopOllamaModel(model.id);
+    res.json({ ...result, label: model.label });
+  } catch (err) {
+    console.error("Failed while stopping a local model:", err?.message || err);
+    res.status(502).json({ error: err?.message || "Could not stop the previous model." });
+  }
+});
+
+app.post("/compress", async (req, res) => {
+  const history = cleanHistory(req.body?.history);
+  const prior = cleanMemory(req.body?.memory);
+  if (!history.length && !prior) return res.json({ memory: "" });
+
+  const model = getModel(DEFAULT_MODEL);
+  const source = [
+    prior ? `Older memory:\n${prior}` : "",
+    ...history.map((turn) => `User asked: ${turn.question}\nAnswered: ${turn.answer}`),
+  ].filter(Boolean).join("\n\n");
+
+  try {
+    const controller = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) controller.abort();
+    });
+    const upstream = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: model.id,
+        stream: false,
+        think: false,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "Compress this voice chat into a short memory for the next question.",
+              "Keep every user question in the user's exact words, each on its own line starting with User asked:",
+              "After each question, write one short sentence starting with Answered:",
+              "Put the newest question last. Do not add anything that was not said.",
+            ].join(" "),
+          },
+          { role: "user", content: source },
+        ],
+        keep_alive: "30m",
+        options: { num_ctx: 4096, num_predict: 220 },
+      }),
+    });
+    if (!upstream.ok) {
+      const details = await upstream.text();
+      console.error("Failed while compressing the chat:", upstream.status, details);
+      return res.status(502).json({ error: "The local model could not compress the chat." });
+    }
+    const data = await upstream.json();
+    const memory = cleanMemory(data.message?.content || "");
+    res.json({ memory });
+  } catch (err) {
+    if (err?.name === "AbortError") return res.status(499).end();
+    console.error("Failed while compressing the chat:", err?.message || err);
+    res.status(500).json({ error: "Could not compress the chat." });
+  }
+});
+
 app.post("/ask", async (req, res) => {
   const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
   if (!question) {
@@ -1241,15 +1397,33 @@ app.post("/ask", async (req, res) => {
     });
   }
 
-  const hits = pinVaultNotes(question, searchNotes(question));
+  const aboutChat = isChatQuestion(question);
+  const history = cleanHistory(req.body?.history);
+  const hits = aboutChat ? [] : pinVaultNotes(question, searchNotes(question));
 
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders?.();
 
-  if (shouldBrowse(question)) writeEvent(res, { type: "status", message: "Looking on the web…" });
-  const pages = await searchWeb(question);
+  if (model.local && loadedLocalId && !ollamaNamesMatch(loadedLocalId, model.id)) {
+    const previous = getModel(loadedLocalId);
+    try {
+      const unloaded = await stopOllamaModel(loadedLocalId);
+      if (unloaded.stopped) {
+        writeEvent(res, {
+          type: "status",
+          message: `${previous?.label || loadedLocalId} was stopped.`,
+        });
+      }
+    } catch (err) {
+      console.error("Failed while switching local models:", err?.message || err);
+    }
+  }
+  if (model.local) loadedLocalId = model.id;
+
+  if (!aboutChat && shouldBrowse(question)) writeEvent(res, { type: "status", message: "Looking on the web…" });
+  const pages = aboutChat ? [] : await searchWeb(question);
   const sources = [
     ...hits.map(({ note }) => ({ title: note.title, file: note.rel })),
     ...pages.map((page) => ({ title: page.title, file: page.url })),
@@ -1260,7 +1434,7 @@ app.post("/ask", async (req, res) => {
   // The model still sees it, so it can ask what you meant instead of saying "not in the notes".
 
   try {
-    const prompt = buildPrompt(question, hits, pages);
+    const prompt = buildPrompt(question, hits, pages, history, cleanMemory(req.body?.memory));
     const spoken = req.body?.spoken === true;
     if (model.local) await streamLocalAnswer(prompt, res, model, reasoning, spoken);
     else await streamAnswer(apiKey, prompt, res, model, reasoning, spoken);

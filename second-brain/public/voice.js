@@ -30,6 +30,8 @@ const inTokensEl = document.getElementById("inTokens");
 const outTokensEl = document.getElementById("outTokens");
 const thinkTokensEl = document.getElementById("thinkTokens");
 const chatPriceEl = document.getElementById("chatPrice");
+const lastWaitEl = document.getElementById("lastWait");
+const avgWaitEl = document.getElementById("avgWait");
 const breakdownEl = document.getElementById("breakdown");
 
 let pc = null;
@@ -55,6 +57,9 @@ const countedResponses = new Set();
 let catalog = null;
 let defaultModelId = "gpt-oss:20b";
 let chat = emptyChat();
+// When the user stopped talking (performance.now), until the answer starts speaking.
+let questionEndedAt = 0;
+let answerWaits = [];
 
 function emptyChat() {
   return {
@@ -109,6 +114,8 @@ function listenForNewQuestion() {
   paused = false;
   stopSpeaking();
   askAbort?.abort();
+  compressAbort?.abort();
+  compressGen += 1;
   try { activeReader?.cancel(); } catch { /* the answer already finished */ }
   if (micStream) {
     for (const track of micStream.getAudioTracks()) track.enabled = !muted;
@@ -148,6 +155,7 @@ restartBtn.addEventListener("click", async () => {
     return;
   }
   while (brainBusy) await sleep(40);
+  questionEndedAt = performance.now();
   addBubble("user", lastQuestion, false);
   await answerWithBrain(lastQuestion);
 });
@@ -168,9 +176,55 @@ clearBtn.addEventListener("click", () => {
   transcriptEl.innerHTML = '<p class="empty">Press Start talking. Say Hey, then your question.</p>';
   assistantPartialEl = null;
   userPartialEl = null;
+  chatTurns = [];
+  chatMemory = "";
+  compressAbort?.abort();
 });
 
+let chosenModelId = "";
+let chatTurns = [];
+let chatMemory = "";
+let compressAbort = null;
+let compressGen = 0;
 let localStop = false;
+
+function rememberTurn(question, answer) {
+  const asked = String(question || "").trim();
+  if (!asked) return;
+  chatTurns.push({
+    question: asked,
+    answer: String(answer || "").trim() || "(The answer was stopped.)",
+  });
+  if (chatTurns.length > 8) chatTurns = chatTurns.slice(-8);
+}
+
+function compressWhileSpeaking() {
+  const size = chatMemory.length + chatTurns.reduce((sum, turn) => sum + turn.question.length + turn.answer.length, 0);
+  if (size < 500) return;
+  compressAbort?.abort();
+  const controller = new AbortController();
+  compressAbort = controller;
+  const generation = ++compressGen;
+  const snapshot = chatTurns.slice();
+  const prior = chatMemory;
+  fetch("/compress", {
+    method: "POST",
+    signal: controller.signal,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ history: snapshot, memory: prior }),
+  }).then(async (response) => {
+    if (!response.ok || generation !== compressGen) return;
+    const data = await response.json();
+    if (!data.memory || generation !== compressGen) return;
+    chatMemory = data.memory;
+    const last = snapshot[snapshot.length - 1];
+    const stillThere = chatTurns.findIndex((turn) => turn.question === last?.question && turn.answer === last?.answer);
+    if (stillThere >= 0) chatTurns = chatTurns.slice(stillThere);
+  }).catch((err) => {
+    if (err?.name === "AbortError") return;
+    console.error("Failed while compressing the chat:", err);
+  });
+}
 
 async function startCall() {
   setBusy(true);
@@ -180,6 +234,9 @@ async function startCall() {
   chat = emptyChat();
   countedResponses.clear();
   renderChat();
+  answerWaits = [];
+  questionEndedAt = 0;
+  renderWaits();
 
   // Bonsai does not speak. Voice control reads its answer.
   if (needsVoiceControl(selectedModel())) {
@@ -268,7 +325,7 @@ function sleep(ms) {
 
 const WAKE_STATUS = "Listening. I only answer when you start with Hey.";
 // A short breath is not the end of the sentence. Wait this long before stopping the recording.
-const END_PAUSE_MS = 2000;
+const END_PAUSE_MS = 1200;
 
 /**
  * The words after "Hey", or null when the sentence does not start with Hey.
@@ -367,9 +424,15 @@ function recordUntilSilence(stream) {
         quietSince = 0;
       } else if (heard && now - started > 400) {
         if (!quietSince) quietSince = now;
-        if (now - quietSince > END_PAUSE_MS) finish();
+        if (now - quietSince > END_PAUSE_MS) {
+          questionEndedAt = quietSince;
+          finish();
+        }
       }
-      if (now - started > 45000) finish();
+      if (now - started > 45000) {
+        questionEndedAt = now;
+        finish();
+      }
     }, 80);
 
     function finish() {
@@ -485,7 +548,10 @@ function watchWhileAnswering(stream) {
     const pauseDone = heardHey && quietSince && performance.now() - quietSince > END_PAUSE_MS;
     const callEnded = epoch !== listenEpoch || !connected || localStop;
     const answerFinished = !brainBusy && !heardHey;
-    if (pauseDone) finish(true);
+    if (pauseDone) {
+      questionEndedAt = quietSince;
+      finish(true);
+    }
     else if (callEnded || answerFinished) finish(false);
   }, 80);
 
@@ -779,6 +845,7 @@ function speakStream(s) {
     }
     if (Math.sqrt(sum / samples.length) > 0.012) {
       if (!heardSpeech) {
+        markAnswerStarted();
         setStatus("Speaking with voice control…");
         setCapsuleState("speaking");
       }
@@ -849,6 +916,7 @@ function kokoroVoice() {
           const url = URL.createObjectURL(await clip);
           if (stopped) return;
           playing = new Audio(url);
+          playing.onplaying = markAnswerStarted;
           await new Promise((resolve) => {
             release = resolve;
             playing.onended = resolve;
@@ -894,6 +962,7 @@ function macVoice(status) {
     get done() { return last; },
     push(text) {
       const utterance = new SpeechSynthesisUtterance(text);
+      utterance.onstart = markAnswerStarted;
       last = new Promise((resolve) => {
         utterance.onend = resolve;
         utterance.onerror = resolve;
@@ -987,7 +1056,12 @@ function handleServerEvent(event) {
     }
     return;
   }
+  if (type === "output_audio_buffer.started") {
+    markAnswerStarted();
+    return;
+  }
   if (type === "input_audio_buffer.speech_stopped") {
+    questionEndedAt = performance.now();
     setStatus("Thinking…");
     setCapsuleState("thinking");
     return;
@@ -1111,6 +1185,8 @@ async function answerFromNotes(event) {
 /** Bonsai and GPT-6 write the answer. Voice control is what speaks it. */
 async function answerWithBrain(question) {
   if (brainBusy || paused) return;
+  compressAbort?.abort();
+  compressGen += 1;
   lastQuestion = question;
   syncCallButtons();
   brainBusy = true;
@@ -1127,6 +1203,9 @@ async function answerWithBrain(question) {
   let speech = null;
   let bubble = null;
   let reader = null;
+  let answer = "";
+  let keepMemory = true;
+  let remembered = false;
   try {
     const response = await fetch("/ask", {
       method: "POST",
@@ -1134,6 +1213,8 @@ async function answerWithBrain(question) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         question,
+        history: chatTurns,
+        memory: chatMemory,
         model: modelSelect.value,
         reasoning: reasoningSelect.value,
         spoken: true,
@@ -1154,7 +1235,6 @@ async function answerWithBrain(question) {
     activeReader = reader;
     const decoder = new TextDecoder();
     let buffer = "";
-    let answer = "";
     let unspoken = "";
     const speakReady = async (force) => {
       while (unspoken.trim()) {
@@ -1210,7 +1290,10 @@ async function answerWithBrain(question) {
           bubble.querySelector(".text").textContent = answer.trim();
           transcriptEl.scrollTop = transcriptEl.scrollHeight;
         } else if (event.type === "usage") addBrainUsage(event);
-        else if (event.type === "ignored") return;
+        else if (event.type === "ignored") {
+          keepMemory = false;
+          return;
+        }
         else if (event.type === "error") throw new Error(event.message || "The selected model failed.");
       }
       await speakReady(false);
@@ -1219,6 +1302,9 @@ async function answerWithBrain(question) {
     if (cancelAnswer) return;
     if (!answer.trim()) throw new Error("The selected model returned an empty answer.");
     bubble?.classList.remove("partial");
+    rememberTurn(question, answer);
+    remembered = true;
+    compressWhileSpeaking();
     await speakReady(true);
     speech?.end();
     await speech?.done;
@@ -1238,6 +1324,7 @@ async function answerWithBrain(question) {
     setStatus(err.message || "The selected model could not answer.");
     scriptedReply = false;
   } finally {
+    if (keepMemory && !remembered) rememberTurn(question, answer);
     if (activeReader === reader) activeReader = null;
     brainBusy = false;
   }
@@ -1425,6 +1512,22 @@ function chatPrice(model) {
   return brain + voiceTokenPrice(ears);
 }
 
+/** Time from the end of the question to the first spoken word. */
+function markAnswerStarted() {
+  if (!questionEndedAt) return;
+  answerWaits.push(performance.now() - questionEndedAt);
+  questionEndedAt = 0;
+  renderWaits();
+}
+
+function renderWaits() {
+  const seconds = (ms) => `${(ms / 1000).toFixed(1)}s`;
+  const total = answerWaits.reduce((sum, ms) => sum + ms, 0);
+  lastWaitEl.textContent = answerWaits.length ? seconds(answerWaits.at(-1)) : "–";
+  avgWaitEl.textContent = answerWaits.length ? seconds(total / answerWaits.length) : "–";
+  avgWaitEl.parentElement.title = `Average over ${answerWaits.length} answer${answerWaits.length === 1 ? "" : "s"} this call`;
+}
+
 function renderChat() {
   const model = selectedModel();
   const usd = chatPrice(model);
@@ -1483,8 +1586,35 @@ function fillModels() {
     if (model.id === defaultModelId) option.selected = true;
     modelSelect.append(option);
   }
+  chosenModelId = modelSelect.value;
   fillReasoning();
   showRates();
+}
+
+async function releasePreviousLocalModel(previousId) {
+  const previous = catalog?.models.find((model) => model.id === previousId);
+  const next = selectedModel();
+  if (!previous?.local || !next?.local || previous.id === next.id) return;
+  compressAbort?.abort();
+  compressGen += 1;
+  setStatus(`Stopping ${previous.label}…`);
+  try {
+    const response = await fetch("/stop-model", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: previous.id }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not stop the previous model.");
+    if (data.stopped) {
+      setStatus(`${previous.label} was stopped. It is no longer using memory.`);
+      return;
+    }
+    setStatus(`${previous.label} was already out of memory.`);
+  } catch (err) {
+    console.error("Failed while stopping the previous local model:", err);
+    setStatus(err.message || `Could not stop ${previous.label}.`);
+  }
 }
 
 let folderSnapshot = [];
@@ -1616,8 +1746,11 @@ addFolderBtn.addEventListener("click", async () => {
 });
 
 modelSelect.addEventListener("change", () => {
+  const previousId = chosenModelId;
+  chosenModelId = modelSelect.value;
   fillReasoning();
   showRates();
+  releasePreviousLocalModel(previousId);
 });
 reasoningSelect.addEventListener("change", showRates);
 

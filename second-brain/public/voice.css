@@ -93,6 +93,12 @@ body {
   justify-items: end;
 }
 
+/* Answer timers sit apart from the token counts */
+.counts div:nth-child(2) {
+  padding-right: 1.25rem;
+  border-right: 1px solid var(--line);
+}
+
 .counts dt {
   color: var(--muted);
   font-size: 0.66rem;
