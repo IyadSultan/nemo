@@ -242,8 +242,8 @@ function buildPrompt(question, hits, pages = [], history = [], memory = "") {
     : "";
   const vaultNote = wantsEmail(question)
     ? hits.length
-      ? "This question is about email. The files below are from the raw folder. Answer only from those files and name the file. Do not say you only checked notes."
-      : "This question is about email. The raw folder was checked and nothing matched. Say that plainly. Do not talk about wiki notes."
+      ? `This question is about email. The real total is ${hits.rawCount}, from the note titled "${hits.rawCount} emails". Say that total in the first sentence. The other files are only the newest examples. Do not say the user received only as many emails as are listed.`
+      : `This question is about email. The raw folder was checked for ${hits.rawWhen || "mail"} and nothing matched. Say that plainly. Do not talk about wiki notes.`
     : isVaultQuestion(question)
       ? "This question is about the user's own second brain. Answer from the notes, especially wiki/todo.md for tasks. Do not use the web. Do not say a listed file is missing if its text is below."
       : "";
@@ -313,6 +313,7 @@ let rawMail = [];
 const EMAIL_FILLER = new Set([
   "new", "today", "latest", "recent", "mail", "email", "emails", "inbox",
   "any", "got", "get", "did", "from", "sent", "receive", "received",
+  "yesterday", "last", "check", "folder", "file", "files", "raw",
 ]);
 
 function oneEditApart(a, b) {
@@ -399,15 +400,37 @@ async function indexRawMail() {
   console.log(`Indexed ${rawMail.length} files in raw/`);
 }
 
-function startOfTodayMs() {
+function startOfDayMs(dayOffset = 0) {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() + dayOffset);
   return start.getTime();
+}
+
+function savedLabel(mtime) {
+  return new Date(mtime).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+}
+
+/** today, yesterday, the single newest email, or just the newest mail. */
+function emailWindow(question) {
+  const q = question.toLowerCase();
+  if (/\byesterday\b/.test(q)) return "yesterday";
+  if (/\b(today|tonight)\b/.test(q)) return "today";
+  if (/\blast\b/.test(q) && !/\blast\s+(week|month|year|few|couple)\b/.test(q)) return "last";
+  return "recent";
+}
+
+/** A person's name only counts after the word "from", such as "from Asim Mansour". */
+function emailNames(question) {
+  const match = question.toLowerCase().match(/\bfrom\s+([a-z][a-z'’-]+(?:\s+[a-z][a-z'’-]+){0,2})/);
+  if (!match) return [];
+  return match[1].split(/\s+/).filter((word) => !EMAIL_FILLER.has(word) && word.length >= 4);
 }
 
 async function readRawExcerpt(file) {
   const raw = await fs.readFile(file.full, "utf8");
-  const text = raw.replace(/\s+/g, " ").trim().slice(0, 1600);
+  const body = raw.replace(/\s+/g, " ").trim().slice(0, 1400);
+  const text = `Saved: ${savedLabel(file.mtime)}. File: ${file.title}. ${body}`;
   return {
     note: { rel: file.rel, title: file.title, text, lower: text.toLowerCase() },
     terms: [],
@@ -416,17 +439,29 @@ async function readRawExcerpt(file) {
 
 /** Email questions look at raw/, where each saved message is a text file. */
 async function findRawEmails(question) {
-  const personTerms = queryTerms(question).filter((term) => !EMAIL_FILLER.has(term) && term.length >= 4);
-  const q = question.toLowerCase();
-  const wantsToday = /\b(today|tonight)\b/.test(q);
-  const wantsNew = /\b(new|latest|recent)\b/.test(q);
-  let chosen = [];
+  const names = emailNames(question);
+  const when = emailWindow(question);
+  const todayStart = startOfDayMs(0);
+  let pool = rawMail;
+  let whenLabel = "the newest saved files";
 
-  if (personTerms.length) {
-    const ranked = rawMail
+  if (when === "today") {
+    pool = rawMail.filter((file) => file.mtime >= todayStart);
+    whenLabel = "today";
+  } else if (when === "yesterday") {
+    const yesterdayStart = startOfDayMs(-1);
+    pool = rawMail.filter((file) => file.mtime >= yesterdayStart && file.mtime < todayStart);
+    whenLabel = "yesterday";
+  } else if (when === "last") {
+    whenLabel = "the newest file";
+  }
+
+  let chosen = [];
+  if (names.length) {
+    const ranked = pool
       .map((file) => ({
         file,
-        score: personTerms.filter((term) => nameMatchesFile(term, file.words)).length,
+        score: names.filter((term) => nameMatchesFile(term, file.words)).length,
       }))
       .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score || b.file.mtime - a.file.mtime);
@@ -434,24 +469,34 @@ async function findRawEmails(question) {
     chosen = ranked.filter((item) => item.score === top).map((item) => item.file);
     // A first name plus a last name should both match. If only the first name matches,
     // keep it when the file is addressed to a doctor, such as "Dr. Asem".
-    if (top > 0 && top < personTerms.length) {
+    if (top > 0 && top < names.length) {
       chosen = chosen.filter((file) => {
-        const shortName = personTerms.some((term) => term.length <= 5 && nameMatchesFile(term, file.words));
+        const shortName = names.some((term) => term.length <= 5 && nameMatchesFile(term, file.words));
         return shortName && /(^|[^a-z])dr([^a-z]|$)/.test(file.lowerName);
       });
     }
-    if (wantsToday) {
-      const todayHits = chosen.filter((file) => file.mtime >= startOfTodayMs());
-      if (todayHits.length) chosen = todayHits;
-    }
-  } else if (wantsToday) {
-    chosen = rawMail.filter((file) => file.mtime >= startOfTodayMs()).sort((a, b) => b.mtime - a.mtime);
-  } else if (wantsNew || wantsEmail(question)) {
-    chosen = [...rawMail].sort((a, b) => b.mtime - a.mtime);
+  } else {
+    chosen = [...pool].sort((a, b) => b.mtime - a.mtime);
   }
 
-  const picks = chosen.slice(0, 6);
+  const limit = when === "last" ? 3 : 6;
+  const picks = chosen.slice(0, limit);
   const hits = [];
+  // The model only sees a few files. Put the real total first so it does not count the sample.
+  if (chosen.length) {
+    const sample = Math.min(picks.length, chosen.length);
+    hits.push({
+      note: {
+        rel: "raw/",
+        title: `${chosen.length} emails`,
+        text: chosen.length > sample
+          ? `Total: ${chosen.length} emails match ${whenLabel}. The files below are only the ${sample} newest examples, not the full set.`
+          : `Total: ${chosen.length} emails match ${whenLabel}. Every matching email is listed below.`,
+        lower: "",
+      },
+      terms: [],
+    });
+  }
   for (const file of picks) {
     try {
       hits.push(await readRawExcerpt(file));
@@ -460,16 +505,18 @@ async function findRawEmails(question) {
       console.error(err?.message || err);
     }
   }
+  hits.rawCount = chosen.length;
+  hits.rawWhen = whenLabel;
   return hits;
 }
 
 function isVaultQuestion(question) {
   const q = question.toLowerCase();
-  return /\b(todos?|to-dos?|to do|tasks?|plate|have to do|index|logs?|history|wikis?|finished|second brain|e-?mails?|inbox)\b/.test(q);
+  return /\b(todos?|to-dos?|to do|todoist|to-?doist|tasks?|plate|have to do|index|logs?|history|wikis?|finished|second brain|e-?mails?|inbox|raw folder)\b/.test(q);
 }
 
 function wantsEmail(question) {
-  return /\b(e-?mails?|inbox)\b/i.test(question);
+  return /\b(e-?mails?|inbox|raw folder)\b/i.test(question);
 }
 
 /** Find a loaded note by the end of its path, such as wiki/todo.md. */
@@ -485,7 +532,7 @@ function findNote(relSuffix) {
 function pinVaultNotes(question, hits) {
   const q = question.toLowerCase();
   const wanted = [];
-  if (/\b(todos?|to-dos?|to do|tasks?|plate|have to do|due|overdue)\b/.test(q)) {
+  if (/\b(todos?|to-dos?|to do|todoist|to-?doist|tasks?|plate|have to do|due|overdue)\b/.test(q)) {
     wanted.push("wiki/todo.md", "wiki/todo_mais.md");
   }
   if (/\b(index|wikis?|where)\b/.test(q)) wanted.push("wiki/index.md");
@@ -742,11 +789,11 @@ const BRAIN_MAP = [
   "This is Iyad Sultan's KHCC second brain, an Obsidian vault on this Mac. It is not an Azure DevOps wiki and not a Git wiki.",
   "The wiki folder is named wiki/. The user may call it the wikis folder. There is no folder named wikis.",
   "Three files matter on every question about his notes. They are real files. Do not say they are missing when their text is in the notes.",
-  "To-do dot md means wiki/todo.md. That file holds all of Iyad's to-dos. Open tasks are at the top. Spoken names for this same file: to-do.md, todo.md, to-do dot md, and the to-do list. There is no separate file named to-do.md.",
+  "To-do dot md means wiki/todo.md. That file holds all of Iyad's to-dos. Open tasks are at the top. Spoken names for this same file: to-do.md, todo.md, to-do dot md, the to-do list, and Todoist. Todoist means this file. It is not the Todoist website or app. There is no separate file named to-do.md.",
   "Index dot md means wiki/index.md. That file is the index of all wiki pages.",
   "Logs dot md means wiki/log.md. That file is the history of the wiki. Spoken names for this same file: logs.md, log.md, logs dot md, and the log. Newest history is at the end. There is no separate file named logs.md.",
   "wiki/todo_mais.md is Mais Tarawneh's open tasks. wiki/finished.md and wiki/finished_mais.md are completed tasks.",
-  "When the question is about today, open tasks, or the to-do list, answer from wiki/todo.md. Name the open tasks.",
+  "When the question is about today, open tasks, the to-do list, or Todoist, answer from wiki/todo.md. Name the open tasks.",
   "When the question is about the index or what wikis exist, answer from wiki/index.md.",
   "When the question is about history or the log, answer from wiki/log.md.",
   "New emails are text files in the raw/ folder at the vault root. They are not wiki pages. A question about email must be answered from those raw files.",
@@ -1064,7 +1111,7 @@ function guideBlock() {
 function voiceInstructions() {
   return [
     "You are the user's second brain, in a live voice call.",
-    "His to-dos are all in wiki/todo.md. He may call that file to-do dot md.",
+    "His to-dos are all in wiki/todo.md. He may call that file to-do dot md or Todoist. Todoist is this file, not the Todoist app.",
     "wiki/index.md is the index of all wiki pages. He may call that file index dot md.",
     "wiki/log.md is the history of the wiki. He may call that file logs dot md. There is no separate logs.md.",
     "Stay silent unless the user's words start with Hey. Otherwise do not speak.",
@@ -1461,6 +1508,33 @@ async function stopOllamaModel(modelId) {
   if (loadedLocalId && ollamaNamesMatch(loadedLocalId, modelId)) loadedLocalId = "";
   return { stopped: true, wasLoaded: true, name };
 }
+
+/** Drop every model Ollama still has loaded, so none of them keep using memory. */
+async function stopAllOllamaModels() {
+  const running = await ollamaLoadedModels();
+  const stopped = [];
+  for (const item of running) {
+    const name = item.name || item.model;
+    if (!name) continue;
+    try {
+      const result = await stopOllamaModel(name);
+      if (result.stopped) stopped.push(result.name || name);
+    } catch (err) {
+      console.error(`Failed while stopping ${name}:`, err?.message || err);
+    }
+  }
+  loadedLocalId = "";
+  return { stopped };
+}
+
+app.post("/stop-models", async (_req, res) => {
+  try {
+    res.json(await stopAllOllamaModels());
+  } catch (err) {
+    console.error("Failed while stopping local models:", err?.message || err);
+    res.status(502).json({ error: err?.message || "Could not stop the local models." });
+  }
+});
 
 app.post("/stop-model", async (req, res) => {
   const id = typeof req.body?.model === "string" ? req.body.model.trim() : "";

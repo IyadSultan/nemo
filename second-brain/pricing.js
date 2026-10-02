@@ -148,6 +148,17 @@ export const MODELS = [
     outputPerMillion: 0,
     reasoning: ["none", "low", "medium", "high"],
   },
+  {
+    id: "qwen3.8:27b-mlx",
+    label: "Qwen 3.8 27B",
+    blurb: "Runs on this Mac, and the written answer is free",
+    local: true,
+    hears: false,
+    inputPerMillion: 0,
+    cachedInputPerMillion: 0,
+    outputPerMillion: 0,
+    reasoning: ["none", "low", "medium", "high"],
+  },
 ];
 
 export function getModel(id) {

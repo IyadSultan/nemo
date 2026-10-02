@@ -64,6 +64,20 @@
         <span class="state-pill" aria-hidden="true"></span>
         <p class="status" id="statusText">Ready when you are</p>
 
+        <form class="type-ask" id="typeForm">
+          <label for="typeInput">Or type a question</label>
+          <span class="add-row">
+            <input
+              id="typeInput"
+              type="text"
+              placeholder="Use this if listening misses what you said"
+              autocomplete="off"
+              enterkeyhint="send"
+            />
+            <button type="submit" class="ghost-btn" id="typeBtn">Ask</button>
+          </span>
+        </form>
+
         <div class="controls">
           <button type="button" class="ghost-btn" id="muteBtn" disabled>Mute mic</button>
           <button type="button" class="ghost-btn" id="pauseBtn" disabled title="Stop this answer. Then say Hey to ask a new question.">Pause</button>
@@ -115,7 +129,7 @@
           <button type="button" class="ghost-btn small" id="clearBtn">Clear</button>
         </div>
         <div class="transcript" id="transcript" role="log" aria-live="polite">
-          <p class="empty">Press Start talking. Say Hey, then your question.</p>
+          <p class="empty">Press Start talking and say Hey, or type a question below the orb.</p>
         </div>
         <p class="breakdown" id="breakdown">These totals add up for the whole call, from Start talking until you end it.</p>
       </section>

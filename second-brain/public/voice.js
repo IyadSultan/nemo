@@ -18,6 +18,8 @@ const pauseBtn = document.getElementById("pauseBtn");
 const stopBtn = document.getElementById("stopBtn");
 const restartBtn = document.getElementById("restartBtn");
 const clearBtn = document.getElementById("clearBtn");
+const typeForm = document.getElementById("typeForm");
+const typeInput = document.getElementById("typeInput");
 const transcriptEl = document.getElementById("transcript");
 const remoteAudio = document.getElementById("remoteAudio");
 const folderList = document.getElementById("folderList");
@@ -84,6 +86,8 @@ let speaker = null;
 talkBtn.addEventListener("click", async () => {
   if (connected) {
     await hangUp();
+    clearChatMemory();
+    await releaseAllLocalModels();
     return;
   }
   await startCall();
@@ -91,7 +95,8 @@ talkBtn.addEventListener("click", async () => {
 
 function syncCallButtons() {
   pauseBtn.disabled = !connected;
-  stopBtn.disabled = !connected;
+  // Stop also cancels an answer that was typed before the call started.
+  stopBtn.disabled = !connected && !brainBusy;
   restartBtn.disabled = !lastQuestion;
   pauseBtn.textContent = paused ? "Resume" : "Pause";
   pauseBtn.classList.toggle("is-muted", paused);
@@ -122,8 +127,13 @@ function listenForNewQuestion() {
   }
   syncCallButtons();
   queuedQuestion = "";
-  setStatus("Say Hey, then your new question.");
-  setCapsuleState(muted ? "muted" : "listening");
+  if (connected) {
+    setStatus("Say Hey, then your new question.");
+    setCapsuleState(muted ? "muted" : "listening");
+  } else {
+    setStatus("Type a question, or press Start talking.");
+    setCapsuleState("idle");
+  }
 }
 
 pauseBtn.addEventListener("click", () => {
@@ -132,9 +142,37 @@ pauseBtn.addEventListener("click", () => {
 });
 
 stopBtn.addEventListener("click", () => {
-  if (!connected) return;
+  if (!connected && !brainBusy) return;
   listenForNewQuestion();
 });
+
+// A typed question skips the wake phrase. Use it when the mic or dictation fails.
+typeForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  askTyped(typeInput.value);
+});
+
+async function askTyped(raw) {
+  const question = String(raw || "").trim();
+  if (!question) {
+    typeInput.focus();
+    return;
+  }
+  typeInput.value = "";
+  questionEndedAt = performance.now();
+
+  // The listening loop is already running. Hand it the words and let it answer.
+  if (connected && needsVoiceControl(selectedModel())) {
+    listenForNewQuestion();
+    queuedQuestion = question;
+    return;
+  }
+
+  if (brainBusy || connected) listenForNewQuestion();
+  while (brainBusy) await sleep(40);
+  addBubble("user", question, false);
+  await answerWithBrain(question);
+}
 
 restartBtn.addEventListener("click", async () => {
   if (!lastQuestion) {
@@ -173,7 +211,7 @@ muteBtn.addEventListener("click", () => {
 });
 
 clearBtn.addEventListener("click", () => {
-  transcriptEl.innerHTML = '<p class="empty">Press Start talking. Say Hey, then your question.</p>';
+  transcriptEl.innerHTML = '<p class="empty">Press Start talking and say Hey, or type a question below the orb.</p>';
   assistantPartialEl = null;
   userPartialEl = null;
   chatTurns = [];
@@ -1006,7 +1044,41 @@ function sentenceCut(text, minLen) {
   return -1;
 }
 
+function clearChatMemory() {
+  // The next call starts fresh. The words already on screen stay so you can still read them.
+  chatTurns = [];
+  chatMemory = "";
+  compressAbort?.abort();
+  compressGen += 1;
+}
+
+async function releaseAllLocalModels() {
+  setStatus("Stopping local models…");
+  try {
+    const response = await fetch("/stop-models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not stop the local models.");
+    const count = Array.isArray(data.stopped) ? data.stopped.length : 0;
+    setStatus(count
+      ? "Call ended. Local models were stopped and the chat memory was cleared."
+      : "Call ended. Chat memory was cleared. No local model was using memory.");
+  } catch (err) {
+    console.error("Failed while stopping local models:", err);
+    setStatus("Call ended. Chat memory was cleared, but a local model may still be in memory.");
+  }
+}
 async function hangUp({ keepStatus = false } = {}) {
+  // Stop the answer first, so Ollama is free to unload the model.
+  listenEpoch += 1;
+  cancelAnswer = true;
+  askAbort?.abort();
+  compressAbort?.abort();
+  compressGen += 1;
+  stopSpeaking();
   connected = false;
   localStop = true;
   voiceBlocked = "";
@@ -1185,11 +1257,12 @@ async function answerFromNotes(event) {
 /** Bonsai and GPT-6 write the answer. Voice control is what speaks it. */
 async function answerWithBrain(question) {
   if (brainBusy || paused) return;
+  if (!connected) setBusy(true);
   compressAbort?.abort();
   compressGen += 1;
   lastQuestion = question;
-  syncCallButtons();
   brainBusy = true;
+  syncCallButtons();
   cancelAnswer = false;
   currentAnswerBubble = null;
   askAbort = new AbortController();
@@ -1315,6 +1388,9 @@ async function answerWithBrain(question) {
         : voiceBlocked
         ? "Listening. Say Hey, then your question. Voice control has no credits, so the Mac voice spoke."
         : WAKE_STATUS);
+    } else if (!connected && !localStop) {
+      setCapsuleState("idle");
+      setStatus("Type another question, or press Start talking.");
     }
   } catch (err) {
     speech?.stop();
@@ -1327,6 +1403,8 @@ async function answerWithBrain(question) {
     if (keepMemory && !remembered) rememberTurn(question, answer);
     if (activeReader === reader) activeReader = null;
     brainBusy = false;
+    if (!connected) setBusy(false);
+    syncCallButtons();
   }
 }
 
