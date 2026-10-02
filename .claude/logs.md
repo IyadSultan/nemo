@@ -155,3 +155,10 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 
 - 2026-10-02 milestone: speed pass on second-brain voice. server.js: gpt-oss "none" → think "low"; notes 6→4 hits, excerpts 1800→900 chars; web search only for fresh-fact questions, snippets only (news reads 1 page), timeouts 3s. voice.js: END_PAUSE_MS 2000→1200; new Last answer / Avg answer timers (end of question → first spoken word). Timed /ask first-delta: to-do 14.7s→3.2s, general 8.1s→0.7–2.0s warm, news ~5s. Server restarted via launchctl kickstart. Not committed.
 **Response:** Warm numbers are good. Checking the timer UI:
+
+## 2026-10-02 18:11 — talk_to_your_brain
+
+**Prompt:** i see with gpt-oss20 still default is no thinking
+
+- 2026-10-02 decision: GPT-OSS 20B thinking menu is now Low/Medium/High (no "Off"), default Low, since Ollama ignores think:false for gpt-oss. Removed the hidden none→low remap in ollamaThink(); pricing.js reasoning list enforces it instead.
+**Response:** The dropdown still offers "Off — fastest" for GPT-OSS even though the model can't switch thinking off. I'll remove that option so Low becomes its default.

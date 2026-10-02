@@ -112,7 +112,8 @@ export const MODELS = [
     inputPerMillion: 0,
     cachedInputPerMillion: 0,
     outputPerMillion: 0,
-    reasoning: ["none", "low", "medium", "high"],
+    // No "none": Ollama ignores think:false for GPT-OSS, so Low is its least thinking.
+    reasoning: ["low", "medium", "high"],
   },
   {
     id: "gemma4:12b-mlx",

@@ -240,9 +240,13 @@ function buildPrompt(question, hits, pages = [], history = [], memory = "") {
   const newsNote = wantsNews(question)
     ? "The user wants today's news. Summarize three or four headlines from the web pages in plain sentences. Do not ask which topic."
     : "";
-  const vaultNote = isVaultQuestion(question)
-    ? "This question is about the user's own second brain. Answer from the notes, especially wiki/todo.md for tasks. Do not use the web. Do not say a listed file is missing if its text is below."
-    : "";
+  const vaultNote = wantsEmail(question)
+    ? hits.length
+      ? "This question is about email. The files below are from the raw folder. Answer only from those files and name the file. Do not say you only checked notes."
+      : "This question is about email. The raw folder was checked and nothing matched. Say that plainly. Do not talk about wiki notes."
+    : isVaultQuestion(question)
+      ? "This question is about the user's own second brain. Answer from the notes, especially wiki/todo.md for tasks. Do not use the web. Do not say a listed file is missing if its text is below."
+      : "";
 
   const earlier = history.length
     ? history.map((turn, index) => {
@@ -303,9 +307,169 @@ function cleanHistory(raw) {
 function cleanMemory(raw) {
   return typeof raw === "string" ? raw.trim().slice(0, 2000) : "";
 }
+/** @type {{ rel: string, title: string, full: string, mtime: number, words: string[] }[]} */
+let rawMail = [];
+
+const EMAIL_FILLER = new Set([
+  "new", "today", "latest", "recent", "mail", "email", "emails", "inbox",
+  "any", "got", "get", "did", "from", "sent", "receive", "received",
+]);
+
+function oneEditApart(a, b) {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i += 1;
+      j += 1;
+      continue;
+    }
+    edits += 1;
+    if (edits > 1) return false;
+    if (a.length === b.length) {
+      i += 1;
+      j += 1;
+    } else if (a.length > b.length) i += 1;
+    else j += 1;
+  }
+  if (i < a.length || j < b.length) edits += 1;
+  return edits <= 1;
+}
+
+function nameMatchesFile(term, words) {
+  return words.some((word) => {
+    if (word === term) return true;
+    // "asim" can mean "asem". A longer word like "qasim" is a different name.
+    return term.length >= 4 && word.length === term.length && oneEditApart(term, word);
+  });
+}
+
+async function indexRawMail() {
+  const found = [];
+
+  async function walk(dir, root) {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      console.error(`Failed while listing raw mail: ${dir}`);
+      console.error(err?.message || err);
+      return;
+    }
+    for (const entry of entries) {
+      // Skip hidden folders and cleaned copies such as raw/_clean.
+      if (entry.name.startsWith(".") || entry.name.startsWith("_")) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full, root);
+        continue;
+      }
+      if (!entry.isFile() || !/\.(txt|md)$/i.test(entry.name)) continue;
+      try {
+        const stat = await fs.stat(full);
+        found.push({
+          rel: path.relative(root, full).replaceAll("\\", "/"),
+          title: entry.name.replace(/\.(txt|md)$/i, ""),
+          full,
+          mtime: stat.mtimeMs,
+          lowerName: entry.name.toLowerCase(),
+          words: entry.name.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length >= 4),
+        });
+      } catch (err) {
+        console.error(`Failed while indexing a raw email: ${full}`);
+        console.error(err?.message || err);
+      }
+    }
+  }
+
+  for (const root of selected) {
+    const rawDir = path.join(root, "raw");
+    try {
+      await fs.access(rawDir);
+    } catch {
+      continue;
+    }
+    await walk(rawDir, root);
+  }
+
+  rawMail = found;
+  console.log(`Indexed ${rawMail.length} files in raw/`);
+}
+
+function startOfTodayMs() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  return start.getTime();
+}
+
+async function readRawExcerpt(file) {
+  const raw = await fs.readFile(file.full, "utf8");
+  const text = raw.replace(/\s+/g, " ").trim().slice(0, 1600);
+  return {
+    note: { rel: file.rel, title: file.title, text, lower: text.toLowerCase() },
+    terms: [],
+  };
+}
+
+/** Email questions look at raw/, where each saved message is a text file. */
+async function findRawEmails(question) {
+  const personTerms = queryTerms(question).filter((term) => !EMAIL_FILLER.has(term) && term.length >= 4);
+  const q = question.toLowerCase();
+  const wantsToday = /\b(today|tonight)\b/.test(q);
+  const wantsNew = /\b(new|latest|recent)\b/.test(q);
+  let chosen = [];
+
+  if (personTerms.length) {
+    const ranked = rawMail
+      .map((file) => ({
+        file,
+        score: personTerms.filter((term) => nameMatchesFile(term, file.words)).length,
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score || b.file.mtime - a.file.mtime);
+    const top = ranked[0]?.score || 0;
+    chosen = ranked.filter((item) => item.score === top).map((item) => item.file);
+    // A first name plus a last name should both match. If only the first name matches,
+    // keep it when the file is addressed to a doctor, such as "Dr. Asem".
+    if (top > 0 && top < personTerms.length) {
+      chosen = chosen.filter((file) => {
+        const shortName = personTerms.some((term) => term.length <= 5 && nameMatchesFile(term, file.words));
+        return shortName && /(^|[^a-z])dr([^a-z]|$)/.test(file.lowerName);
+      });
+    }
+    if (wantsToday) {
+      const todayHits = chosen.filter((file) => file.mtime >= startOfTodayMs());
+      if (todayHits.length) chosen = todayHits;
+    }
+  } else if (wantsToday) {
+    chosen = rawMail.filter((file) => file.mtime >= startOfTodayMs()).sort((a, b) => b.mtime - a.mtime);
+  } else if (wantsNew || wantsEmail(question)) {
+    chosen = [...rawMail].sort((a, b) => b.mtime - a.mtime);
+  }
+
+  const picks = chosen.slice(0, 6);
+  const hits = [];
+  for (const file of picks) {
+    try {
+      hits.push(await readRawExcerpt(file));
+    } catch (err) {
+      console.error(`Failed while reading a raw email: ${file.full}`);
+      console.error(err?.message || err);
+    }
+  }
+  return hits;
+}
+
 function isVaultQuestion(question) {
   const q = question.toLowerCase();
-  return /\b(todos?|to-dos?|to do|tasks?|plate|have to do|index|logs?|history|wikis?|finished|second brain)\b/.test(q);
+  return /\b(todos?|to-dos?|to do|tasks?|plate|have to do|index|logs?|history|wikis?|finished|second brain|e-?mails?|inbox)\b/.test(q);
+}
+
+function wantsEmail(question) {
+  return /\b(e-?mails?|inbox)\b/i.test(question);
 }
 
 /** Find a loaded note by the end of its path, such as wiki/todo.md. */
@@ -585,6 +749,7 @@ const BRAIN_MAP = [
   "When the question is about today, open tasks, or the to-do list, answer from wiki/todo.md. Name the open tasks.",
   "When the question is about the index or what wikis exist, answer from wiki/index.md.",
   "When the question is about history or the log, answer from wiki/log.md.",
+  "New emails are text files in the raw/ folder at the vault root. They are not wiki pages. A question about email must be answered from those raw files.",
 ].join(" ");
 
 const INSTRUCTIONS = [
@@ -708,10 +873,8 @@ async function streamAnswer(apiKey, prompt, res, model, reasoning, spoken) {
 }
 
 /** Turn the Thinking menu into Ollama's think setting. Off means no hidden thinking. */
-function ollamaThink(reasoning, model) {
-  // GPT-OSS ignores think:false and reasons anyway (~650 hidden tokens, up to 10s).
-  // "low" is the least it will do: about 4x fewer thinking tokens.
-  if (!reasoning || reasoning === "none") return model?.id.startsWith("gpt-oss") ? "low" : false;
+function ollamaThink(reasoning) {
+  if (!reasoning || reasoning === "none") return false;
   if (reasoning === "low" || reasoning === "medium" || reasoning === "high") return reasoning;
   return "high";
 }
@@ -729,7 +892,7 @@ async function streamLocalAnswer(prompt, res, model, reasoning, spoken) {
       body: JSON.stringify({
         model: model.id,
         stream: true,
-        think: ollamaThink(reasoning, model),
+        think: ollamaThink(reasoning),
         messages: [
           {
             role: "system",
@@ -931,6 +1094,7 @@ async function reloadNotes() {
   notes = loaded;
   guides = nextGuides;
   codePresent = nextPresent;
+  await indexRawMail();
   console.log(`Loaded ${notes.length} notes from ${selected.length} folder(s)`);
 }
 
@@ -1399,7 +1563,12 @@ app.post("/ask", async (req, res) => {
 
   const aboutChat = isChatQuestion(question);
   const history = cleanHistory(req.body?.history);
-  const hits = aboutChat ? [] : pinVaultNotes(question, searchNotes(question));
+  const aboutEmail = wantsEmail(question);
+  const hits = aboutChat
+    ? []
+    : aboutEmail
+      ? await findRawEmails(question)
+      : pinVaultNotes(question, searchNotes(question));
 
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache");
