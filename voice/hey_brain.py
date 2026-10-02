@@ -224,11 +224,9 @@ def question_after_wake(text: str) -> str | None:
     None means the wake phrase was not heard.
     """
     words = normalize(text).split()
-    for start in range(len(words)):
-        window = " ".join(words[start : start + 3])
-        if window == "hey my brain":
-            return " ".join(words[start + 3 :]).strip()
-    return None
+    if len(words) < 3 or " ".join(words[:3]) != "hey my brain":
+        return None
+    return " ".join(words[3:]).strip()
 
 
 def ask_brain(question: str) -> str:

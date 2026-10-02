@@ -14,6 +14,9 @@ const statusText = document.getElementById("statusText");
 const capsule = document.getElementById("capsule");
 const voiceSelect = document.getElementById("voiceSelect");
 const muteBtn = document.getElementById("muteBtn");
+const pauseBtn = document.getElementById("pauseBtn");
+const stopBtn = document.getElementById("stopBtn");
+const restartBtn = document.getElementById("restartBtn");
 const clearBtn = document.getElementById("clearBtn");
 const transcriptEl = document.getElementById("transcript");
 const remoteAudio = document.getElementById("remoteAudio");
@@ -36,6 +39,15 @@ let assistantPartialEl = null;
 let userPartialEl = null;
 let connected = false;
 let muted = false;
+let paused = false;
+let lastQuestion = "";
+let pendingReplay = "";
+let askAbort = null;
+let activeSpeech = null;
+let cancelAnswer = false;
+let currentAnswerBubble = null;
+let listenEpoch = 0;
+let activeReader = null;
 const handledCalls = new Set();
 const countedResponses = new Set();
 let catalog = null;
@@ -70,6 +82,73 @@ talkBtn.addEventListener("click", async () => {
   await startCall();
 });
 
+function syncCallButtons() {
+  pauseBtn.disabled = !connected;
+  stopBtn.disabled = !connected;
+  restartBtn.disabled = !lastQuestion;
+  pauseBtn.textContent = paused ? "Resume" : "Pause";
+  pauseBtn.classList.toggle("is-muted", paused);
+}
+
+function stopSpeaking() {
+  activeSpeech?.stop();
+  kokoroSpeech?.stop();
+  speechSynthesis.cancel();
+  try { remoteAudio.pause(); } catch { /* nothing is playing */ }
+  if (dc && dc.readyState === "open") {
+    dc.send(JSON.stringify({ type: "response.cancel" }));
+  }
+}
+
+function listenForNewQuestion() {
+  // Drop the answer that is playing, keep the call, and wait for a new wake phrase.
+  listenEpoch += 1;
+  cancelAnswer = true;
+  paused = false;
+  stopSpeaking();
+  askAbort?.abort();
+  try { activeReader?.cancel(); } catch { /* the answer already finished */ }
+  if (micStream) {
+    for (const track of micStream.getAudioTracks()) track.enabled = !muted;
+  }
+  syncCallButtons();
+  setStatus("Say Hey my brain, then your new question.");
+  setCapsuleState(muted ? "muted" : "listening");
+}
+
+pauseBtn.addEventListener("click", () => {
+  if (!connected) return;
+  listenForNewQuestion();
+});
+
+stopBtn.addEventListener("click", () => {
+  if (!connected) return;
+  listenForNewQuestion();
+});
+
+restartBtn.addEventListener("click", async () => {
+  if (!lastQuestion) {
+    setStatus("There is no last question yet.");
+    return;
+  }
+  if (paused) {
+    paused = false;
+    if (micStream) {
+      for (const track of micStream.getAudioTracks()) track.enabled = !muted;
+    }
+  }
+  stopSpeaking();
+  askAbort?.abort();
+  if (!connected) {
+    pendingReplay = lastQuestion;
+    await startCall();
+    return;
+  }
+  while (brainBusy) await sleep(40);
+  addBubble("user", lastQuestion, false);
+  await answerWithBrain(lastQuestion);
+});
+
 muteBtn.addEventListener("click", () => {
   if (!micStream) return;
   muted = !muted;
@@ -83,7 +162,7 @@ muteBtn.addEventListener("click", () => {
 });
 
 clearBtn.addEventListener("click", () => {
-  transcriptEl.innerHTML = '<p class="empty">Press Start talking, then speak. This window hears you.</p>';
+  transcriptEl.innerHTML = '<p class="empty">Press Start talking. Say Hey my brain, then your question.</p>';
   assistantPartialEl = null;
   userPartialEl = null;
 });
@@ -159,11 +238,18 @@ async function startCall() {
     modelSelect.disabled = true;
     reasoningSelect.disabled = true;
     muteBtn.disabled = false;
+    syncCallButtons();
     talkBtn.setAttribute("aria-pressed", "true");
     talkLabel.textContent = "End call";
-    setStatus("Listening… speak anytime");
+    setStatus(WAKE_STATUS);
     setCapsuleState("listening");
     setBusy(false);
+    if (pendingReplay) {
+      const again = pendingReplay;
+      pendingReplay = "";
+      addBubble("user", again, false);
+      await answerWithBrain(again);
+    }
   } catch (err) {
     console.error("Failed while starting the call:", err);
     setStatus(humanError(err));
@@ -175,6 +261,19 @@ async function startCall() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const WAKE_STATUS = "Listening. I only answer when you start with Hey my brain.";
+
+/**
+ * The words after "Hey my brain", or null when the phrase is not at the start.
+ * An empty string means they said only the wake phrase.
+ */
+function questionAfterWake(text) {
+  const cleaned = String(text || "").replace(/^[\s"'“”]+/, "").trim();
+  const match = cleaned.match(/^hey\s+my\s+brain\b[\s,.:;!?\-]*/i);
+  if (!match) return null;
+  return cleaned.slice(match[0].length).trim();
 }
 
 /** Whisper sometimes invents these on a quiet room. Ignore them. */
@@ -211,6 +310,7 @@ function looksLikeSilence(text) {
  * The clip stays on this Mac. It is not sent to the voice-control model.
  */
 function recordUntilSilence(stream) {
+  const epoch = listenEpoch;
   return new Promise((resolve) => {
     const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
@@ -218,13 +318,14 @@ function recordUntilSilence(stream) {
     const rec = new MediaRecorder(stream, { mimeType: mime });
     const chunks = [];
     let settled = false;
+    let discard = false;
     rec.ondataavailable = (event) => {
       if (event.data.size) chunks.push(event.data);
     };
     rec.onstop = () => {
       if (settled) return;
       settled = true;
-      resolve(new Blob(chunks, { type: mime }));
+      resolve(discard ? new Blob() : new Blob(chunks, { type: mime }));
     };
 
     const ctx = new AudioContext();
@@ -239,6 +340,11 @@ function recordUntilSilence(stream) {
     rec.start();
 
     const timer = setInterval(() => {
+      if (epoch !== listenEpoch) {
+        discard = true;
+        finish();
+        return;
+      }
       if (localStop || !connected) {
         finish();
         return;
@@ -287,27 +393,39 @@ async function startLocalListen() {
   modelSelect.disabled = true;
   reasoningSelect.disabled = true;
   muteBtn.disabled = false;
+  syncCallButtons();
   talkBtn.setAttribute("aria-pressed", "true");
   talkLabel.textContent = "End call";
   const macOnly = Boolean(selectedModel()?.local);
-  setStatus(macOnly ? "Listening on this Mac. The Kokoro voice will speak the answer." : "Listening on this Mac. Voice control will speak the answer.");
+  setStatus(WAKE_STATUS);
   setCapsuleState("listening");
   setBusy(false);
   // Open voice control now, while you talk, so the first answer starts sooner.
   // Local models use the Kokoro voice, so OpenAI is not needed at all.
   if (!macOnly) ensureSpeaker().catch(() => {});
 
+  if (pendingReplay) {
+    const again = pendingReplay;
+    pendingReplay = "";
+    addBubble("user", again, false);
+    await answerWithBrain(again);
+  }
+
   while (connected && !localStop) {
+    if (paused) {
+      await sleep(250);
+      continue;
+    }
     if (muted) {
       setStatus("Muted");
       setCapsuleState("muted");
       await sleep(250);
       continue;
     }
-    setStatus("Listening on this Mac. Voice control will speak the answer.");
+    setStatus(WAKE_STATUS);
     setCapsuleState("listening");
     const clip = await recordUntilSilence(micStream);
-    if (!connected || localStop) break;
+    if (!connected || localStop || paused) continue;
     if (!clip || clip.size < 2000) continue;
 
     setStatus("Writing down what you said…");
@@ -328,9 +446,20 @@ async function startLocalListen() {
       await sleep(600);
       continue;
     }
-    if (looksLikeSilence(text)) continue;
-    addBubble("user", text, false);
-    await answerWithBrain(text);
+    if (looksLikeSilence(text)) {
+      setStatus(WAKE_STATUS);
+      setCapsuleState("listening");
+      continue;
+    }
+    const question = questionAfterWake(text);
+    // No wake phrase, or only the phrase with no question: stay quiet.
+    if (!question) {
+      setStatus(WAKE_STATUS);
+      setCapsuleState("listening");
+      continue;
+    }
+    addBubble("user", question, false);
+    await answerWithBrain(question);
   }
 }
 
@@ -562,6 +691,7 @@ function kokoroVoice() {
   let chain = Promise.resolve();
   let stopped = false;
   let playing = null;
+  let release = null;
   return (kokoroSpeech = {
     get done() { return chain; },
     push(text) {
@@ -581,20 +711,24 @@ function kokoroVoice() {
           if (stopped) return;
           playing = new Audio(url);
           await new Promise((resolve) => {
+            release = resolve;
             playing.onended = resolve;
             playing.onerror = resolve;
             playing.play().catch(resolve);
           });
+          release = null;
           URL.revokeObjectURL(url);
         } catch (err) {
           console.error("Failed while speaking with Kokoro, using the Mac voice:", err);
           if (stopped) return;
           const utterance = new SpeechSynthesisUtterance(text);
           await new Promise((resolve) => {
+            release = resolve;
             utterance.onend = resolve;
             utterance.onerror = resolve;
             speechSynthesis.speak(utterance);
           });
+          release = null;
         }
       });
     },
@@ -603,6 +737,8 @@ function kokoroVoice() {
       stopped = true;
       playing?.pause();
       speechSynthesis.cancel();
+      release?.();
+      release = null;
     },
   });
 }
@@ -689,9 +825,11 @@ async function hangUp({ keepStatus = false } = {}) {
   voiceSelect.disabled = false;
   modelSelect.disabled = false;
   reasoningSelect.disabled = false;
+  paused = false;
   muteBtn.disabled = true;
   muteBtn.textContent = "Mute mic";
   muteBtn.classList.remove("is-muted");
+  syncCallButtons();
   setCapsuleState("idle");
   setBusy(false);
   if (!keepStatus) setStatus("Call ended");
@@ -752,10 +890,18 @@ function handleServerEvent(event) {
     type === "conversation.item.input_audio_transcription.done"
   ) {
     const text = event.transcript || event.item?.content?.[0]?.transcript || "";
-    if (text.trim()) {
-      finalizeUser(text.trim());
-      if (needsVoiceControl(selectedModel())) answerWithBrain(text.trim());
+    const question = questionAfterWake(text.trim());
+    if (!question) {
+      if (userPartialEl) {
+        userPartialEl.remove();
+        userPartialEl = null;
+      }
+      setStatus(WAKE_STATUS);
+      return;
     }
+    finalizeUser(question);
+    if (selectedModel()?.hears) sendEvent({ type: "response.create" });
+    else if (needsVoiceControl(selectedModel())) answerWithBrain(question);
     return;
   }
   if (
@@ -817,8 +963,13 @@ async function answerFromNotes(event) {
 
 /** Bonsai and GPT-6 write the answer. Voice control is what speaks it. */
 async function answerWithBrain(question) {
-  if (brainBusy) return;
+  if (brainBusy || paused) return;
+  lastQuestion = question;
+  syncCallButtons();
   brainBusy = true;
+  cancelAnswer = false;
+  currentAnswerBubble = null;
+  askAbort = new AbortController();
   setStatus(`Thinking with ${selectedModel()?.label || "the selected model"}…`);
   // Local models (Bonsai) always use the Kokoro voice on this Mac: free, no OpenAI.
   const macOnly = Boolean(selectedModel()?.local);
@@ -826,9 +977,11 @@ async function answerWithBrain(question) {
   speakerReady?.catch(() => {});
   let speech = null;
   let bubble = null;
+  let reader = null;
   try {
     const response = await fetch("/ask", {
       method: "POST",
+      signal: askAbort.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         question,
@@ -848,7 +1001,8 @@ async function answerWithBrain(question) {
       throw new Error(message);
     }
 
-    const reader = response.body.getReader();
+    reader = response.body.getReader();
+    activeReader = reader;
     const decoder = new TextDecoder();
     let buffer = "";
     let answer = "";
@@ -870,10 +1024,16 @@ async function answerWithBrain(question) {
         }
         // Voice control could not connect. The Mac voice is only a stand-in.
         speech ??= macOnly ? kokoroVoice() : macVoice("Speaking with the Mac voice. OpenAI has no credits.");
+        activeSpeech = speech;
+        if (paused || cancelAnswer) {
+          speech.stop();
+          return;
+        }
         if (piece) speech.push(piece);
       }
     };
     while (true) {
+      if (cancelAnswer) break;
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -896,6 +1056,7 @@ async function answerWithBrain(question) {
           answer += text;
           unspoken += text;
           bubble ??= addBubble("assistant", "", true);
+          currentAnswerBubble = bubble;
           bubble.querySelector(".text").textContent = answer.trim();
           transcriptEl.scrollTop = transcriptEl.scrollHeight;
         } else if (event.type === "usage") addBrainUsage(event);
@@ -905,6 +1066,7 @@ async function answerWithBrain(question) {
       await speakReady(false);
     }
 
+    if (cancelAnswer) return;
     if (!answer.trim()) throw new Error("The selected model returned an empty answer.");
     bubble?.classList.remove("partial");
     await speakReady(true);
@@ -913,18 +1075,20 @@ async function answerWithBrain(question) {
     if (connected && !localStop) {
       setCapsuleState("listening");
       setStatus(macOnly
-        ? "Listening on this Mac. The Kokoro voice will speak the answer."
+        ? WAKE_STATUS
         : voiceBlocked
-        ? "Listening on this Mac. Voice control has no credits, so the Mac voice spoke."
-        : "Listening on this Mac. Voice control will speak the answer.");
+        ? "Listening. Say Hey my brain, then your question. Voice control has no credits, so the Mac voice spoke."
+        : WAKE_STATUS);
     }
   } catch (err) {
-    console.error("Failed while asking the selected model:", err);
     speech?.stop();
+    if (err?.name === "AbortError") return;
+    console.error("Failed while asking the selected model:", err);
     bubble?.classList.remove("partial");
     setStatus(err.message || "The selected model could not answer.");
     scriptedReply = false;
   } finally {
+    if (activeReader === reader) activeReader = null;
     brainBusy = false;
   }
 }
@@ -934,6 +1098,20 @@ function addBrainUsage(usage) {
   chat.brainOutput += usage.outputTokens || 0;
   chat.thinking += usage.reasoningTokens || 0;
   renderChat();
+  // Keep this question's own total on its answer, even after the next question.
+  stampQuestionUsage(currentAnswerBubble, usage);
+}
+
+function stampQuestionUsage(bubble, usage) {
+  if (!bubble || !usage) return;
+  const total = (usage.inputTokens || 0) + (usage.outputTokens || 0);
+  let line = bubble.querySelector(".usage");
+  if (!line) {
+    line = document.createElement("p");
+    line.className = "usage";
+    bubble.append(line);
+  }
+  line.textContent = `This question: ${total.toLocaleString()} tokens · ${formatUsd(usage.usd || 0)}`;
 }
 
 function sendEvent(payload) {
@@ -967,8 +1145,16 @@ function appendAssistantPartial(delta) {
 }
 
 function updateUserPartial(text) {
-  if (!userPartialEl) userPartialEl = addBubble("user", text, true);
-  else userPartialEl.querySelector(".text").textContent = text;
+  const question = questionAfterWake(text);
+  if (!question) {
+    if (userPartialEl) {
+      userPartialEl.remove();
+      userPartialEl = null;
+    }
+    return;
+  }
+  if (!userPartialEl) userPartialEl = addBubble("user", question, true);
+  else userPartialEl.querySelector(".text").textContent = question;
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
 }
 

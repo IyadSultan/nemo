@@ -75,6 +75,9 @@
             </select>
           </label>
           <button type="button" class="ghost-btn" id="muteBtn" disabled>Mute mic</button>
+          <button type="button" class="ghost-btn" id="pauseBtn" disabled title="Stop this answer. Then say Hey my brain to ask a new question.">Pause</button>
+          <button type="button" class="ghost-btn" id="stopBtn" disabled title="Stop this answer. Then say Hey my brain to ask a new question.">Stop</button>
+          <button type="button" class="ghost-btn" id="restartBtn" disabled>Restart last</button>
         </div>
       </section>
 
@@ -95,7 +98,7 @@
           <button type="button" class="ghost-btn small" id="clearBtn">Clear</button>
         </div>
         <div class="transcript" id="transcript" role="log" aria-live="polite">
-          <p class="empty">Press Start talking, then speak. This window hears you.</p>
+          <p class="empty">Press Start talking. Say Hey my brain, then your question.</p>
         </div>
       </section>
     </main>

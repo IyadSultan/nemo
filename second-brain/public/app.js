@@ -12,7 +12,7 @@ const askBtn = document.getElementById("askBtn");
 const micBtn = document.getElementById("micBtn");
 const readBtn = document.getElementById("readBtn");
 const statusEl = document.getElementById("status");
-const answerEl = document.getElementById("answer");
+const threadEl = document.getElementById("thread");
 const sourcesEl = document.getElementById("sources");
 const brandLine = document.getElementById("brandLine");
 const modelSelect = document.getElementById("modelSelect");
@@ -29,6 +29,8 @@ let busy = false;
 let catalog = null;
 let defaultModelId = "gpt-oss:20b";
 let sessionUsd = 0;
+let activeTurn = null;
+let latestAnswer = "";
 
 function setStatus(text) {
   statusEl.textContent = text;
@@ -137,6 +139,10 @@ function showUsage(usage) {
   outTokensEl.textContent = usage.outputTokens.toLocaleString();
   thinkTokensEl.textContent = usage.reasoningTokens.toLocaleString();
   chatPriceEl.textContent = formatUsd(usage.usd);
+  if (activeTurn) {
+    const total = (usage.inputTokens || 0) + (usage.outputTokens || 0);
+    activeTurn.meta.textContent = `This question: ${total.toLocaleString()} tokens · ${formatUsd(usage.usd)}`;
+  }
 
   const freshInput = Math.max(0, usage.inputTokens - usage.cachedTokens);
   const bits = [
@@ -177,14 +183,41 @@ async function loadHealth() {
   }
 }
 
+function beginTurn(question) {
+  threadEl.querySelector(".empty")?.remove();
+  const turn = document.createElement("article");
+  turn.className = "turn";
+
+  const questionLine = document.createElement("p");
+  questionLine.className = "turn-q";
+  questionLine.textContent = question;
+
+  const answerLine = document.createElement("div");
+  answerLine.className = "turn-a";
+
+  const sources = document.createElement("ul");
+  sources.className = "turn-sources";
+  sources.hidden = true;
+
+  const meta = document.createElement("p");
+  meta.className = "turn-meta";
+  meta.textContent = "Counting tokens…";
+
+  turn.append(questionLine, answerLine, sources, meta);
+  threadEl.append(turn);
+  threadEl.scrollTop = threadEl.scrollHeight;
+  return { answerLine, sources, meta };
+}
+
 async function ask() {
   const question = questionEl.value.trim();
   if (!question || busy) return;
 
   busy = true;
   askBtn.disabled = true;
-  answerEl.textContent = "";
   readBtn.hidden = true;
+  latestAnswer = "";
+  activeTurn = beginTurn(question);
   showSources([]);
   resetChatMeter();
   setStatus("Searching your notes…");
@@ -239,13 +272,16 @@ async function ask() {
           setStatus(event.message || "Looking on the web…");
         } else if (event.type === "sources") {
           showSources(event.sources || []);
+          fillTurnSources(activeTurn, event.sources || []);
           setStatus(event.sources?.length ? "Writing the answer…" : "No matching notes");
         } else if (event.type === "delta") {
           if (!started) {
-            answerEl.textContent = "";
+            activeTurn.answerLine.textContent = "";
             started = true;
           }
-          answerEl.textContent += event.text;
+          latestAnswer += event.text || "";
+          activeTurn.answerLine.textContent = latestAnswer;
+          threadEl.scrollTop = threadEl.scrollHeight;
         } else if (event.type === "usage") {
           showUsage(event);
         } else if (event.type === "error") {
@@ -256,11 +292,13 @@ async function ask() {
       }
     }
 
-    if (answerEl.textContent.trim()) readBtn.hidden = false;
+    if (latestAnswer.trim()) readBtn.hidden = false;
   } catch (err) {
     console.error("Failed while asking:", err);
     setStatus(err.message || "Something went wrong.");
-    if (!answerEl.textContent) answerEl.textContent = err.message || "Something went wrong.";
+    if (activeTurn && !activeTurn.answerLine.textContent) {
+      activeTurn.answerLine.textContent = err.message || "Something went wrong.";
+    }
   } finally {
     busy = false;
     askBtn.disabled = false;
@@ -310,8 +348,20 @@ function setupMic() {
   });
 }
 
+function fillTurnSources(turn, sources) {
+  if (!turn) return;
+  turn.sources.replaceChildren();
+  const named = sources.filter((source) => source.title || source.file);
+  turn.sources.hidden = named.length === 0;
+  for (const source of named) {
+    const item = document.createElement("li");
+    item.textContent = source.title || source.file;
+    turn.sources.append(item);
+  }
+}
+
 readBtn.addEventListener("click", () => {
-  const text = answerEl.textContent.trim();
+  const text = latestAnswer.trim();
   if (!text || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));

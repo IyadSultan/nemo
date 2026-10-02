@@ -228,7 +228,7 @@ function buildPrompt(question, hits, pages = []) {
     return [
       `Note: ${note.title}`,
       `File: ${note.rel}`,
-      excerpt(note.text, terms),
+      noteBody(note, terms),
     ].join("\n");
   });
 
@@ -238,6 +238,9 @@ function buildPrompt(question, hits, pages = []) {
 
   const newsNote = wantsNews(question)
     ? "The user wants today's news. Summarize three or four headlines from the web pages in plain sentences. Do not ask which topic."
+    : "";
+  const vaultNote = isVaultQuestion(question)
+    ? "This question is about the user's own second brain. Answer from the notes, especially wiki/todo.md for tasks. Do not use the web. Do not say a listed file is missing if its text is below."
     : "";
 
   return [
@@ -254,7 +257,60 @@ function buildPrompt(question, hits, pages = []) {
     "Reminder: if you can tell what the user wants, answer it, even if the wording is clumsy.",
     "Ask one short clarifying question only when there is no topic, for example a noise or 'can you hear me'.",
     newsNote,
+    vaultNote,
   ].filter(Boolean).join("\n");
+}
+
+/** Questions about the user's own files, not the public web. */
+function isVaultQuestion(question) {
+  const q = question.toLowerCase();
+  return /\b(todos?|to-dos?|to do|tasks?|plate|have to do|index|logs?|history|wikis?|finished|second brain)\b/.test(q);
+}
+
+/** Find a loaded note by the end of its path, such as wiki/todo.md. */
+function findNote(relSuffix) {
+  const want = relSuffix.toLowerCase();
+  return notes.find((note) => note.rel.replaceAll("\\", "/").toLowerCase().endsWith(want)) || null;
+}
+
+/**
+ * Keyword search misses todo.md when the question says "to-do" or "today".
+ * Pin the real files so the model can see them.
+ */
+function pinVaultNotes(question, hits) {
+  const q = question.toLowerCase();
+  const wanted = [];
+  if (/\b(todos?|to-dos?|to do|tasks?|plate|have to do|due|overdue)\b/.test(q)) {
+    wanted.push("wiki/todo.md", "wiki/todo_mais.md");
+  }
+  if (/\b(index|wikis?|where)\b/.test(q)) wanted.push("wiki/index.md");
+  if (/\b(logs?|history)\b/.test(q)) wanted.push("wiki/log.md");
+  if (/\bfinished\b/.test(q)) wanted.push("wiki/finished.md");
+
+  const pinned = [];
+  for (const rel of wanted) {
+    const note = findNote(rel);
+    if (!note) continue;
+    if (hits.some((hit) => hit.note === note || hit.note.rel === note.rel)) continue;
+    pinned.push({ note, terms: [], pinned: true });
+  }
+  return [...pinned, ...hits];
+}
+
+function noteBody(note, terms) {
+  const rel = note.rel.replaceAll("\\", "/").toLowerCase();
+  const keyFile = ["wiki/todo.md", "wiki/todo_mais.md", "wiki/log.md", "wiki/index.md", "wiki/finished.md"]
+    .some((suffix) => rel.endsWith(suffix));
+  if (keyFile || !terms?.length) return vaultExcerpt(note);
+  return excerpt(note.text, terms);
+}
+
+function vaultExcerpt(note) {
+  const rel = note.rel.replaceAll("\\", "/").toLowerCase();
+  if (rel.endsWith("wiki/log.md")) return note.text.slice(-1800).trim();
+  if (rel.endsWith("wiki/index.md")) return note.text.slice(0, 1800).trim();
+  if (rel.endsWith("wiki/todo.md")) return note.text.slice(0, 4500).trim();
+  return note.text.slice(0, 1800).trim();
 }
 
 /** The clock on this Mac, so "today" does not depend on a web search. */
@@ -314,6 +370,7 @@ function shouldBrowse(question) {
     "thanks",
   ]);
   if (skip.has(cleaned)) return false;
+  if (isVaultQuestion(question) && !wantsNews(question)) return false;
   return cleaned.split(" ").filter(Boolean).length >= 2;
 }
 
@@ -464,9 +521,25 @@ async function searchWeb(question) {
   return [...opened, ...rest].filter((page) => page.text);
 }
 
+// Short map of CLAUDE.md, the vault's operating manual.
+// The full manual is long. This is the part the model needs to find files.
+const BRAIN_MAP = [
+  "This is Iyad Sultan's KHCC second brain, an Obsidian vault on this Mac. It is not an Azure DevOps wiki and not a Git wiki.",
+  "The wiki folder is named wiki/. The user may call it the wikis folder. There is no folder named wikis.",
+  "Three files matter on every question about his notes. They are real files. Do not say they are missing when their text is in the notes.",
+  "To-do dot md means wiki/todo.md. That file holds all of Iyad's to-dos. Open tasks are at the top. Spoken names for this same file: to-do.md, todo.md, to-do dot md, and the to-do list. There is no separate file named to-do.md.",
+  "Index dot md means wiki/index.md. That file is the index of all wiki pages.",
+  "Logs dot md means wiki/log.md. That file is the history of the wiki. Spoken names for this same file: logs.md, log.md, logs dot md, and the log. Newest history is at the end. There is no separate file named logs.md.",
+  "wiki/todo_mais.md is Mais Tarawneh's open tasks. wiki/finished.md and wiki/finished_mais.md are completed tasks.",
+  "When the question is about today, open tasks, or the to-do list, answer from wiki/todo.md. Name the open tasks.",
+  "When the question is about the index or what wikis exist, answer from wiki/index.md.",
+  "When the question is about history or the log, answer from wiki/log.md.",
+].join(" ");
+
 const INSTRUCTIONS = [
   "You answer questions from a personal wiki of work notes, and from web pages this Mac looked up.",
-  "Use the note excerpts for the user's own work. Use the web page excerpts for anything the notes do not cover.",
+  BRAIN_MAP,
+  "Use the note excerpts for the user's own work. Use the web page excerpts only for facts that are not in the notes.",
   "First decide whether the question makes sense.",
   "If the wording is clumsy but a topic is clear, answer that topic. A request for the latest news means a short briefing of today's headlines.",
   "Ask what they mean only when there is no topic at all, such as a noise or 'can you hear me'.",
@@ -775,6 +848,10 @@ function guideBlock() {
 function voiceInstructions() {
   return [
     "You are the user's second brain, in a live voice call.",
+    "His to-dos are all in wiki/todo.md. He may call that file to-do dot md.",
+    "wiki/index.md is the index of all wiki pages. He may call that file index dot md.",
+    "wiki/log.md is the history of the wiki. He may call that file logs dot md. There is no separate logs.md.",
+    "Stay silent unless the user's words start with Hey my brain. Otherwise do not speak.",
     "You can hear the user through the microphone. Never say you cannot hear audio.",
     "Finish each reply. Do not stop mid-sentence.",
     "Whenever a folder is in use, follow its code.md. Those rulebooks are included below.",
@@ -1078,7 +1155,8 @@ app.post("/session", async (req, res) => {
           // Low eagerness so the speaker's own voice does not cut the reply off.
           eagerness: "low",
           interrupt_response: !speakOnly,
-          create_response: Boolean(chosen.hears) && !speakOnly,
+          // The page decides when to answer. It only does that after "Hey my brain".
+          create_response: false,
         },
         transcription: {
           model: "gpt-4o-mini-transcribe",
@@ -1163,7 +1241,7 @@ app.post("/ask", async (req, res) => {
     });
   }
 
-  const hits = searchNotes(question);
+  const hits = pinVaultNotes(question, searchNotes(question));
 
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache");
