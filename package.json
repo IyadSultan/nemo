@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "brain": "node second-brain/server.js"
   },
   "engines": {
     "node": ">=18"

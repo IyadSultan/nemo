@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Second brain</title>
+    <meta
+      name="description"
+      content="Ask your wiki a question. GPT-OSS 20B answers on this Mac, with thinking off."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true"></div>
+
+    <main class="stage">
+      <header class="brand">
+        <p class="brand-mark">Second brain</p>
+        <p class="brand-line" id="brandLine">Loading your notes…</p>
+      </header>
+
+      <section class="panel" aria-label="Ask the wiki">
+        <div class="choices">
+          <label>
+            Model
+            <select id="modelSelect" aria-label="Model"></select>
+          </label>
+          <label>
+            Reasoning
+            <select id="reasoningSelect" aria-label="Reasoning level"></select>
+          </label>
+        </div>
+        <p class="rates" id="rates">Loading prices…</p>
+
+        <label class="question-label" for="question">Ask a question</label>
+        <textarea
+          id="question"
+          rows="3"
+          placeholder="Example: What is open on the USTDA project?"
+        ></textarea>
+
+        <div class="actions">
+          <button type="button" class="ask" id="askBtn">Ask</button>
+          <button type="button" class="mic" id="micBtn">Speak</button>
+          <button type="button" class="quiet" id="readBtn" hidden>Read aloud</button>
+        </div>
+
+        <p class="status" id="status" role="status">Ready when you are</p>
+      </section>
+
+      <section class="meter" aria-label="Tokens and price">
+        <h2>This chat</h2>
+        <dl class="counts">
+          <div>
+            <dt>Input tokens</dt>
+            <dd id="inTokens">0</dd>
+          </div>
+          <div>
+            <dt>Output tokens</dt>
+            <dd id="outTokens">0</dd>
+          </div>
+          <div>
+            <dt>Thinking tokens</dt>
+            <dd id="thinkTokens">0</dd>
+          </div>
+          <div>
+            <dt>Price</dt>
+            <dd id="chatPrice">$0.00</dd>
+          </div>
+        </dl>
+        <p class="breakdown" id="breakdown">
+          The price appears after an answer, using the model you picked and the tokens that answer used.
+        </p>
+        <p class="session">Session total <strong id="sessionPrice">$0.00</strong></p>
+      </section>
+
+      <section class="answer-wrap" aria-live="polite">
+        <h2>Answer</h2>
+        <div class="answer" id="answer">Your answer will show up here.</div>
+      </section>
+
+      <section class="sources-wrap">
+        <h2>Notes and web pages</h2>
+        <ul class="sources" id="sources">
+          <li class="empty">None yet</li>
+        </ul>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
