@@ -57,7 +57,7 @@ let micBusy = false;
 const handledCalls = new Set();
 const countedResponses = new Set();
 let catalog = null;
-let defaultModelId = "gpt-oss:20b";
+let defaultModelId = "claude-opus";
 let chat = emptyChat();
 // When the user stopped talking (performance.now), until the answer starts speaking.
 let questionEndedAt = 0;

@@ -33,8 +33,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // One .env at the repo root holds the OpenAI key for Nemo and this app.
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
-const DEFAULT_MODEL = "gpt-oss:20b";
-const DEFAULT_REASONING = "none";
+const DEFAULT_MODEL = "claude-opus";
+const DEFAULT_REASONING = "low";
+// Chat memory is compressed by a local Ollama model, whatever model answers.
+const MEMORY_MODEL = "gpt-oss:20b";
 // Same live voice model as Nemo (voice control). It hears the microphone.
 const VOICE_MODEL = "gpt-realtime-2.1-mini";
 const LOCAL_VOICE_MODEL = path.join(__dirname, "..", "voice", "models", "ggml-small.en.bin");
@@ -3096,7 +3098,7 @@ app.post("/compress", async (req, res) => {
   const prior = cleanMemory(req.body?.memory);
   if (!history.length && !prior) return res.json({ memory: "" });
 
-  const model = getModel(DEFAULT_MODEL);
+  const model = getModel(MEMORY_MODEL);
   const source = [
     prior ? `Older memory:\n${prior}` : "",
     ...history.map((turn) => `User asked: ${turn.question}\nAnswered: ${turn.answer}`),
@@ -3295,7 +3297,7 @@ try {
 
 app.listen(PORT, () => {
   console.log(`\nSecond brain → http://localhost:${PORT}`);
-  console.log(`Default model: ${DEFAULT_MODEL} (thinking off). Change it on the page.`);
+  console.log(`Default model: ${DEFAULT_MODEL} (thinking ${DEFAULT_REASONING}). Change it on the page.`);
   if (!process.env.OPENAI_API_KEY) {
     console.warn("OPENAI_API_KEY is not set. Copy .env.example to .env first.\n");
   }

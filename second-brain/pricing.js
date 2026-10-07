@@ -91,6 +91,18 @@ export const MODELS = [
     reasoning: ["low", "medium", "high", "xhigh", "max"],
   },
   {
+    id: "claude-opus",
+    // Same as Claude Sonnet below: runs through `claude -p` on your subscription.
+    cliModel: "opus",
+    label: "Claude Opus",
+    blurb: "Most capable Claude. Uses your Claude subscription through Claude Code",
+    subscription: true,
+    inputPerMillion: 0,
+    cachedInputPerMillion: 0,
+    outputPerMillion: 0,
+    reasoning: ["low", "medium", "high", "xhigh", "max"],
+  },
+  {
     id: "claude-sonnet",
     // Runs through the Claude Code app on this Mac (`claude -p`), so it uses the
     // Claude subscription you are logged in with, not an API key. Personal use only.

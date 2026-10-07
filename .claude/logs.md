@@ -173,3 +173,25 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 
 - 2026-10-07: Added "Claude Sonnet" model option that runs via `claude -p` (subscription login, no API key). New `askClaude`/`streamClaudeAnswer` in server.js; model entry in pricing.js. Tested on a temp port: answer streamed in ~3 s. Running server (port 3001) not restarted.
 **Response:** Testing end to end against the running server.
+
+## 2026-10-07 23:38 — talk_to_your_brain
+
+**Prompt:** psuh
+**Response:** Pushed. Logging the account gotcha and updating the wiki.
+
+## 2026-10-07 23:41 — talk_to_your_brain
+
+**Prompt:** restart the server for me
+**Response:** It's a launchd agent, so I'll restart it through launchctl.
+
+## 2026-10-07 23:44 — talk_to_your_brain
+
+**Prompt:** Are you linking uh, the uh, Claude to this app using an API key or just using the subscription? Uh,
+**Response:** The server is restarted and Claude Sonnet works. The page at `localhost:3001` loads, and asking Claude Sonnet to say "ready" returned "Ready." It runs as a background service (`com.iyad.talk-to-your-brain`), so I restarted it through macOS's service manager, launchd. It will keep starting on its own after a reboot as before. **Next:** reload the page in your browser and choose **Claude Sonnet** in […]
+
+## 2026-10-07 23:51 — talk_to_your_brain
+
+**Prompt:** add Claude Opus too and make it the default model
+
+- 2026-10-07: Added "Claude Opus" (subscription, `claude -p --model opus`) and made it the default model, thinking Low. Chat-memory compression pinned to gpt-oss:20b (MEMORY_MODEL) since it calls Ollama directly. Server restarted; Opus answers in ~3 s.
+**Response:** 15.7 s is slow. Checking whether that's Opus or the app's web lookup.
