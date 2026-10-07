@@ -236,6 +236,17 @@ button:disabled {
   font-size: 1.08rem;
 }
 
+.email-draft {
+  margin: 0.6rem 0 0;
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--line);
+  white-space: pre-wrap;
+}
+
+.outlook-btn {
+  margin-top: 0.6rem;
+}
+
 .turn-meta,
 .turn-sources {
   color: var(--muted);

@@ -95,7 +95,9 @@ function showRates() {
   }
   const billing = model.local
     ? "It runs on this Mac, so the answer is free."
-    : "Higher reasoning adds thinking tokens, billed at the output price.";
+    : model.subscription
+      ? "It uses your Claude subscription limits, not per-token billing."
+      : "Higher reasoning adds thinking tokens, billed at the output price.";
   ratesEl.textContent = `${model.label}: ${formatRate(model.inputPerMillion)} per million input tokens, ${formatRate(model.outputPerMillion)} per million output tokens. ${model.blurb}. ${billing}`;
 }
 
@@ -215,6 +217,164 @@ async function loadHealth() {
   }
 }
 
+/**
+ * A reply has two parts. Words before EMAIL_BODY are the short summary.
+ * Words after it are the letter the Outlook button opens.
+ */
+function splitEmailDraft(raw, finished) {
+  const match = /EMAIL_BODY/i.exec(raw);
+  if (match) {
+    const spoken = raw.slice(0, match.index);
+    const written = raw.slice(match.index + match[0].length).replace(/^[\s:—-]+/, "");
+    return {
+      spoken: finished ? spoken.trim() : spoken,
+      written: finished ? written.trim() : written,
+    };
+  }
+  if (!finished) {
+    const upper = raw.toUpperCase();
+    const token = "EMAIL_BODY";
+    for (let size = token.length - 1; size > 3; size -= 1) {
+      if (upper.endsWith(token.slice(0, size))) {
+        return { spoken: raw.slice(0, -size), written: "" };
+      }
+    }
+  }
+  return { spoken: finished ? raw.trim() : raw, written: "" };
+}
+
+/** "Haitham Aryan" becomes "Haitham". */
+function firstName(full) {
+  const word = String(full || "").trim().split(/\s+/)[0].replace(/[,.]+$/, "");
+  if (!/^[A-Za-z][A-Za-z'’-]+$/.test(word)) return "";
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+/** Fix the letter before it is shown. IS replaces [Your Name]. */
+/**
+ * Turn a flat draft into a short letter, with a comma, a period, and a blank line
+ * between the greeting, the message, and the sign-off.
+ */
+function polishReply(body, fullName) {
+  const first = firstName(fullName);
+  let text = String(body || "")
+    .replace(/[ \t]*Get Outlook for (?:Mac|iOS|Android|Windows)[^\n]*/gi, "")
+    .replace(/\[(?:Sender|Recipient)\s*Name\]/gi, first || "colleague")
+    .replace(/\[Your Name\]/gi, "IS");
+  if (first) text = text.replace(/^(\s*Dear\s+)(?:colleague|friend|there)\b/i, `$1${first}`);
+  text = text.replace(/\r\n/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+
+  const sentenceStart = new Set([
+    "i", "we", "the", "please", "this", "it", "thank", "thanks", "can", "could",
+    "would", "let", "just", "also", "there", "here", "my", "our", "your", "as",
+    "if", "when", "after", "before", "a", "an", "so", "and", "but",
+  ]);
+
+  let sign = "";
+  const signMatch = text.match(/^([\s\S]*?)\s*\bbest regards\b[,.]?\s*(?:\n+\s*)?(?:IS)?\s*$/i);
+  if (signMatch) {
+    text = signMatch[1].trim();
+    sign = "Best regards,\n\nIS";
+  }
+
+  let greet = "";
+  const dear = text.match(/^dear\s+([\s\S]+)$/i);
+  if (dear) {
+    const rest = dear[1].trim();
+    const withComma = rest.match(/^([^,\n]{1,80}),\s*([\s\S]*)$/);
+    const withLine = rest.match(/^([^\n]{1,80})\n+([\s\S]*)$/);
+    if (withComma) {
+      greet = `Dear ${withComma[1].trim()},`;
+      text = withComma[2].trim();
+    } else if (withLine && withLine[1].trim().split(/\s+/).length <= 4) {
+      greet = `Dear ${withLine[1].replace(/[,.]$/, "").trim()},`;
+      text = withLine[2].trim();
+    } else {
+      const words = rest.split(/\s+/);
+      const name = [];
+      for (const word of words) {
+        const bare = word.replace(/[,.]$/, "");
+        if (name.length && sentenceStart.has(bare.toLowerCase())) break;
+        if (name.length >= 3) break;
+        if (name.length && !/^[A-Z]/.test(bare)) break;
+        name.push(bare);
+        if (/[,.]$/.test(word)) break;
+      }
+      greet = `Dear ${name.join(" ")},`;
+      text = words.slice(name.length).join(" ").replace(/^[,.\s]+/, "");
+    }
+  }
+
+  const message = text
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => (/[.!?]$/.test(line) ? line : `${line}.`))
+    .map((line, index) => (index === 0 ? line.charAt(0).toUpperCase() + line.slice(1) : line))
+    .join("\n\n");
+
+  return [greet, message, sign].filter(Boolean).join("\n\n");
+}
+
+/** Ask this Mac to open the written reply in Outlook. The message is not sent. */
+async function openInOutlook(button, outlook, body) {
+  button.disabled = true;
+  setStatus("Opening Outlook…");
+  try {
+    const response = await fetch("/open-outlook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: outlook.to || "",
+        name: outlook.name || "",
+        subject: outlook.subject || "",
+        body,
+        original: outlook.original || "",
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Outlook did not open.");
+    const kind = outlook.original || /^re:/i.test(outlook.subject || "") ? "reply" : "email";
+    setStatus(outlook.to
+      ? `Outlook has the ${kind}. Press Send when it looks right.`
+      : `Outlook has the ${kind}. Type who it goes to, then press Send.`);
+  } catch (err) {
+    console.error("Failed while opening Outlook:", err);
+    setStatus(err.message || "Outlook did not open.");
+    button.disabled = false;
+  }
+}
+
+/** The new letter, then a line, then the email being answered. */
+function replyWithOriginal(body, original) {
+  const quote = String(original || "").trim();
+  if (!quote) return body;
+  const start = quote.slice(0, 80);
+  if (start && body.includes(start)) return body;
+  return `${body}\n\n________________________________\n\n${quote}`;
+}
+
+function attachOutlookButton(turn, outlook, body) {
+  const letter = polishReply(body, outlook?.name);
+  const shown = replyWithOriginal(letter, outlook?.original);
+  body = letter;
+  if (!turn || !letter || turn.querySelector(".outlook-btn")) return;
+  const onScreen = turn.answerLine.textContent.trim();
+  if (shown !== onScreen) {
+    const draft = document.createElement("p");
+    draft.className = "email-draft";
+    draft.textContent = shown;
+    turn.answerLine.after(draft);
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "quiet outlook-btn";
+  button.textContent = "Open in Outlook";
+  button.addEventListener("click", () => openInOutlook(button, outlook, body));
+  const anchor = turn.querySelector(".email-draft") || turn.answerLine;
+  anchor.after(button);
+}
+
 function beginTurn(question) {
   threadEl.querySelector(".empty")?.remove();
   const turn = document.createElement("article");
@@ -282,6 +442,8 @@ async function ask() {
     const decoder = new TextDecoder();
     let buffer = "";
     let started = false;
+    let rawAnswer = "";
+    let outlook = null;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -304,6 +466,13 @@ async function ask() {
 
         if (event.type === "status") {
           setStatus(event.message || "Looking on the web…");
+        } else if (event.type === "outlook") {
+          outlook = {
+            to: event.to || "",
+            subject: event.subject || "",
+            name: event.name || "",
+            original: event.original || "",
+          };
         } else if (event.type === "sources") {
           showSources(event.sources || []);
           fillTurnSources(activeTurn, event.sources || []);
@@ -313,7 +482,9 @@ async function ask() {
             activeTurn.answerLine.textContent = "";
             started = true;
           }
-          latestAnswer += event.text || "";
+          rawAnswer += event.text || "";
+          const parts = splitEmailDraft(rawAnswer, false);
+          latestAnswer = parts.spoken.trim();
           activeTurn.answerLine.textContent = latestAnswer;
           threadEl.scrollTop = threadEl.scrollHeight;
         } else if (event.type === "usage") {
@@ -326,6 +497,12 @@ async function ask() {
       }
     }
 
+    const finalParts = splitEmailDraft(rawAnswer, true);
+    const spoken = finalParts.spoken.trim();
+    const written = finalParts.written.trim();
+    latestAnswer = written ? `${spoken}\n\n${written}` : spoken;
+    if (activeTurn) activeTurn.answerLine.textContent = spoken || written;
+    if (outlook && activeTurn) attachOutlookButton(activeTurn, outlook, written || spoken);
     if (latestAnswer.trim()) readBtn.hidden = false;
   } catch (err) {
     console.error("Failed while asking:", err);

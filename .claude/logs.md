@@ -162,3 +162,14 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 
 - 2026-10-02 decision: GPT-OSS 20B thinking menu is now Low/Medium/High (no "Off"), default Low, since Ollama ignores think:false for gpt-oss. Removed the hidden none→low remap in ollamaThink(); pricing.js reasoning list enforces it instead.
 **Response:** The dropdown still offers "Off — fastest" for GPT-OSS even though the model can't switch thinking off. I'll remove that option so Low becomes its default.
+
+## 2026-10-07 23:32 — talk_to_your_brain
+
+**Prompt:** Can you use uh, Claude Sonnet in this app without an API just directly from the subscription?
+
+## 2026-10-07 23:34 — talk_to_your_brain
+
+**Prompt:** 2
+
+- 2026-10-07: Added "Claude Sonnet" model option that runs via `claude -p` (subscription login, no API key). New `askClaude`/`streamClaudeAnswer` in server.js; model entry in pricing.js. Tested on a temp port: answer streamed in ~3 s. Running server (port 3001) not restarted.
+**Response:** Testing end to end against the running server.

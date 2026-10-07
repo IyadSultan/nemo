@@ -91,6 +91,19 @@ export const MODELS = [
     reasoning: ["low", "medium", "high", "xhigh", "max"],
   },
   {
+    id: "claude-sonnet",
+    // Runs through the Claude Code app on this Mac (`claude -p`), so it uses the
+    // Claude subscription you are logged in with, not an API key. Personal use only.
+    cliModel: "sonnet",
+    label: "Claude Sonnet",
+    blurb: "Uses your Claude subscription through Claude Code. A few seconds slower to start",
+    subscription: true,
+    inputPerMillion: 0,
+    cachedInputPerMillion: 0,
+    outputPerMillion: 0,
+    reasoning: ["low", "medium", "high"],
+  },
+  {
     id: "MichelRosselli/bonsai-27b",
     label: "Bonsai 27B",
     blurb: "Runs on this Mac, and the written answer is free",

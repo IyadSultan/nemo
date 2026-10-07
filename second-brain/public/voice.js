@@ -103,6 +103,7 @@ function syncCallButtons() {
 }
 
 function stopSpeaking() {
+  clearThinkCue();
   activeSpeech?.stop();
   kokoroSpeech?.stop();
   speechSynthesis.cancel();
@@ -459,9 +460,15 @@ function recordUntilSilence(stream) {
       const now = performance.now();
       if (loudness > 0.025) {
         heard = true;
+        // They started again, so this pause was not the end of the question.
+        if (quietSince) clearThinkCue();
         quietSince = 0;
       } else if (heard && now - started > 400) {
-        if (!quietSince) quietSince = now;
+        if (!quietSince) {
+          quietSince = now;
+          // First beep is half a second after the voice goes quiet.
+          armThinkCue(quietSince);
+        }
         if (now - quietSince > END_PAUSE_MS) {
           questionEndedAt = quietSince;
           finish();
@@ -578,9 +585,13 @@ function watchWhileAnswering(stream) {
     if (stopped) return;
     if (level() > 0.02) {
       sliceLoud = true;
+      if (quietSince) clearThinkCue();
       quietSince = 0;
     } else if (heyIndex >= 0) {
-      if (!quietSince) quietSince = performance.now();
+      if (!quietSince) {
+        quietSince = performance.now();
+        armThinkCue(quietSince);
+      }
     }
     const heardHey = heyIndex >= 0;
     const pauseDone = heardHey && quietSince && performance.now() - quietSince > END_PAUSE_MS;
@@ -605,6 +616,9 @@ function watchWhileAnswering(stream) {
           const text = await transcribeClip(new Blob(chunks.slice(heyIndex), { type: mime }));
           const question = questionAfterWake(text);
           if (question) queuedQuestion = question;
+          else clearThinkCue();
+        } else {
+          clearThinkCue();
         }
       } catch (err) {
         console.error("Failed while saving the new question:", err);
@@ -675,8 +689,14 @@ async function startLocalListen() {
     setStatus(WAKE_STATUS);
     setCapsuleState("listening");
     const clip = await recordUntilSilence(micStream);
-    if (!connected || localStop || paused) continue;
-    if (!clip || clip.size < 2000) continue;
+    if (!connected || localStop || paused) {
+      clearThinkCue();
+      continue;
+    }
+    if (!clip || clip.size < 2000) {
+      clearThinkCue();
+      continue;
+    }
 
     setStatus("Writing down what you said…");
     setCapsuleState("thinking");
@@ -685,11 +705,13 @@ async function startLocalListen() {
       text = await transcribeClip(clip);
     } catch (err) {
       console.error("Failed while transcribing locally:", err);
+      clearThinkCue();
       setStatus(err.message || "The local voice model could not hear that.");
       await sleep(600);
       continue;
     }
     if (looksLikeSilence(text)) {
+      clearThinkCue();
       setStatus(WAKE_STATUS);
       setCapsuleState("listening");
       continue;
@@ -697,6 +719,7 @@ async function startLocalListen() {
     const question = questionAfterWake(text);
     // No wake phrase, or only the phrase with no question: stay quiet.
     if (!question) {
+      clearThinkCue();
       setStatus(WAKE_STATUS);
       setCapsuleState("listening");
       continue;
@@ -811,6 +834,7 @@ function speakStream(s) {
   const samples = new Uint8Array(s.analyser.fftSize);
   let active = false;
   let ended = false;
+  let pauseTimer = null;
   let settled = false;
   let heardSpeech = false;
   let quietSince = 0;
@@ -836,6 +860,17 @@ function speakStream(s) {
 
   const pump = () => {
     if (active || !queue.length || s.closed) return;
+    const next = queue.shift();
+    // A pause is silence before the next words, not something to read aloud.
+    if (next && typeof next === "object" && next.pause) {
+      active = true;
+      pauseTimer = setTimeout(() => {
+        pauseTimer = null;
+        active = false;
+        pump();
+      }, next.pause);
+      return;
+    }
     active = true;
     s.channel.send(JSON.stringify({
       type: "response.create",
@@ -845,7 +880,7 @@ function speakStream(s) {
         input: [],
         output_modalities: ["audio"],
         max_output_tokens: 4096,
-        instructions: `Read this text aloud exactly, from the first word to the last. Do not summarize. Do not add anything.\n\n${queue.shift()}`,
+        instructions: `Read this text aloud exactly, from the first word to the last. Do not summarize. Do not add anything.\n\n${next}`,
       },
     }));
   };
@@ -904,6 +939,11 @@ function speakStream(s) {
       queue.push(text);
       pump();
     },
+    pause(ms) {
+      if (settled) return;
+      queue.push({ pause: ms });
+      pump();
+    },
     end() {
       ended = true;
       // A long answer needs time to be spoken. About 12 characters a second, plus a cushion.
@@ -913,6 +953,7 @@ function speakStream(s) {
     stop() {
       queue.length = 0;
       ended = true;
+      clearTimeout(pauseTimer);
       if (active && !s.closed) {
         s.channel.send(JSON.stringify({ type: "response.cancel" }));
         s.channel.send(JSON.stringify({ type: "output_audio_buffer.clear" }));
@@ -930,15 +971,16 @@ function speakStream(s) {
 let kokoroSpeech = null;
 
 function kokoroVoice() {
-  setStatus("Speaking with the Kokoro voice.");
-  setCapsuleState("speaking");
   let chain = Promise.resolve();
   let stopped = false;
   let playing = null;
   let release = null;
+  let pauseTimer = null;
+  let releasePause = null;
   return (kokoroSpeech = {
     get done() { return chain; },
-    push(text) {
+    // markWait is false for a cue that should not reset the wait clock.
+    push(text, markWait = true) {
       const clip = fetch("/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -954,7 +996,12 @@ function kokoroVoice() {
           const url = URL.createObjectURL(await clip);
           if (stopped) return;
           playing = new Audio(url);
-          playing.onplaying = markAnswerStarted;
+          playing.onplaying = () => {
+            if (!markWait) return;
+            markAnswerStarted();
+            setStatus("Speaking with the Kokoro voice.");
+            setCapsuleState("speaking");
+          };
           await new Promise((resolve) => {
             release = resolve;
             playing.onended = resolve;
@@ -977,9 +1024,26 @@ function kokoroVoice() {
         }
       });
     },
+    // Silence in the queue, so the next word waits and the answer stays behind it.
+    pause(ms) {
+      chain = chain.then(() => new Promise((resolve) => {
+        if (stopped) {
+          resolve();
+          return;
+        }
+        releasePause = resolve;
+        pauseTimer = setTimeout(() => {
+          releasePause = null;
+          resolve();
+        }, ms);
+      }));
+    },
     end() {},
     stop() {
       stopped = true;
+      clearTimeout(pauseTimer);
+      releasePause?.();
+      releasePause = null;
       playing?.pause();
       speechSynthesis.cancel();
       release?.();
@@ -996,27 +1060,66 @@ function macVoice(status) {
   setStatus(status);
   setCapsuleState("speaking");
   let last = Promise.resolve();
+  let pauseTimer = null;
   return {
     get done() { return last; },
-    push(text) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.onstart = markAnswerStarted;
-      last = new Promise((resolve) => {
+    push(text, markWait = true) {
+      last = last.then(() => new Promise((resolve) => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.onstart = () => {
+          if (!markWait) return;
+          markAnswerStarted();
+        };
         utterance.onend = resolve;
         utterance.onerror = resolve;
-      });
-      speechSynthesis.speak(utterance);
+        speechSynthesis.speak(utterance);
+      }));
+    },
+    pause(ms) {
+      last = last.then(() => new Promise((resolve) => {
+        pauseTimer = setTimeout(resolve, ms);
+      }));
     },
     end() {},
-    stop() { speechSynthesis.cancel(); },
+    stop() {
+      clearTimeout(pauseTimer);
+      speechSynthesis.cancel();
+    },
   };
 }
 
 /**
  * Last cleanup before a piece is spoken, in case the model still wrote
- * markdown or HTML. The bubble keeps the original text.
+ * markdown, abbreviations, or a clock code. The bubble keeps the original text.
+ * The voice reads these words literally, so this step writes what should be heard.
  */
+function speechNumber(n) {
+  const small = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+  if (n < 20) return small[n];
+  const tens = ["", "", "twenty", "thirty", "forty", "fifty"];
+  const ten = Math.floor(n / 10);
+  const one = n % 10;
+  return one ? `${tens[ten]}-${small[one]}` : tens[ten];
+}
+
+function speechClock(hour24, minute) {
+  let part = "in the morning";
+  if (hour24 >= 12 && hour24 < 17) part = "in the afternoon";
+  else if (hour24 >= 17 && hour24 < 22) part = "in the evening";
+  else if (hour24 >= 22 || hour24 < 5) part = "at night";
+  let hour = hour24 % 12;
+  if (hour === 0) hour = 12;
+  if (minute === 0) return `${speechNumber(hour)} o'clock ${part}`;
+  if (minute < 10) return `${speechNumber(hour)} oh ${speechNumber(minute)} ${part}`;
+  return `${speechNumber(hour)} ${speechNumber(minute)} ${part}`;
+}
+
 function forSpeech(text) {
+  const months = {
+    jan: "January", feb: "February", mar: "March", apr: "April",
+    jun: "June", jul: "July", aug: "August", sep: "September", sept: "September",
+    oct: "October", nov: "November", dec: "December",
+  };
   return text
     .replace(/<[^>]+>/g, " ")                       // HTML tags
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")      // [label](link) -> label
@@ -1024,7 +1127,20 @@ function forSpeech(text) {
     .replace(/^\s*#{1,6}\s*/gm, "")                 // headings
     .replace(/^\s*(?:[-*+•]|\d+[.)])\s+/gm, "")     // list markers
     .replace(/^\s*(?:note|source|sources|file)s?\s*:.*$/gim, "") // trailing source lines
-    .replace(/[*_`~|>#]+/g, "")                     // bold, italics, code, tables, quotes
+    .replace(/[*_`~|>#\[\]]+/g, "")                     // bold, italics, code, tables, quotes, brackets
+    .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\s*(a\.?m\.?|p\.?m\.?)?\b/gi, (_all, h, m, ap) => {
+      let hour = Number(h);
+      const minute = Number(m);
+      if (ap) {
+        const evening = /^p/i.test(ap);
+        if (evening && hour < 12) hour += 12;
+        if (!evening && hour === 12) hour = 0;
+      }
+      return speechClock(hour, minute);
+    })
+    .replace(/\b(jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b\.?/gi, (match) => {
+      return months[match.toLowerCase().replace(/\.$/, "")] || match;
+    })
     .replace(/([^\s.!?:,;])[ \t]*\n+/g, "$1. ")       // a line break is a pause
     .replace(/\s+/g, " ")
     .trim();
@@ -1120,6 +1236,7 @@ function handleServerEvent(event) {
   const type = event.type;
 
   if (type === "input_audio_buffer.speech_started") {
+    clearThinkCue();
     setCapsuleState("listening");
     setStatus("Listening…");
     if (assistantPartialEl) {
@@ -1134,6 +1251,8 @@ function handleServerEvent(event) {
   }
   if (type === "input_audio_buffer.speech_stopped") {
     questionEndedAt = performance.now();
+    // Models that do not hear for themselves beep while the answer is prepared.
+    if (needsVoiceControl(selectedModel())) armThinkCue(questionEndedAt);
     setStatus("Thinking…");
     setCapsuleState("thinking");
     return;
@@ -1167,7 +1286,7 @@ function handleServerEvent(event) {
     type === "response.function_call_arguments.done" ||
     (type === "response.output_item.done" && event.item?.type === "function_call")
   ) {
-    answerFromNotes(event);
+    answerToolCall(event);
     return;
   }
 
@@ -1178,6 +1297,7 @@ function handleServerEvent(event) {
     const text = event.transcript || event.item?.content?.[0]?.transcript || "";
     const question = questionAfterWake(text.trim());
     if (question === null) {
+      clearThinkCue();
       if (userPartialEl) {
         userPartialEl.remove();
         userPartialEl = null;
@@ -1220,39 +1340,253 @@ function handleServerEvent(event) {
   }
 }
 
-/** Look up notes, then hand them back so the voice model can speak the answer. */
-async function answerFromNotes(event) {
+/** Run a tool the voice model asked for, then hand the result back. */
+async function answerToolCall(event) {
   const item = event.item || event;
   const callId = item.call_id || event.call_id;
   const name = item.name || event.name;
-  if (name !== "search_notes" || !callId || handledCalls.has(callId)) return;
+  if ((name !== "search_notes" && name !== "here_and_now") || !callId || handledCalls.has(callId)) return;
   handledCalls.add(callId);
 
-  let query = "";
+  let output = "The tool failed.";
   try {
-    query = JSON.parse(item.arguments || event.arguments || "{}").query || "";
+    if (name === "here_and_now") {
+      setStatus("Checking the time…");
+      setCapsuleState("thinking");
+      const response = await fetch("/here");
+      const data = await response.json();
+      output = data.text || output;
+    } else {
+      let query = "";
+      try {
+        query = JSON.parse(item.arguments || event.arguments || "{}").query || "";
+      } catch (err) {
+        console.error("Failed while reading the note search:", err);
+      }
+      setStatus("Looking through your notes…");
+      setCapsuleState("thinking");
+      const response = await fetch(`/notes?q=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      output = data.notes || "No matching notes.";
+    }
   } catch (err) {
-    console.error("Failed while reading the note search:", err);
-  }
-
-  setStatus("Looking through your notes…");
-  setCapsuleState("thinking");
-  let notes = "No matching notes.";
-  try {
-    const response = await fetch(`/notes?q=${encodeURIComponent(query)}`);
-    const data = await response.json();
-    notes = data.notes || notes;
-  } catch (err) {
-    console.error("Failed while searching notes:", err);
-    notes = "The note search failed.";
+    console.error(`Failed while running the ${name} tool:`, err);
+    output = "The tool failed.";
   }
 
   sendEvent({
     type: "conversation.item.create",
-    item: { type: "function_call_output", call_id: callId, output: notes },
+    item: { type: "function_call_output", call_id: callId, output },
   });
   sendEvent({ type: "response.create" });
 }
+
+/**
+ * A reply has two parts. The voice reads the words before EMAIL_BODY.
+ * The words after it are the letter that Outlook opens.
+ * While the answer is still arriving, hold back a half-written EMAIL_BODY
+ * so the voice does not say it.
+ */
+function splitEmailDraft(raw, finished) {
+  const match = /EMAIL_BODY/i.exec(raw);
+  if (match) {
+    const spoken = raw.slice(0, match.index);
+    const written = raw.slice(match.index + match[0].length).replace(/^[\s:—-]+/, "");
+    return {
+      spoken: finished ? spoken.trim() : spoken,
+      written: finished ? written.trim() : written,
+      closed: true,
+    };
+  }
+  if (!finished) {
+    const upper = raw.toUpperCase();
+    const token = "EMAIL_BODY";
+    for (let size = token.length - 1; size > 3; size -= 1) {
+      if (upper.endsWith(token.slice(0, size))) {
+        return { spoken: raw.slice(0, -size), written: "", closed: false };
+      }
+    }
+  }
+  return { spoken: finished ? raw.trim() : raw, written: "", closed: false };
+}
+
+/** "Haitham Aryan" becomes "Haitham". */
+function firstName(full) {
+  const word = String(full || "").trim().split(/\s+/)[0].replace(/[,.]+$/, "");
+  if (!/^[A-Za-z][A-Za-z'’-]+$/.test(word)) return "";
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+/**
+ * Fix the letter before it is shown.
+ * The other person's first name replaces [Sender Name]. IS replaces [Your Name].
+ */
+/**
+ * Turn a flat draft into a short letter, with a comma, a period, and a blank line
+ * between the greeting, the message, and the sign-off.
+ */
+function polishReply(body, fullName) {
+  const first = firstName(fullName);
+  let text = String(body || "")
+    .replace(/[ \t]*Get Outlook for (?:Mac|iOS|Android|Windows)[^\n]*/gi, "")
+    .replace(/\[(?:Sender|Recipient)\s*Name\]/gi, first || "colleague")
+    .replace(/\[Your Name\]/gi, "IS");
+  if (first) text = text.replace(/^(\s*Dear\s+)(?:colleague|friend|there)\b/i, `$1${first}`);
+  text = text.replace(/\r\n/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+
+  const sentenceStart = new Set([
+    "i", "we", "the", "please", "this", "it", "thank", "thanks", "can", "could",
+    "would", "let", "just", "also", "there", "here", "my", "our", "your", "as",
+    "if", "when", "after", "before", "a", "an", "so", "and", "but",
+  ]);
+
+  let sign = "";
+  const signMatch = text.match(/^([\s\S]*?)\s*\bbest regards\b[,.]?\s*(?:\n+\s*)?(?:IS)?\s*$/i);
+  if (signMatch) {
+    text = signMatch[1].trim();
+    sign = "Best regards,\n\nIS";
+  }
+
+  let greet = "";
+  const dear = text.match(/^dear\s+([\s\S]+)$/i);
+  if (dear) {
+    const rest = dear[1].trim();
+    const withComma = rest.match(/^([^,\n]{1,80}),\s*([\s\S]*)$/);
+    const withLine = rest.match(/^([^\n]{1,80})\n+([\s\S]*)$/);
+    if (withComma) {
+      greet = `Dear ${withComma[1].trim()},`;
+      text = withComma[2].trim();
+    } else if (withLine && withLine[1].trim().split(/\s+/).length <= 4) {
+      greet = `Dear ${withLine[1].replace(/[,.]$/, "").trim()},`;
+      text = withLine[2].trim();
+    } else {
+      const words = rest.split(/\s+/);
+      const name = [];
+      for (const word of words) {
+        const bare = word.replace(/[,.]$/, "");
+        if (name.length && sentenceStart.has(bare.toLowerCase())) break;
+        if (name.length >= 3) break;
+        if (name.length && !/^[A-Z]/.test(bare)) break;
+        name.push(bare);
+        if (/[,.]$/.test(word)) break;
+      }
+      greet = `Dear ${name.join(" ")},`;
+      text = words.slice(name.length).join(" ").replace(/^[,.\s]+/, "");
+    }
+  }
+
+  const message = text
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => (/[.!?]$/.test(line) ? line : `${line}.`))
+    .map((line, index) => (index === 0 ? line.charAt(0).toUpperCase() + line.slice(1) : line))
+    .join("\n\n");
+
+  return [greet, message, sign].filter(Boolean).join("\n\n");
+}
+
+/** Ask this Mac to open the written reply in Outlook. The message is not sent. */
+async function openInOutlook(button, outlook, body) {
+  button.disabled = true;
+  setStatus("Opening Outlook…");
+  try {
+    const response = await fetch("/open-outlook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: outlook.to || "",
+        name: outlook.name || "",
+        subject: outlook.subject || "",
+        body,
+        original: outlook.original || "",
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Outlook did not open.");
+    const kind = outlook.original || /^re:/i.test(outlook.subject || "") ? "reply" : "email";
+    setStatus(outlook.to
+      ? `Outlook has the ${kind}. Press Send when it looks right.`
+      : `Outlook has the ${kind}. Type who it goes to, then press Send.`);
+  } catch (err) {
+    console.error("Failed while opening Outlook:", err);
+    setStatus(err.message || "Outlook did not open.");
+    button.disabled = false;
+  }
+}
+
+/** The new letter, then a line, then the email being answered. */
+function replyWithOriginal(body, original) {
+  const quote = String(original || "").trim();
+  if (!quote) return body;
+  const start = quote.slice(0, 80);
+  if (start && body.includes(start)) return body;
+  return `${body}\n\n________________________________\n\n${quote}`;
+}
+
+function attachOutlookButton(bubble, outlook, body) {
+  const letter = polishReply(body, outlook?.name);
+  const shown = replyWithOriginal(letter, outlook?.original);
+  if (!bubble || !letter || bubble.querySelector(".outlook-btn")) return;
+  if (shown !== bubble.querySelector(".text")?.textContent?.trim()) {
+    const draft = document.createElement("p");
+    draft.className = "email-draft";
+    draft.textContent = shown;
+    bubble.append(draft);
+  }
+  body = letter;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost-btn small outlook-btn";
+  button.textContent = "Open in Outlook";
+  button.addEventListener("click", () => openInOutlook(button, outlook, body));
+  bubble.append(button);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+// One shared tone generator, so each beep does not open a new one.
+let beepCtx = null;
+
+/** A short tone, a bit louder than a whisper. Played while the model works. */
+function playBeep() {
+  if (!beepCtx || beepCtx.state === "closed") beepCtx = new AudioContext();
+  if (beepCtx.state === "suspended") beepCtx.resume();
+  const osc = beepCtx.createOscillator();
+  const gain = beepCtx.createGain();
+  osc.type = "sine";
+  osc.frequency.value = 880;
+  const now = beepCtx.currentTime;
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+  osc.connect(gain);
+  gain.connect(beepCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.15);
+}
+
+// Stop can cancel the beeps if the user moves on.
+let clearThinkCue = () => {};
+let thinkCueOn = false;
+// The first tone is half a second after they stop. Later tones stay two seconds apart.
+const FIRST_BEEP_MS = 500;
+const BEEP_EVERY_MS = 2000;
+
+/** How long to wait so the next beep stays on that half-second, then two-second, rhythm. */
+function beepDelay(endedAt) {
+  const mark = endedAt || performance.now();
+  const elapsed = Math.max(0, performance.now() - mark);
+  if (elapsed <= FIRST_BEEP_MS) return FIRST_BEEP_MS - elapsed;
+  const sinceFirst = elapsed - FIRST_BEEP_MS;
+  const intoGap = sinceFirst % BEEP_EVERY_MS;
+  return intoGap === 0 ? 0 : BEEP_EVERY_MS - intoGap;
+}
+
+/**
+ * The beep after you stop talking is turned off.
+ * This still exists so the rest of the page can call it without playing a tone.
+ */
+function armThinkCue() {}
 
 /** Bonsai and GPT-6 write the answer. Voice control is what speaks it. */
 async function answerWithBrain(question) {
@@ -1274,9 +1608,14 @@ async function answerWithBrain(question) {
   const speakerReady = macOnly ? null : ensureSpeaker();
   speakerReady?.catch(() => {});
   let speech = null;
+  // Keep the beeps that started when they stopped talking. A typed question starts them now.
+  armThinkCue();
   let bubble = null;
   let reader = null;
   let answer = "";
+  let rawAnswer = "";
+  let spokenShown = "";
+  let outlook = null;
   let keepMemory = true;
   let remembered = false;
   try {
@@ -1309,6 +1648,7 @@ async function answerWithBrain(question) {
     const decoder = new TextDecoder();
     let buffer = "";
     let unspoken = "";
+    let heardCue = false;
     const speakReady = async (force) => {
       while (unspoken.trim()) {
         const cut = force ? unspoken.length : sentenceCut(unspoken, speech ? 200 : 40);
@@ -1327,6 +1667,10 @@ async function answerWithBrain(question) {
         // Voice control could not connect. The Mac voice is only a stand-in.
         speech ??= macOnly ? kokoroVoice() : macVoice("Speaking with the Mac voice. OpenAI has no credits.");
         activeSpeech = speech;
+        if (!heardCue) {
+          heardCue = true;
+          clearThinkCue();
+        }
         if (paused || cancelAnswer) {
           speech.stop();
           return;
@@ -1354,13 +1698,24 @@ async function answerWithBrain(question) {
         if (event.type === "status") {
           setStatus(event.message || "Looking on the web…");
           setCapsuleState("thinking");
+        } else if (event.type === "outlook") {
+          outlook = {
+            to: event.to || "",
+            subject: event.subject || "",
+            name: event.name || "",
+            original: event.original || "",
+          };
         } else if (event.type === "delta") {
-          const text = event.text || "";
-          answer += text;
-          unspoken += text;
+          rawAnswer += event.text || "";
+          const parts = splitEmailDraft(rawAnswer, false);
+          const fresh = parts.spoken.startsWith(spokenShown)
+            ? parts.spoken.slice(spokenShown.length)
+            : parts.spoken;
+          spokenShown = parts.spoken;
+          unspoken += fresh;
           bubble ??= addBubble("assistant", "", true);
           currentAnswerBubble = bubble;
-          bubble.querySelector(".text").textContent = answer.trim();
+          bubble.querySelector(".text").textContent = spokenShown.trim();
           transcriptEl.scrollTop = transcriptEl.scrollHeight;
         } else if (event.type === "usage") addBrainUsage(event);
         else if (event.type === "ignored") {
@@ -1373,8 +1728,20 @@ async function answerWithBrain(question) {
     }
 
     if (cancelAnswer) return;
+    const finalParts = splitEmailDraft(rawAnswer, true);
+    const spoken = finalParts.spoken.trim();
+    const written = finalParts.written.trim();
+    const leftover = spoken.startsWith(spokenShown.trim())
+      ? spoken.slice(spokenShown.trim().length)
+      : spoken.slice(spokenShown.length);
+    if (leftover.trim()) unspoken += leftover;
+    answer = written ? `${spoken}\n\n${written}` : spoken;
     if (!answer.trim()) throw new Error("The selected model returned an empty answer.");
-    bubble?.classList.remove("partial");
+    if (bubble) {
+      bubble.classList.remove("partial");
+      bubble.querySelector(".text").textContent = spoken || written;
+    }
+    if (outlook) attachOutlookButton(bubble, outlook, written || spoken);
     rememberTurn(question, answer);
     remembered = true;
     compressWhileSpeaking();
@@ -1400,6 +1767,7 @@ async function answerWithBrain(question) {
     setStatus(err.message || "The selected model could not answer.");
     scriptedReply = false;
   } finally {
+    clearThinkCue();
     if (keepMemory && !remembered) rememberTurn(question, answer);
     if (activeReader === reader) activeReader = null;
     brainBusy = false;

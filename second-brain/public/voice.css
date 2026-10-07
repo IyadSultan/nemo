@@ -644,6 +644,17 @@ body {
   color: var(--muted);
 }
 
+.bubble .email-draft {
+  margin: 0.55rem 0 0;
+  padding: 0.15rem 0 0.15rem 0.7rem;
+  border-left: 2px solid var(--line);
+  white-space: pre-wrap;
+}
+
+.bubble .outlook-btn {
+  margin-top: 0.5rem;
+}
+
 @media (max-width: 820px) {
   body { height: auto; }
   .topbar { flex-wrap: wrap; }
