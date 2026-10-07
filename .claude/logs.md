@@ -208,3 +208,7 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 
 - 2026-10-08: Claude (claude -p) answers now get read-only Read/Glob/Grep over the selected folders (cwd = first selected folder, --add-dir for the rest). Fixes Opus writing fake <invoke> tool calls when asked about raw/docs PDFs. Tested on port 3021: answered the docs-folder question in ~95 s.
 **Response:** Testing on a spare port (3021) so the live server on 3001 isn't touched.
+
+## 2026-10-08 00:48 — talk_to_your_brain
+
+**Prompt:** push
