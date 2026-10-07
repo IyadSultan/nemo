@@ -199,3 +199,12 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-07 23:56 — talk_to_your_brain
 
 **Prompt:** push
+**Commit:** cca8d8a Add Claude Opus (subscription via claude -p) and make it the default model
+**Response:** Claude Opus is now in the app and is the default model. I restarted the server, and when I asked it which model it was, it answered "I'm Claude Opus 5.5." Like Sonnet, it runs on your Claude subscription, with no API key. - **Speed:** simple questions take about 3 seconds, the same as Sonnet. The first test took 16 seconds; I didn't confirm why, but it was likely a cold start or a web lookup. - ** […]
+
+## 2026-10-08 00:31 — talk_to_your_brain
+
+**Prompt:** <pasted_content id="8cf8"> You there are 2 documents in docs folder. can you tell me what they are about Brain <invoke name="Bash"> <parameter name="command">cd /private/var/folders/y_/y4qgfvg96hb9ccxwcmk2bzl40000gn/T; ls; find . -maxdepth 4 -type d -iname "docs" 2>/dev/null | head</parameter> </invoke> <invoke name="Bash"> <parameter name="command">pwd; ls; find . -maxdepth 3 -type d -iname "docs" 2>/dev/null | head</parameter> </invoke> </pasted_content id="8cf8">
+
+- 2026-10-08: Claude (claude -p) answers now get read-only Read/Glob/Grep over the selected folders (cwd = first selected folder, --add-dir for the rest). Fixes Opus writing fake <invoke> tool calls when asked about raw/docs PDFs. Tested on port 3021: answered the docs-folder question in ~95 s.
+**Response:** Testing on a spare port (3021) so the live server on 3001 isn't touched.

@@ -2392,22 +2392,26 @@ const CLAUDE_BIN = process.env.CLAUDE_BIN
 
 /**
  * Ask Claude through Claude Code (`claude -p`), which uses the logged-in Claude
- * subscription, not an API key. No tools, no saved session, no user settings,
+ * subscription, not an API key. No saved session, no user settings,
  * so hooks and plugins from ~/.claude do not run for every answer.
+ * With dirs, Claude may read (never write) files in those folders; without, it has no tools.
  * onText gets each piece of the answer. Resolves with the token usage.
  */
-function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000) {
+function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000, dirs = []) {
   return new Promise((resolve, reject) => {
+    const tools = dirs.length ? "Read,Glob,Grep" : "";
     const args = [
-      "-p", "--model", model.cliModel, "--tools", "", "--no-session-persistence",
+      "-p", "--model", model.cliModel, "--tools", tools, "--no-session-persistence",
       "--setting-sources", "", "--strict-mcp-config", "--system-prompt", system,
       "--output-format", "stream-json", "--include-partial-messages", "--verbose",
     ];
+    if (tools) args.push("--allowedTools", tools);
+    if (dirs.length > 1) args.push("--add-dir", ...dirs.slice(1));
     if (effort) args.push("--effort", effort);
     const env = { ...process.env };
     // An API key here would bill the API instead of the subscription.
     delete env.ANTHROPIC_API_KEY;
-    const child = spawn(CLAUDE_BIN, args, { cwd: os.tmpdir(), env });
+    const child = spawn(CLAUDE_BIN, args, { cwd: dirs[0] || os.tmpdir(), env });
     const timer = setTimeout(() => child.kill(), timeoutMs);
     let buffer = "";
     let stderr = "";
@@ -2455,8 +2459,14 @@ function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000) {
 }
 
 async function streamClaudeAnswer(prompt, res, model, reasoning, spoken) {
-  const system = [INSTRUCTIONS, spoken ? SPOKEN_STYLE : "", guideBlock()].filter(Boolean).join("\n\n");
-  const usage = await askClaude(model, system, prompt, reasoning, (text) => writeEvent(res, { type: "delta", text }));
+  const files = [
+    `You can read the user's chosen folders with the Read, Glob and Grep tools: ${selected.join(", ")}.`,
+    "Use them when the question is about a folder or file that the note excerpts do not cover. Read can open PDFs.",
+    "You cannot write files or run commands. Never type tool-call markup such as <invoke> in your answer.",
+    "Do not narrate your searching. Answer only after you have looked.",
+  ].join(" ");
+  const system = [INSTRUCTIONS, files, spoken ? SPOKEN_STYLE : "", guideBlock()].filter(Boolean).join("\n\n");
+  const usage = await askClaude(model, system, prompt, reasoning, (text) => writeEvent(res, { type: "delta", text }), 180000, selected);
   writeEvent(res, usageEvent(model, reasoning, usage));
 }
 
