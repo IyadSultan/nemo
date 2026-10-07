@@ -195,3 +195,7 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 
 - 2026-10-07: Added "Claude Opus" (subscription, `claude -p --model opus`) and made it the default model, thinking Low. Chat-memory compression pinned to gpt-oss:20b (MEMORY_MODEL) since it calls Ollama directly. Server restarted; Opus answers in ~3 s.
 **Response:** 15.7 s is slow. Checking whether that's Opus or the app's web lookup.
+
+## 2026-10-07 23:56 — talk_to_your_brain
+
+**Prompt:** push
