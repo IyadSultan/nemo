@@ -212,3 +212,30 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-08 00:48 — talk_to_your_brain
 
 **Prompt:** push
+**Commit:** b70aa90 Give Claude answers read-only file tools over the selected folders
+**Response:** Push was rejected (403) because the active `gh` account is `aidikhcc`. Retrying as `IyadSultan`, then switching the active account back to `aidikhcc`.
+
+## 2026-10-09 19:55 — talk_to_your_brain
+
+**Prompt:** what can we learn from /Users/USER/code/openHuman that we can apply here. make a list
+
+## 2026-10-09 19:57 — talk_to_your_brain
+
+**Prompt:** go with #1
+
+## 2026-10-09 — hybrid note search (OpenHuman idea #1)
+- Added `second-brain/embed.js`: local embedding index (Ollama `embeddinggemma`), chunked notes, cache in `second-brain/tmp/embeddings.json`.
+- `searchNotes()` now fuses keyword rank + meaning rank (reciprocal rank fusion); meaning-only hits use their closest chunk as excerpt; minScore 0.4 keeps off-topic questions at "No matching notes".
+- Compared nomic-embed-text / embeddinggemma / qwen3-embedding:0.6b on the agent wiki; picked embeddinggemma (accurate + ~20 ms/query; qwen3 50–120 ms).
+- Live test on launchd server: 979 pieces / 179 notes indexed in 18 s; /notes 23–60 ms.
+**Response:** Search takes 23–60 ms per question including the embedding. The cache is 4 MB in `second-brain/tmp/`, which git ignores. Updating the wiki, the project log and the error log.
+
+## 2026-10-09 20:43 — talk_to_your_brain
+
+**Prompt:** so did you build an embedding database?
+**Response:** Your second brain now searches by meaning as well as by keyword, and the live server on port 3001 is already using it. A question like "who sits on the committee" now finds the committee-formation letter even when the wording doesn't match, and a question about something not in your notes still gets "No matching notes." **How it works** - **Meaning search:** `second-brain/embed.js` (new) splits ea […]
+
+## 2026-10-09 20:45 — talk_to_your_brain
+
+**Prompt:** what folder are we at? does this apply to any folder we choose?
+- Fix: cache no longer prunes other folders' vectors (switching folders back = 0 re-embeds). Added per-search log line. Lowered embeddinggemma minScore 0.4→0.25: measured off-topic top ≈0.11, fair paraphrases 0.38–0.43, so 0.4 was silently blocking meaning hits.

@@ -27,6 +27,7 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { MODELS, VOICE_MODELS, REASONING_LEVELS, getModel, getAnyModel, priceForUsage } from "./pricing.js";
+import { createSemanticIndex } from "./embed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -53,6 +54,13 @@ const FFMPEG_BIN = "/opt/homebrew/bin/ffmpeg";
 // Ollama runs local models on this Mac. Bonsai is already installed there.
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
 let loadedLocalId = "";
+// Meaning search runs next to keyword search. Small local model; ~20 ms per question.
+const EMBED_MODEL = "embeddinggemma";
+const semantic = createSemanticIndex({
+  ollamaUrl: OLLAMA_URL,
+  model: EMBED_MODEL,
+  cacheFile: path.join(__dirname, "tmp", "embeddings.json"),
+});
 const DEFAULT_VOICE = "marin";
 const PORT = Number(process.env.BRAIN_PORT) || 3001;
 
@@ -182,11 +190,36 @@ function queryTerms(question) {
 }
 
 /**
+ * Keyword ranking plus meaning ranking, merged by rank (reciprocal rank fusion).
+ * A note found by meaning alone gets its closest piece as the excerpt,
+ * because the keyword excerpt would have nothing to center on.
+ */
+async function searchNotes(question, limit = 4) {
+  const terms = queryTerms(question);
+  const keyword = keywordNotes(terms);
+  const meaning = await semantic.search(question, 20);
+  const fused = new Map();
+  keyword.forEach((hit, rank) => {
+    fused.set(hit.note, { note: hit.note, terms, score: 1 / (60 + rank) });
+  });
+  meaning.forEach((found, rank) => {
+    const hit = fused.get(found.note) || { note: found.note, terms, score: 0, override: found.text };
+    hit.score += 1 / (60 + rank);
+    fused.set(found.note, hit);
+  });
+  const top = [...fused.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+  console.log(
+    `Note search: ${keyword.length} by keyword, ${meaning.length} by meaning; ` +
+      `sent ${top.length}, ${top.filter((hit) => hit.override).length} found by meaning only`
+  );
+  return top;
+}
+
+/**
  * Score notes by how often the question words appear.
  * A hit in the title counts more than a hit buried in the page.
  */
-function searchNotes(question, limit = 4) {
-  const terms = queryTerms(question);
+function keywordNotes(terms) {
   if (!terms.length) return [];
 
   const ranked = [];
@@ -209,7 +242,7 @@ function searchNotes(question, limit = 4) {
   }
 
   ranked.sort((a, b) => b.score - a.score);
-  return ranked.slice(0, limit);
+  return ranked.slice(0, 20);
 }
 
 /** Keep a window of text around the first matching word, so we don't send the whole note. */
@@ -1867,7 +1900,7 @@ function matchingWindows(text, terms, maxWindows, radius) {
 }
 
 /** Keyword hits, plus the index and the log when the question is "find a file". */
-function notesForQuestion(question, limit = 4) {
+async function notesForQuestion(question, limit = 4) {
   // "file" and "find" match almost every note. Search the real name only.
   let searchQuestion = question;
   if (wantsFile(question)) {
@@ -1875,7 +1908,7 @@ function notesForQuestion(question, limit = 4) {
     searchQuestion = kept.join(" ");
   }
   const hits = searchQuestion
-    ? pinVaultNotes(question, searchNotes(searchQuestion, limit))
+    ? pinVaultNotes(question, await searchNotes(searchQuestion, limit))
     : [];
   const catalog = fileCatalogHits(question);
   if (!catalog.length) return hits;
@@ -2680,6 +2713,7 @@ async function reloadNotes() {
     if (nextPresent.get(root)) nextGuides.set(root, await readCode(root));
   }
   notes = loaded;
+  semantic.build(notes).catch((err) => console.error("Failed while building the meaning index:", err?.message || err));
   guides = nextGuides;
   codePresent = nextPresent;
   await indexRawMail();
@@ -2894,10 +2928,10 @@ app.post("/speak", async (req, res) => {
   }
 });
 
-app.get("/notes", (req, res) => {
+app.get("/notes", async (req, res) => {
   const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
   if (!query) return res.json({ notes: "No question to search." });
-  const hits = notesForQuestion(query, 5);
+  const hits = await notesForQuestion(query, 5);
   if (!hits.length) return res.json({ notes: "No matching notes." });
   const notesText = hits
     .map((hit) => {
@@ -3217,7 +3251,7 @@ app.post("/ask", async (req, res) => {
       ? await memosForPrompt(memo)
       : aboutEmail
         ? await findRawEmails(question, history)
-        : notesForQuestion(question);
+        : await notesForQuestion(question);
 
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache");
