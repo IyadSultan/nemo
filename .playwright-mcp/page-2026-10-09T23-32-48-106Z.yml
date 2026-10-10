@@ -1,0 +1,15 @@
+- generic [ref=f1e3]:
+  - generic [ref=f1e4]:
+    - generic:
+      - generic [ref=f1e6]: 14× less memory · 8× faster · 5× less energy
+      - heading "1-bit LLMs, in your browser." [level=1] [ref=f1e7]: 1-bit LLMs,in your browser.
+      - paragraph [ref=f1e8]: Run 1-bit Bonsai LLMs (1.7B, 4B, 8B) entirely locally in your browser on WebGPU, powered by Transformers.js.
+      - button "Try the demo ↓" [ref=f1e9] [cursor=pointer]:
+        - text: Try the demo
+        - generic [ref=f1e10]: ↓
+  - generic [ref=f1e40]:
+    - generic [ref=f1e42]: Initializing
+    - heading "Bonsai 1.7B" [level=3] [ref=f1e43]
+    - generic [ref=f1e45]:
+      - generic [ref=f1e46]: 0 MB / 300 MB
+      - generic [ref=f1e47]: 0%

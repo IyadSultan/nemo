@@ -98,4 +98,13 @@ if menu then
     })
 end
 
+-- Cmd+Opt+S from any app: stop the answer that is playing.
+-- The server passes it to the open voice page (/control).
+if _G.heyMyBrainStopKey then _G.heyMyBrainStopKey:delete() end
+_G.heyMyBrainStopKey = hs.hotkey.bind({ "cmd", "alt" }, "s", function()
+    hs.http.asyncPost("http://127.0.0.1:" .. PORT .. "/control/stop", "", nil, function(status)
+        if status ~= 200 then hs.alert.show("Voice app is not running.", 2) end
+    end)
+end)
+
 openVoice()

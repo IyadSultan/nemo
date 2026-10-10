@@ -1,0 +1,35 @@
+- generic [ref=f1e3]:
+  - generic [ref=f1e4]:
+    - generic:
+      - generic [ref=f1e6]: 14× less memory · 8× faster · 5× less energy
+      - heading "1-bit LLMs, in your browser." [level=1] [ref=f1e7]: 1-bit LLMs,in your browser.
+      - paragraph [ref=f1e8]: Run 1-bit Bonsai LLMs (1.7B, 4B, 8B) entirely locally in your browser on WebGPU, powered by Transformers.js.
+      - button "Try the demo ↓" [ref=f1e9] [cursor=pointer]:
+        - text: Try the demo
+        - generic [ref=f1e10]: ↓
+  - generic [ref=f1e12]:
+    - generic [ref=f1e13]:
+      - generic [ref=f1e14]: Choose a model
+      - heading "Load locally." [level=2] [ref=f1e15]
+      - paragraph [ref=f1e16]: Each Bonsai model runs entirely in your browser via WebGPU. Pick a size — smaller loads faster, larger reasons better.
+    - generic [ref=f1e17]:
+      - generic [ref=f1e18] [cursor=pointer]:
+        - generic [ref=f1e19]: ✓
+        - generic [ref=f1e20]: 1.7B290 MB
+        - generic [ref=f1e21]: Bonsai 1.7B
+        - generic [ref=f1e22]: Pocket-class. Built for wearables and always-on agents.
+      - generic [ref=f1e23]:
+        - generic [ref=f1e24]: Coming soon
+        - generic [ref=f1e26]: 4B584 MB
+        - generic [ref=f1e27]: Bonsai 4B
+        - generic [ref=f1e28]: The sweet spot. Strong reasoning at on-device latency.
+      - generic [ref=f1e29]:
+        - generic [ref=f1e30]: Coming soon
+        - generic [ref=f1e32]: 8B1.2 GB
+        - generic [ref=f1e33]: Bonsai 8B
+        - generic [ref=f1e34]: Datacenter-grade reasoning, in your browser tab.
+    - generic [ref=f1e35]:
+      - button "Load Bonsai 1.7B →" [ref=f1e36] [cursor=pointer]:
+        - text: Load Bonsai 1.7B
+        - generic [ref=f1e37]: →
+      - generic [ref=f1e38]: No data leaves your device

@@ -1,0 +1,8 @@
+- generic [active] [ref=e1]:
+  - heading "Bonsai judge test" [level=1] [ref=e2]
+  - paragraph [ref=e3]: Scores the Bonsai judge on the 40 test sentences (never used for tuning). Pick a size and start.
+  - combobox [ref=e4]:
+    - option "Bonsai 1.7B (291 MB)" [selected]
+    - option "Bonsai 4B (655 MB)"
+    - option "Bonsai 8B"
+  - button "Start" [ref=e5]

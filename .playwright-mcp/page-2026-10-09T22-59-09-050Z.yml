@@ -1,0 +1,84 @@
+- generic [active] [ref=f1e1]:
+  - banner [ref=f1e2]:
+    - generic [ref=f1e5]:
+      - paragraph [ref=f1e6]: Hey my brain
+      - paragraph [ref=f1e7]: Voice assistant for your notes
+    - region "Tokens for this whole chat" [ref=f1e8]:
+      - heading "This chat" [level=2] [ref=f1e9]
+      - generic [ref=f1e10]:
+        - generic "From the end of your question to the first spoken word" [ref=f1e11]:
+          - term [ref=f1e12]: Last answer
+          - definition [ref=f1e13]: –
+        - generic [ref=f1e14]:
+          - term [ref=f1e15]: Avg answer
+          - definition [ref=f1e16]: –
+        - generic [ref=f1e17]:
+          - term [ref=f1e18]: In
+          - definition [ref=f1e19]: "0"
+        - generic [ref=f1e20]:
+          - term [ref=f1e21]: Out
+          - definition [ref=f1e22]: "0"
+        - generic [ref=f1e23]:
+          - term [ref=f1e24]: Thinking
+          - definition [ref=f1e25]: "0"
+        - generic [ref=f1e26]:
+          - term [ref=f1e27]: Cost
+          - definition [ref=f1e28]: $0.00
+  - main [ref=f1e29]:
+    - region "Voice conversation controls" [ref=f1e30]:
+      - button "Start talking" [ref=f1e33] [cursor=pointer]
+      - generic [aria-hidden] [ref=f1e35]: Idle
+      - paragraph [ref=f1e36]: Ready when you are
+      - generic [ref=f1e37]:
+        - generic [ref=f1e38]: Or type a question
+        - generic [ref=f1e39]:
+          - textbox "Or type a question" [ref=f1e40]:
+            - /placeholder: Use this if listening misses what you said
+          - button "Ask" [ref=f1e41] [cursor=pointer]
+      - generic [ref=f1e42]:
+        - button "Mute mic" [disabled] [ref=f1e43]
+        - button "Pause" [disabled] [ref=f1e44]
+        - button "Stop" [disabled] [ref=f1e45]
+        - button "Restart last" [disabled] [ref=f1e46]
+      - group [ref=f1e47]:
+        - generic "▸ Settings" [ref=f1e48] [cursor=pointer]
+        - option "Voice mini"
+        - option "Voice"
+        - option "Gemini Live"
+        - option "GPT-6 Luna"
+        - option "GPT-6 Sol"
+        - option "GPT-6.1 Sol"
+        - option "GPT-6 Astra"
+        - option "Claude Opus" [selected]
+        - option "Claude Sonnet"
+        - option "Bonsai 27B"
+        - option "GPT-OSS 20B"
+        - option "Gemma 4 12B"
+        - option "Gemma 4 E4B"
+        - option "Gemma 4 E2B"
+        - option "Qwen 3.8 27B"
+        - option "Low" [selected]
+        - option "Medium"
+        - option "High"
+        - option "Extra high"
+        - option "Maximum"
+        - option "Marin" [selected]
+        - option "Cedar"
+        - option "Alloy"
+        - option "Ash"
+        - option "Coral"
+        - option "Sage"
+        - option "Chrome on this Mac, fast and private" [selected]
+        - option "Google cloud (Chrome), most accurate"
+        - option "Whisper on this Mac, private"
+        - option "Whisper on this Mac, English + Arabic (auto)"
+        - option "Hey"
+        - option "Hey + Jev (TypeSafe cloud)"
+        - option "Hey + Gemma (on this Mac)" [selected]
+    - region "Live transcript" [ref=f1e49]:
+      - generic [ref=f1e50]:
+        - heading "Transcript" [level=2] [ref=f1e51]
+        - button "Clear" [ref=f1e52] [cursor=pointer]
+      - log [ref=f1e53]:
+        - paragraph [ref=f1e54]: Press Start talking and say Hey, or type a question below the orb.
+      - paragraph [ref=f1e55]: "Whole chat so far: 0 input · 0 output. Total $0.00. A new call starts the count over."

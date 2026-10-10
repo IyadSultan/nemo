@@ -28,6 +28,13 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { MODELS, VOICE_MODELS, REASONING_LEVELS, getModel, getAnyModel, priceForUsage } from "./pricing.js";
 import { createSemanticIndex } from "./embed.js";
+import { judgeSpeech, warmJudge } from "./jev.js";
+import { learningJob, runLearningJob, learningsBlock, closestIndex } from "./learnings.js";
+import { loadDocs } from "./docs.js";
+import { openFileJob, runOpenFile, findOnMacJob, runFindOnMac } from "./openfile.js";
+import { emailSearchJob, runEmailSearch } from "./emailsearch.js";
+import { registerIMessage, sendIMessage, imessageHandle, textMeJob, runTextMe } from "./imessage.js";
+import * as desk from "./desk.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -46,6 +53,10 @@ const WHISPER_BIN = "/opt/homebrew/bin/whisper-cli";
 // Whisper small.en beat Parakeet v2 on note names and acronyms on this Mac (17% vs 23% word errors).
 const WHISPER_SERVER_BIN = "/opt/homebrew/bin/whisper-server";
 const WHISPER_SERVER_URL = "http://127.0.0.1:8178/inference";
+// Optional: hears English and Arabic and detects which one. Started only when first used.
+const MULTI_VOICE_MODEL = path.join(__dirname, "..", "voice", "models", "ggml-large-v3-turbo-q5_0.bin");
+const WHISPER_MULTI_URL = "http://127.0.0.1:8180/inference";
+let multiWhisperUp = null;
 // Kokoro: the same local voice the claude-voice app uses. Local models speak with it.
 const KOKORO_PYTHON = "/usr/local/bin/python3.11";
 const KOKORO_SCRIPT = path.join(__dirname, "..", "voice", "kokoro_server.py");
@@ -110,6 +121,8 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 app.use(express.text({ type: ["application/sdp", "text/plain"], limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
+// Rive runtime for the Tiny mascot (served from node_modules, no CDN).
+app.use("/vendor/rive", express.static(path.join(__dirname, "..", "node_modules", "@rive-app", "canvas")));
 
 /** @type {{ rel: string, title: string, text: string, lower: string }[]} */
 let notes = [];
@@ -317,6 +330,7 @@ function buildPrompt(question, hits, pages = [], history = [], memory = "") {
   return [
     // here_and_now already ran. The model must copy these words, not invent a clock time.
     `Here and now: ${hereAndNow()}`,
+    learningsBlock(),
     memoryBlock,
     "Earlier in this conversation:",
     earlier,
@@ -740,6 +754,7 @@ function replyDraftNote(outlook) {
   return [
     "Draft a reply to this one email.",
     "First write two or three plain spoken sentences. The voice reads only those.",
+    "Tell them to say send it to open the reply in Outlook, or don't to drop it.",
     "Then write one line that is exactly EMAIL_BODY.",
     "After that line write the email the user will send.",
     greet,
@@ -770,7 +785,7 @@ function sendDraftNote(outlook) {
     "Draft a new email. This is not a reply to a saved message.",
     who,
     "First write two or three plain spoken sentences. The voice reads only those.",
-    "Say that a draft is ready and they can open it in Outlook.",
+    "Say that a draft is ready. Tell them to say send it to open it in Outlook, or don't to drop it.",
     "Then write one line that is exactly EMAIL_BODY.",
     "After that line write the email the user will send.",
     "Use what the user asked to say. Do not ask what they want to say.",
@@ -1733,6 +1748,31 @@ function memoCountWords(count) {
 }
 
 /** Turn saved memo files into notes the answer can read. */
+/**
+ * Learnings and memos are both "memories" to the user.
+ * List shows both; forget removes the closest learning, else the closest memo.
+ * A forgotten memo moves to a .deleted folder next to the memos, so it can be brought back.
+ */
+async function runMemoryJob(job) {
+  const said = runLearningJob(job);
+  if (job.kind === "add" || (job.kind === "forget" && said)) return said;
+  const memos = await loadMemos("all");
+  if (job.kind === "list") {
+    const latest = memos.slice(0, 5).map((memo) => memo.text.split("\n").slice(1).join(" ").trim().replace(/[.]?$/, "."));
+    const memoPart = memos.length
+      ? `You have ${memos.length} saved memo${memos.length === 1 ? "" : "s"}. The newest: ${latest.join(" ")}`
+      : "You have no saved memos.";
+    return [said || "I have not learned any rules yet.", memoPart].join(" ");
+  }
+  const best = closestIndex(job.text, memos.map((memo) => memo.text));
+  if (best < 0) return "I could not find that among your memos or the things I learned.";
+  const memo = memos[best];
+  const folder = memoFolder();
+  await fs.mkdir(path.join(folder, ".deleted"), { recursive: true });
+  await fs.rename(path.join(folder, memo.name), path.join(folder, ".deleted", memo.name));
+  return `Done. I deleted the memo: ${memo.text.split("\n").slice(1).join(" ").trim()}`;
+}
+
 async function memosForPrompt(job) {
   const memos = await loadMemos(job === "find" ? "all" : job);
   const hits = memos.slice(0, job === "recent" ? 20 : 40).map((memo) => ({
@@ -1977,7 +2017,7 @@ function todayLabel() {
 function isNoise(question) {
   const raw = String(question || "").trim();
   if (/^\([^)]*\)$/.test(raw) || /^\[[^\]]*\]$/.test(raw)) return true;
-  const cleaned = raw.toLowerCase().replace(/[^\w\s']/g, "").trim();
+  const cleaned = raw.toLowerCase().replace(/[^\p{L}\p{N}\s']/gu, "").trim();
   const junk = new Set([
     "thank you",
     "thanks for watching",
@@ -2185,29 +2225,48 @@ async function searchWeb(question) {
 // Short map of CLAUDE.md, the vault's operating manual.
 // The full manual is long. This is the part the model needs to find files.
 const BRAIN_MAP = [
-  "This is a second brain, contains raw documents in raw/ folder, and wikis in wiki/ folder.",
-  "The wiki folder is named wiki/. The user may call it the wikis folder. There is no folder named wikis.",
-  "Three files matter on every question about his notes. They are real files. Do not say they are missing when their text is in the notes.",
-  "If the user asks you for what to do look at wiki/todo.md as this file has all todos organized.  Recent tasks are on top.",
-  "For any other question go to wiki/index.md to see what wikis exist.", "When the question is about history or the log, answer from wiki/log.md.",
-  "When the user asks to find a file, look carefully through wiki/index.md and wiki/log.md before saying it is missing. He calls wiki/log.md logs dot md. The index lists every wiki page. The log records where files were added or mentioned.",
-  "When the question is about today, open tasks, the to-do list, or Todoist, answer from wiki/todo.md. Name the open tasks.",
-  "New emails are text files in the raw/ folder at the vault root. They are not wiki pages. A question about email must be answered from those raw files.",
+  "The selected folder is a second brain: raw documents in raw/ and wiki pages in wiki/. The user may call wiki/ the wikis folder. There is no folder named wikis.",
+  "Notes can also be PDF and Word files. Their File line ends in .pdf or .docx. Treat them like any other note.",
+  "Three files are real and matter on every question about his notes. Do not say they are missing when their text is in the notes.",
+  "wiki/todo.md holds every to-do, newest on top. He may call it to-do dot md or Todoist. For tasks, today, the to-do list, or Todoist, answer from this file and name the open tasks.",
+  "wiki/index.md lists every wiki page. For any other question, start there.",
+  "wiki/log.md records where files were added or mentioned. He calls it logs dot md. Answer history questions from it.",
+  "When the user asks to find a file, look through wiki/index.md and wiki/log.md before saying it is missing.",
+  "New emails are text files in raw/ at the vault root, not wiki pages. Answer email questions from those files.",
+].join(" ");
+
+// The app does these itself, before the model sees the question. Reaching the model means the words were not recognized.
+const APP_ABILITIES = [
+  "This app does these things itself when the user says the matching words. Never say the app cannot do them. If such a request reaches you, the words were not recognized: tell the user the phrase to say.",
+  "Text the user's own phone: say text me, then the message, or send me an iMessage saying, then the message.",
+  "Save a memo: say remember that, then the fact. List memos: say what are my memos.",
+  "Keep a standing rule for every answer: say from now on, then the rule. List rules and memos: say what are your memories. Remove one: say forget, then what it was about.",
+  "Draft an email: say send an email to, then the name and what it says. A draft waits on the page. The user says send it, or presses Open. Outlook opens the draft. The user presses Send. Say don't to drop it.",
+  "Put a meeting on the calendar: say schedule a meeting with, then the person, day, and time. It waits until the user says send it. Outlook then opens the event to check and save. Say don't to drop it.",
+  "Watch a public web page: say watch, then the address. A change texts the user's phone.",
+  "A reminder: say remind me in 20 minutes to, then the task. It still fires after a restart.",
+  "The last conversation is saved on this Mac and comes back the next time they press Start talking.",
+  "Open a file in its usual app on the Mac, such as Word or a text editor: say open, then the file name. It looks in the notes first, then the whole Mac. The user then edits it there.",
+  "Find an email: say find the email from, or about, then the name or subject. Then say open number one, two, or three, and Outlook searches for it.",
+  "Search the whole Mac like the Finder: say find, then the file name, then on my Mac. Then say open number one, two, or three.",
+  "Read today's or tomorrow's calendar, today's emails, and which emails need an urgent reply.",
+  "The app cannot change or delete the user's existing files itself, and it never sends an email by itself.",
 ].join(" ");
 
 const INSTRUCTIONS = [
   "You answer questions from a personal wiki of work notes, and from web pages this Mac looked up.",
   BRAIN_MAP,
+  APP_ABILITIES,
+  "The prompt may list Things the user asked you to always keep in mind. Follow them in every answer, unless one conflicts with a rule about facts or safety.",
   "Use the note excerpts for the user's own work. Use the web page excerpts only for facts that are not in the notes.",
-  "First decide whether the question makes sense.",
   "If the wording is clumsy but a topic is clear, answer that topic. A request for the latest news means a short briefing of today's headlines.",
   "Ask what they mean only when there is no topic at all, such as a noise or 'can you hear me'.",
-  "The prompt includes Earlier in this conversation. Use that for follow-up questions and for questions about the chat, such as what the user asked last time. Do not say a chat question is missing from the notes.",
+  "For follow-ups and questions about the chat, such as what the user asked last time, use Earlier in this conversation. Do not say a chat question is missing from the notes.",
   "Be brief and direct. Use a note only when that note actually states the fact. If the fact is only on a web page, say you found it on the web. Do not call a web page a note.",
   "Do not invent people, dates, or tasks.",
+  "Answer in the language of the question. If the user asks in Arabic, answer in Arabic.",
   "The here_and_now tool already ran. Its words are the Here and now line. Use that line for the time, the date, and the place. Do not guess, and do not look those up on the web.",
-  "When the user asks you for todays emails list all emails except those from donotreply@khcc.jo.  Say you have so and so emails, from so and so then summarize subject, list all emails",
-
+  "When the user asks for today's emails, leave out those from donotreply@khcc.jo. Say how many emails there are and who they are from, then summarize each one.",
 ].join(" ");
 
 // The voice reads every word exactly as it is written. It does not turn abbreviations into speech.
@@ -2507,6 +2566,138 @@ function writeEvent(res, obj) {
   res.write(`data: ${JSON.stringify(obj)}\n\n`);
 }
 
+/** A short spoken answer, plus an optional card on the voice page. */
+function replyNow(res, text, card) {
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.flushHeaders?.();
+  if (card) writeEvent(res, { type: "work", card });
+  writeEvent(res, { type: "delta", text });
+  writeEvent(res, { type: "done" });
+  res.end();
+}
+
+/** Recent saved emails become ideas the user can do or skip. */
+function syncSuggestions() {
+  try {
+    const cutoff = Date.now() - 2 * 86_400_000;
+    const items = [...rawMail]
+      .filter((file) => file.mtime >= cutoff)
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, 12)
+      .map((file) => ({
+        key: file.rel,
+        title: `Reply to ${speakTitle(file.title)}`,
+        source: spokenWhen(file.mtime),
+        detail: speakTitle(file.title),
+      }));
+    desk.mergeSuggestions(items);
+  } catch (err) {
+    console.error("Failed while building suggestions:", err?.message || err);
+  }
+}
+
+function meetingFromDraft(draft) {
+  return {
+    subject: draft.subject,
+    body: draft.body,
+    location: draft.location,
+    duration: draft.duration,
+    date: new Date(draft.date),
+  };
+}
+
+/** What the voice says while a meeting is waiting, before Outlook opens. */
+function spokenMeetingWaiting(meeting) {
+  const when = `${spokenDay(meeting.date)} at ${spokenClock(meeting.date)}`;
+  const lines = [
+    `I have a meeting ready for ${when}.`,
+    `The title is ${meeting.subject}.`,
+  ];
+  if (meeting.assumedDay) lines.push("I did not hear a day, so I used tomorrow.");
+  if (meeting.assumedTime) lines.push("I did not hear a clock time, so I used ten in the morning.");
+  lines.push("Say send it to open it in Outlook, or don't to drop it. It is not on the calendar until you press Add.");
+  return lines.join(" ");
+}
+
+/** Open the draft that is waiting. Outlook still needs the user to press Send or Add. */
+async function openSavedDraft(job) {
+  if (job.draft?.type === "meeting") {
+    await openOutlookMeeting(meetingFromDraft(job.draft));
+    desk.finishJob(job.id, "done", "Opened in Outlook. Press Add if it looks right.");
+    return "I opened that meeting in Outlook. Press Add if it looks right. It is not sent to anyone.";
+  }
+  const draft = job.draft || {};
+  const letter = polishReply(draft.body || "", draft.name);
+  const body = replyWithOriginal(letter, draft.original);
+  await openOutlookDraft({
+    to: cleanMailAddress(draft.to),
+    subject: draft.subject || "Note",
+    body,
+    name: draft.name || "",
+  });
+  desk.finishJob(job.id, "done", "Opened in Outlook. Press Send when it looks right.");
+  return "I opened that draft in Outlook. Press Send when it looks right. I did not send it.";
+}
+
+async function runDeskCommand(command) {
+  if (command.action === "say") return { text: command.text };
+  if (command.action === "watch") {
+    const saved = desk.addWatch(command.url);
+    return { text: saved.text };
+  }
+  if (command.action === "cancel-watches") {
+    const count = desk.cancelWatches();
+    const text = count ? `Stopped watching ${count === 1 ? "that page" : `${count} pages`}.` : "I was not watching any page.";
+    return { text, card: { title: "Watch", lines: [text] } };
+  }
+  if (command.action === "clear-alerts") {
+    const count = desk.clearAlerts();
+    const text = count ? "Cleared that alert." : "There is no alert waiting.";
+    return { text, card: { title: "Watch", lines: [text] } };
+  }
+  if (command.action === "jobs") {
+    const text = desk.jobsSentence();
+    return { text, card: { title: "Jobs", lines: [text] } };
+  }
+  if (command.action === "suggestions") {
+    const text = desk.suggestionsSentence();
+    return { text, card: { title: "Ideas", lines: [text] } };
+  }
+  if (command.action === "remind") {
+    const job = desk.addReminder(command.title, command.dueAt);
+    return { text: `I will remind you: ${job.title}. ${job.detail}` };
+  }
+  if (command.action === "skip-suggestion") {
+    const item = desk.suggestionAt(command.index);
+    if (!item) return { text: "There is no idea with that number." };
+    desk.dismissSuggestion(item.id);
+    return { text: `Skipped. ${item.title}.`, card: { title: "Ideas", lines: [`Skipped: ${item.title}`] } };
+  }
+  if (command.action === "confirm") {
+    const job = desk.latestDraft();
+    if (!job) return { text: "Nothing is waiting for a yes. Ask me to draft an email or schedule a meeting first." };
+    try {
+      const text = await openSavedDraft(job);
+      return { text, card: { title: job.title, lines: [text] } };
+    } catch (err) {
+      console.error("Failed while opening a saved draft:", err?.message || err);
+      return { text: "I could not open Outlook. Is Microsoft Outlook installed?" };
+    }
+  }
+  if (command.action === "skip") {
+    const job = desk.latestDraft();
+    if (!job) {
+      const watches = desk.cancelWatches();
+      if (watches) return { text: "Stopped watching.", card: { title: "Watch", lines: ["Stopped watching."] } };
+      return { text: "Nothing is waiting to drop." };
+    }
+    desk.finishJob(job.id, "skipped", "You dropped this draft.");
+    const kind = job.draft?.type === "meeting" ? "meeting" : "draft";
+    return { text: `Dropped that ${kind}. Nothing was opened.`, card: { title: job.title, lines: ["Dropped. Nothing was opened."] } };
+  }
+  return null;
+}
+
 // Tells the Outlook app on this Mac to open a new message. It does not send it.
 // "plain text content" is the body. "content" would be HTML, which we do not want.
 const OUTLOOK_SCRIPT = `
@@ -2685,6 +2876,7 @@ function voiceInstructions() {
     "His to-dos are all in wiki/todo.md. He may call that file to-do dot md or Todoist. Todoist is this file, not the Todoist app.",
     "wiki/index.md is the index of all wiki pages. He may call that file index dot md.",
     "wiki/log.md is the history of the wiki. He may call that file logs dot md. There is no separate logs.md.",
+    "Notes can also be PDF and Word files. search_notes finds those too.",
     "When he asks you to find a file, call search_notes. That search reads the index and logs dot md. Look carefully at both before you say the file is missing.",
     "Stay silent unless the user's words start with Hey. Otherwise do not speak.",
     "You can hear the user through the microphone. Never say you cannot hear audio.",
@@ -2696,12 +2888,19 @@ function voiceInstructions() {
     "Answer those questions only from the notes the tool returns and from the code.md rulebooks.",
     "If the notes do not contain the answer, say you could not find it in the notes.",
     "For a simple check like can you hear me, just confirm that you can hear them.",
+    "In this live call you can only search notes and tell the time. The app can also text his phone, save memos and rules, open files, draft emails, and open meetings in Outlook, but only in the regular voice mode. If he asks for one of those, say so and ask him to switch modes. Never say the app cannot do them.",
+    "Follow the things the user asked you to always keep in mind, listed below.",
     "",
+    learningsBlock(),
     guideBlock(),
   ].join("\n");
 }
 
+// Bumped on every reload, so a slow document read for old folders is dropped.
+let notesGeneration = 0;
+
 async function reloadNotes() {
+  const generation = ++notesGeneration;
   const loaded = [];
   const nextGuides = new Map();
   const nextPresent = new Map();
@@ -2717,7 +2916,18 @@ async function reloadNotes() {
   guides = nextGuides;
   codePresent = nextPresent;
   await indexRawMail();
+  syncSuggestions();
   console.log(`Loaded ${notes.length} notes from ${selected.length} folder(s)`);
+  // PDFs and Word files can take minutes the first time, so they join the notes in the background.
+  addDocuments(generation, [...selected]).catch((err) => console.error("Failed while reading PDF and Word files:", err?.message || err));
+}
+
+async function addDocuments(generation, roots) {
+  const docs = [];
+  for (const root of roots) docs.push(...(await loadDocs(root, SKIP_DIRS)));
+  if (generation !== notesGeneration || !docs.length) return;
+  notes = [...notes, ...docs];
+  semantic.build(notes).catch((err) => console.error("Failed while building the meaning index:", err?.message || err));
 }
 
 app.get("/health", (_req, res) => {
@@ -2821,11 +3031,11 @@ function runCommand(bin, args) {
 }
 
 /** Start the local whisper server once. If it dies, /transcribe falls back to whisper-cli. */
-function startWhisperServer() {
-  const port = new URL(WHISPER_SERVER_URL).port;
+function startWhisperServer(model = LOCAL_VOICE_MODEL, url = WHISPER_SERVER_URL, lang = "en") {
+  const port = new URL(url).port;
   const child = spawn(
     WHISPER_SERVER_BIN,
-    ["-m", LOCAL_VOICE_MODEL, "--host", "127.0.0.1", "--port", port, "-l", "en", "-nt", "-bs", "1", "-bo", "1", "-nf", "-t", "4"],
+    ["-m", model, "--host", "127.0.0.1", "--port", port, "-l", lang, "-nt", "-bs", "1", "-bo", "1", "-nf", "-t", "4"],
     { stdio: "ignore" }
   );
   child.on("error", (err) => console.error("Failed while starting whisper-server:", err?.message || err));
@@ -2852,13 +3062,56 @@ function startKokoro() {
   process.on("exit", () => child.kill());
 }
 
+/** Start the English + Arabic whisper once, and wait until it answers (the model takes a few seconds to load). */
+function ensureMultiWhisper() {
+  if (!multiWhisperUp) {
+    multiWhisperUp = (async () => {
+      await fs.access(MULTI_VOICE_MODEL);
+      startWhisperServer(MULTI_VOICE_MODEL, WHISPER_MULTI_URL, "auto");
+      const health = WHISPER_MULTI_URL.replace("/inference", "/");
+      for (let i = 0; i < 60; i += 1) {
+        try {
+          await fetch(health);
+          return;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+      throw new Error("The English + Arabic whisper did not start.");
+    })();
+    multiWhisperUp.catch(() => { multiWhisperUp = null; });
+  }
+  return multiWhisperUp;
+}
+
+// "Hey" as the English model writes it, including an Arabic accent (hay, hi, hei).
+const WAKE_HEARD = /^[\s"'“”]*(hey|hay|hei|hi)\b/i;
+// The wake word written in Arabic letters, or still in English, at the start of the Arabic text.
+const ARABIC_WAKE = /^[\s"'“”]*(?:هاي|هاى|هي|هيه|هاي|اي|hey|hay|hi)[\s,.:;!?،\-]*/i;
+
+/** One clip to text. auto = the English + Arabic model; otherwise the fast English one. */
+async function whisperText(wav, auto) {
+  const text = (await transcribeWithServer(wav, auto ? WHISPER_MULTI_URL : WHISPER_SERVER_URL)) ?? await runCommand(WHISPER_BIN, [
+    "-m", auto ? MULTI_VOICE_MODEL : LOCAL_VOICE_MODEL,
+    "-f", wav,
+    "-l", auto ? "auto" : "en",
+    "-nt",
+    "-np",
+    "-bs", "1",
+    "-bo", "1",
+    "-nf",
+    "-t", "4",
+  ]);
+  return text.replace(/\s+/g, " ").trim();
+}
+
 /** Ask the warm whisper server. Returns null if it is not up, so the caller can use whisper-cli. */
-async function transcribeWithServer(wav) {
+async function transcribeWithServer(wav, url = WHISPER_SERVER_URL) {
   try {
     const fd = new FormData();
     fd.set("file", new Blob([await fs.readFile(wav)], { type: "audio/wav" }), "clip.wav");
     fd.set("response_format", "json");
-    const response = await fetch(WHISPER_SERVER_URL, { method: "POST", body: fd });
+    const response = await fetch(url, { method: "POST", body: fd });
     if (!response.ok) throw new Error(`whisper-server returned ${response.status}`);
     const data = await response.json();
     return data.text || "";
@@ -2879,6 +3132,8 @@ app.post(
     if (!req.body || !req.body.length) {
       return res.status(400).json({ error: "No audio was sent." });
     }
+    // ?lang=auto: "Hey" in English starts the question; the question itself may be English or Arabic.
+    const auto = req.query.lang === "auto";
     const dir = path.join(__dirname, "tmp");
     const stamp = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
     const source = path.join(dir, `${stamp}.webm`);
@@ -2887,19 +3142,25 @@ app.post(
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(source, req.body);
       await runCommand(FFMPEG_BIN, ["-y", "-loglevel", "error", "-i", source, "-ac", "1", "-ar", "16000", wav]);
-      const text = (await transcribeWithServer(wav)) ?? await runCommand(WHISPER_BIN, [
-        "-m", LOCAL_VOICE_MODEL,
-        "-f", wav,
-        "-l", "en",
-        "-nt",
-        "-np",
-        "-bs", "1",
-        "-bo", "1",
-        "-nf",
-        "-t", "4",
-      ]);
-      const cleaned = text.replace(/\s+/g, " ").trim();
-      res.json({ text: cleaned });
+      // The fast English model always listens first. It hears an Arabic-accented "hey" as hay or hi.
+      const english = await whisperText(wav, false);
+      let text = english;
+      let language = "en";
+      if (auto && WAKE_HEARD.test(english)) {
+        // Wake word found: now write the whole clip in whichever language was spoken.
+        try {
+          await ensureMultiWhisper();
+        } catch (err) {
+          console.error("Failed while starting the English + Arabic whisper:", err?.message || err);
+          return res.status(503).json({ error: "The English + Arabic voice model is not installed." });
+        }
+        const heard = await whisperText(wav, true);
+        // Whisper may write the wake word as هاي or Hi. The page looks for "Hey", so put that back.
+        text = `Hey ${heard.replace(ARABIC_WAKE, "")}`;
+        if (/[\u0600-\u06FF]/.test(heard)) language = "ar";
+      }
+      console.log(`Transcribed (${auto ? "auto" : "english"}): ${language}, ${text.length} chars, wake ${WAKE_HEARD.test(english) ? "yes" : "no"}`);
+      res.json({ text, language });
     } catch (err) {
       console.error("Failed while transcribing locally:", err?.message || err);
       res.status(500).json({ error: "The local voice model could not hear that clip." });
@@ -2946,6 +3207,114 @@ app.get("/notes", async (req, res) => {
  * Live voice session. Same model as Nemo: gpt-realtime-2.1-mini.
  * It receives microphone audio, so it can hear the user.
  */
+// Gemini has its own voices. Pick the closest one to the voice chosen on the page.
+const GEMINI_VOICES = { marin: "Aoede", cedar: "Charon", alloy: "Puck", ash: "Orus", coral: "Kore", sage: "Leda" };
+
+/**
+ * Gemini Live: mint a short-lived Google token so the browser can open the
+ * voice line itself. The GEMINI_API_KEY never leaves this server.
+ * The token is locked to one session, this model, and this setup.
+ */
+app.post("/gemini-session", async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: "Missing GEMINI_API_KEY. Add it to the .env file." });
+  const model = getAnyModel(req.query.model);
+  if (!model?.gemini) return res.status(400).json({ error: "That is not a Gemini Live model." });
+
+  const setup = {
+    model: `models/${model.id}`,
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: GEMINI_VOICES[req.query.voice] || "Aoede" } } },
+    },
+    // Gemini answers every turn; the Hey rule would only make it go quiet.
+    systemInstruction: { parts: [{ text: voiceInstructions().replace(/^Stay silent unless.*\n/m, "") }] },
+    tools: [{
+      functionDeclarations: [
+        {
+          name: "here_and_now",
+          description: "Read this Mac's clock. Returns the current time and place in words the voice can say.",
+        },
+        {
+          name: "search_notes",
+          description: "Search the user's second-brain notes. When he asks to find a file, this also reads wiki/index.md and wiki/log.md and returns the matching lines.",
+          parameters: {
+            type: "OBJECT",
+            properties: { query: { type: "STRING", description: "What to look up in the notes, in a few words." } },
+            required: ["query"],
+          },
+        },
+      ],
+    }],
+    inputAudioTranscription: {},
+    outputAudioTranscription: {},
+  };
+  const now = Date.now();
+  try {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/auth_tokens", {
+      method: "POST",
+      headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        uses: 1,
+        expireTime: new Date(now + 30 * 60_000).toISOString(),
+        newSessionExpireTime: new Date(now + 2 * 60_000).toISOString(),
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      console.error("Gemini refused the token:", data.error?.message || response.status);
+      return res.status(502).json({ error: data.error?.message || "Gemini refused the token." });
+    }
+    res.json({ token: data.name, setup });
+  } catch (err) {
+    console.error("Failed while minting a Gemini token:", err?.message || err);
+    res.status(502).json({ error: "Could not reach Gemini." });
+  }
+});
+
+/**
+ * Remote control for the voice page. Hammerspoon's Cmd+Opt+S posts /control/stop;
+ * every open voice page hears it on /control and stops the answer.
+ */
+const controlClients = new Set();
+app.get("/control", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  res.flushHeaders?.();
+  controlClients.add(res);
+  req.on("close", () => controlClients.delete(res));
+});
+function sendControl(event, data = {}) {
+  for (const client of controlClients) client.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+app.post("/control/stop", (_req, res) => {
+  for (const client of controlClients) client.write("event: stop\ndata: {}\n\n");
+  res.json({ ok: true, pages: controlClients.size });
+});
+
+/** Jev listening: is this heard sentence meant for the second brain? (jev.js) */
+app.post("/jev/warm", (_req, res) => {
+  warmJudge().catch((err) => console.error("Failed while loading the judge model:", err?.message || err));
+  res.json({ ok: true });
+});
+app.post("/jev/judge", async (req, res) => {
+  const latest = typeof req.body?.latest === "string" ? req.body.latest.trim().slice(0, 1000) : "";
+  if (!latest) return res.status(400).json({ error: "No words to judge." });
+  try {
+    res.json(await judgeSpeech({
+      latest,
+      earlier: Array.isArray(req.body.earlier) ? req.body.earlier.filter((t) => typeof t === "string").map((t) => t.slice(0, 300)) : [],
+      lastAnswer: typeof req.body.lastAnswer === "string" ? req.body.lastAnswer : "",
+      justAnswered: Boolean(req.body.justAnswered),
+      backend: ["gemma", "typesafe"].includes(req.body.backend) ? req.body.backend : undefined,
+    }));
+  } catch (err) {
+    console.error("Failed while asking Jev:", err?.message || err);
+    res.status(502).json({ error: "Jev could not judge that sentence." });
+  }
+});
+
 app.post("/session", async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -3184,6 +3553,7 @@ app.post("/compress", async (req, res) => {
     }
     const data = await upstream.json();
     const memory = cleanMemory(data.message?.content || "");
+    if (memory) desk.rememberChat(memory, history);
     res.json({ memory });
   } catch (err) {
     if (err?.name === "AbortError") return res.status(499).end();
@@ -3201,6 +3571,8 @@ app.post("/open-outlook", async (req, res) => {
   if (!body) return res.status(400).json({ error: "There is no reply to open." });
   try {
     await openOutlookDraft({ to, subject, body, name });
+    desk.finishLatestEmail("Opened in Outlook. Press Send when it looks right.");
+    sendControl("desk", {});
     res.json({ ok: true, to });
   } catch (err) {
     console.error("Failed while opening Outlook:", err?.message || err);
@@ -3209,7 +3581,7 @@ app.post("/open-outlook", async (req, res) => {
 });
 
 app.post("/ask", async (req, res) => {
-  const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
+  let question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
   if (!question) {
     return res.status(400).json({ error: "Type or say a question first." });
   }
@@ -3219,6 +3591,53 @@ app.post("/ask", async (req, res) => {
     writeEvent(res, { type: "ignored", message: "That was a noise, not a question." });
     writeEvent(res, { type: "done" });
     return res.end();
+  }
+  const deskCommand = desk.parseDesk(question);
+  if (deskCommand?.action === "do") {
+    const item = desk.suggestionAt(deskCommand.index);
+    if (!item) return replyNow(res, "There is no idea with that number.");
+    desk.dismissSuggestion(item.id);
+    sendControl("desk", {});
+    question = `Draft a reply to the email about ${item.detail}`;
+  } else if (deskCommand) {
+    try {
+      const result = await runDeskCommand(deskCommand);
+      if (result) {
+        sendControl("desk", {});
+        return replyNow(res, result.text, result.card);
+      }
+    } catch (err) {
+      console.error("Failed while running a saved job:", err?.message || err);
+      return replyNow(res, "I could not update that job.");
+    }
+  }
+  const textMe = textMeJob(question);
+  if (textMe) {
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.flushHeaders?.();
+    writeEvent(res, { type: "delta", text: await runTextMe(textMe, askBrain) });
+    writeEvent(res, { type: "done" });
+    return res.end();
+  }
+  const learning = learningJob(question);
+  if (learning) {
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.flushHeaders?.();
+    writeEvent(res, { type: "delta", text: await runMemoryJob(learning) });
+    writeEvent(res, { type: "done" });
+    return res.end();
+  }
+  // Email first: "open the email from Sara" must not look for a file called "email from Sara".
+  const mailSearch = emailSearchJob(question);
+  const openFile = mailSearch ? null : openFileJob(question);
+  const findOnMac = mailSearch || openFile ? null : findOnMacJob(question);
+  const opened = mailSearch ? await runEmailSearch(mailSearch, rawMail)
+    : openFile ? await runOpenFile(openFile, notes, selected)
+    : findOnMac ? await runFindOnMac(findOnMac) : null;
+  if (opened) {
+    const text = typeof opened === "string" ? opened : opened.text;
+    const card = opened && typeof opened === "object" ? opened.card : { title: "Done", lines: [text] };
+    return replyNow(res, text, card);
   }
   if (!notes.length) {
     return res.status(500).json({
@@ -3294,14 +3713,11 @@ app.post("/ask", async (req, res) => {
     }
     if (meeting) {
       const plan = parseMeeting(question);
-      let opened = true;
-      try {
-        await openOutlookMeeting(plan);
-      } catch (err) {
-        opened = false;
-        console.error("Failed while opening the Outlook calendar:", err?.message || err);
-      }
-      writeEvent(res, { type: "delta", text: spokenMeeting(plan, opened) });
+      const waiting = spokenMeetingWaiting(plan);
+      desk.saveMeetingDraft(plan, waiting);
+      sendControl("desk", {});
+      writeEvent(res, { type: "work", card: { title: plan.subject, lines: [waiting] } });
+      writeEvent(res, { type: "delta", text: waiting });
       writeEvent(res, { type: "done" });
       return res.end();
     }
@@ -3329,6 +3745,239 @@ app.post("/ask", async (req, res) => {
   }
 });
 
+/** Ask through /ask, the same way the page does, and return the whole answer as text. */
+async function askBrain(question, history = []) {
+  const response = await fetch(`http://127.0.0.1:${PORT}/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, history }),
+  });
+  const raw = await response.text();
+  if (!response.ok) throw new Error(safeJson(raw)?.error || `ask failed with ${response.status}`);
+  let answer = "";
+  for (const line of raw.split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    const event = safeJson(line.slice(6));
+    if (event?.type === "delta") answer += event.text;
+    if (event?.type === "error") throw new Error(event.message);
+  }
+  return answer.trim();
+}
+
+registerIMessage(app, askBrain);
+
+/**
+ * Morning briefing: today's meetings, tasks due, and emails that need a reply.
+ * BRIEFING_AT=08:00 in .env sends it each day; it goes to your iMessage (when on)
+ * and an open voice page reads it aloud. GET /briefing makes one now without sending.
+ */
+async function briefingText() {
+  const parts = [`Good morning. ${spokenCalendar("today")}`];
+  for (const question of ["Which tasks on my to-do list are due today or overdue? Answer in two or three short sentences.", "Which emails need an urgent reply?"]) {
+    try {
+      parts.push(await askBrain(question));
+    } catch (err) {
+      console.error("Failed while building the briefing:", err?.message || err);
+    }
+  }
+  return parts.filter(Boolean).join("\n\n");
+}
+
+async function deliverBriefing() {
+  const text = await briefingText();
+  sendControl("briefing", { text });
+  try {
+    await sendIMessage(text);
+  } catch (err) {
+    console.error("Failed while texting the briefing:", err?.message || err);
+  }
+  console.log(`Briefing delivered (voice pages: ${controlClients.size}, iMessage: ${imessageHandle() ? "on" : "off"})`);
+  return text;
+}
+
+app.get("/desk", (_req, res) => {
+  res.json(desk.publicDesk());
+});
+
+app.post("/desk/memory", (req, res) => {
+  try {
+    desk.rememberChat(cleanMemory(req.body?.memory), cleanHistory(req.body?.turns));
+    res.json(desk.publicDesk());
+  } catch (err) {
+    console.error("Failed while saving the conversation:", err?.message || err);
+    res.status(500).json({ error: "Could not save the conversation." });
+  }
+});
+
+app.delete("/desk/memory", (_req, res) => {
+  desk.forgetChat();
+  res.json(desk.publicDesk());
+});
+
+app.post("/desk/draft", (req, res) => {
+  try {
+    const job = desk.saveEmailDraft({
+      to: req.body?.to,
+      name: req.body?.name,
+      subject: req.body?.subject,
+      body: req.body?.body,
+      original: req.body?.original,
+    });
+    if (!job) return res.status(400).json({ error: "There is no draft to save." });
+    sendControl("desk", {});
+    res.json({ ok: true, id: job.id });
+  } catch (err) {
+    console.error("Failed while saving an email draft:", err?.message || err);
+    res.status(500).json({ error: "Could not save that draft." });
+  }
+});
+
+app.post("/desk/jobs/:id/open", async (req, res) => {
+  const job = desk.jobById(req.params.id);
+  if (!job || job.status !== "needs-you") {
+    return res.status(404).json({ error: "That draft is not waiting." });
+  }
+  try {
+    const text = await openSavedDraft(job);
+    sendControl("desk", {});
+    res.json({ ok: true, text });
+  } catch (err) {
+    console.error("Failed while opening a saved draft from the page:", err?.message || err);
+    res.status(500).json({ error: "Outlook did not open. Is Microsoft Outlook installed?" });
+  }
+});
+
+app.post("/desk/jobs/:id/skip", (req, res) => {
+  const job = desk.finishJob(req.params.id, "skipped", "You dropped this.");
+  if (!job) return res.status(404).json({ error: "That job is not here." });
+  sendControl("desk", {});
+  res.json({ ok: true });
+});
+
+app.post("/desk/suggestions/:id/skip", (req, res) => {
+  const item = desk.dismissSuggestion(req.params.id);
+  if (!item) return res.status(404).json({ error: "That idea is not here." });
+  sendControl("desk", {});
+  res.json({ ok: true });
+});
+
+app.post("/desk/suggestions/:id/do", (req, res) => {
+  const item = desk.suggestionById(req.params.id);
+  if (!item) return res.status(404).json({ error: "That idea is not here." });
+  desk.dismissSuggestion(item.id);
+  sendControl("desk", {});
+  res.json({ question: `Draft a reply to the email about ${item.detail}` });
+});
+
+/** Read a public page down to plain words, for a watch. */
+async function readWatchedPage(url) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Only web pages can be watched.");
+  }
+  const response = await fetch(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(8000),
+    headers: { "User-Agent": "hey-my-brain" },
+  });
+  if (!response.ok) throw new Error(`The page answered ${response.status}.`);
+  const raw = await response.text();
+  return raw
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 4000);
+}
+
+async function checkWatches() {
+  for (const job of desk.watchesToCheck()) {
+    try {
+      const text = await readWatchedPage(job.url);
+      const hash = crypto.createHash("sha256").update(text).digest("hex");
+      const changed = desk.recordWatch(job.id, hash);
+      if (!changed) continue;
+      const notice = `The page ${job.title} changed.`;
+      sendControl("job", { title: job.title, text: notice });
+      sendControl("desk", {});
+      try {
+        await sendIMessage(notice);
+      } catch (err) {
+        console.error("Failed while texting a page change:", err?.message || err);
+      }
+    } catch (err) {
+      console.error("Failed while checking a watched page:", err?.message || err);
+      desk.recordWatch(job.id, "", "I could not read that page just now. I will try again.");
+    }
+  }
+}
+
+async function deliverReminders() {
+  const due = desk.takeDueReminders();
+  if (!due.length) return;
+  for (const job of due) {
+    const notice = `Reminder: ${job.title}.`;
+    sendControl("job", { title: job.title, text: notice });
+    try {
+      await sendIMessage(notice);
+    } catch (err) {
+      console.error("Failed while texting a reminder:", err?.message || err);
+    }
+  }
+  sendControl("desk", {});
+}
+
+// Watches and reminders keep going while this server is open, including after a restart.
+setInterval(() => {
+  deliverReminders().catch((err) => console.error("Failed while sending reminders:", err?.message || err));
+}, 20_000);
+setTimeout(() => {
+  deliverReminders().catch((err) => console.error("Failed while sending reminders:", err?.message || err));
+}, 5_000);
+setInterval(() => {
+  checkWatches().catch((err) => console.error("Failed while checking watches:", err?.message || err));
+}, 3 * 60_000);
+setInterval(() => {
+  indexRawMail()
+    .then(() => syncSuggestions())
+    .catch((err) => console.error("Failed while refreshing suggestions:", err?.message || err));
+}, 15 * 60_000);
+
+app.get("/briefing", async (_req, res) => {
+  try {
+    res.json({ text: await briefingText() });
+  } catch (err) {
+    console.error("Failed while making the briefing:", err?.message || err);
+    res.status(500).json({ error: "Could not make the briefing." });
+  }
+});
+
+app.post("/briefing/send", async (_req, res) => {
+  try {
+    res.json({ text: await deliverBriefing() });
+  } catch (err) {
+    console.error("Failed while sending the briefing:", err?.message || err);
+    res.status(500).json({ error: "Could not send the briefing." });
+  }
+});
+
+const BRIEFING_AT = (process.env.BRIEFING_AT || "").trim();
+if (/^\d{1,2}:\d{2}$/.test(BRIEFING_AT)) {
+  let briefedOn = "";
+  setInterval(() => {
+    const now = new Date();
+    const [hour, minute] = BRIEFING_AT.split(":").map(Number);
+    const today = now.toDateString();
+    const late = now.getHours() * 60 + now.getMinutes() - (hour * 60 + minute);
+    // Only within the first half hour, so a restart at noon does not send a morning briefing.
+    if (briefedOn === today || late < 0 || late > 30) return;
+    briefedOn = today;
+    deliverBriefing().catch((err) => console.error("Failed while sending the briefing:", err?.message || err));
+  }, 30_000);
+  console.log(`Morning briefing set for ${BRIEFING_AT}.`);
+}
+
 startWhisperServer();
 startKokoro();
 
@@ -3339,7 +3988,8 @@ try {
   console.error("Failed while loading the wiki:", err?.message || err);
 }
 
-app.listen(PORT, () => {
+// Only this Mac can connect; other machines on the network cannot.
+app.listen(PORT, "127.0.0.1", () => {
   console.log(`\nSecond brain → http://localhost:${PORT}`);
   console.log(`Default model: ${DEFAULT_MODEL} (thinking ${DEFAULT_REASONING}). Change it on the page.`);
   if (!process.env.OPENAI_API_KEY) {

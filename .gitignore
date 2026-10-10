@@ -6,3 +6,9 @@ voice/models/
 voice/tmp/
 second-brain/tmp/
 second-brain/folders.json
+second-brain/learnings.md
+second-brain/desk.json
+second-brain/desk.json.tmp
+
+# iMessage bridge binary (built by voice/imessage-bridge/build.sh)
+voice/imessage-bridge/imessage-bridge

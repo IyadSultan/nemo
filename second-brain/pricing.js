@@ -51,6 +51,20 @@ export const VOICE_MODELS = [
     audioOutputPerMillion: 64,
     reasoning: ["low", "medium", "high"],
   },
+  {
+    id: "gemini-3.8-live",
+    label: "Gemini Live",
+    blurb: "Google hears and speaks. Talk over it to cut it off.",
+    hears: true,
+    gemini: true,
+    inputPerMillion: 0.75,
+    cachedInputPerMillion: 0.75,
+    outputPerMillion: 4.5,
+    audioInputPerMillion: 3,
+    audioCachedInputPerMillion: 3,
+    audioOutputPerMillion: 12,
+    reasoning: ["low"],
+  },
 ];
 
 export const MODELS = [

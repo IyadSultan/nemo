@@ -38,6 +38,7 @@
     <main class="layout">
       <section class="panel booth" aria-label="Voice conversation controls">
         <div class="capsule" id="capsule" data-state="idle">
+          <canvas class="mascot" id="mascotCanvas" width="400" height="400" aria-hidden="true"></canvas>
           <div class="rings" aria-hidden="true"><span></span><span></span><span></span></div>
           <div class="orbit" aria-hidden="true"></div>
           <div class="halo" aria-hidden="true">
@@ -107,6 +108,23 @@
                 <option value="sage">Sage</option>
               </select>
             </label>
+            <label class="field">
+              <span>Listening</span>
+              <select id="earsSelect" aria-label="Who writes down what you say">
+                <option value="chrome-local" selected>Chrome on this Mac, fast and private</option>
+                <option value="google">Google cloud (Chrome), most accurate</option>
+                <option value="whisper">Whisper on this Mac, private</option>
+                <option value="whisper-auto">Whisper on this Mac, English + Arabic (auto)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Wake</span>
+              <select id="wakeSelect" aria-label="What starts a question">
+                <option value="hey" selected>Hey</option>
+                <option value="jev">Hey + Jev (TypeSafe cloud)</option>
+                <option value="gemma">Hey + Gemma (on this Mac)</option>
+              </select>
+            </label>
             <p class="rates" id="rates">Pick a model to see its price.</p>
             <div class="field wide">
               <span>Second brains</span>
@@ -124,6 +142,12 @@
       </section>
 
       <section class="panel transcript-panel" aria-label="Live transcript">
+        <section class="desk" id="desk" hidden>
+          <div class="transcript-head">
+            <h2>Work</h2>
+          </div>
+          <div class="desk-cards" id="deskCards"></div>
+        </section>
         <div class="transcript-head">
           <h2>Transcript</h2>
           <button type="button" class="ghost-btn small" id="clearBtn">Clear</button>
@@ -136,6 +160,10 @@
     </main>
 
     <audio id="remoteAudio" autoplay playsinline></audio>
+    <script src="/vendor/rive/rive.js"></script>
+    <script src="/ears.js"></script>
     <script src="/voice.js"></script>
+    <script src="/gemini.js"></script>
+    <script src="/mascot.js"></script>
   </body>
 </html>

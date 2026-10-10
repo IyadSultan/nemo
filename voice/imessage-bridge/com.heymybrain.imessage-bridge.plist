@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: replace __HOME__ with your home folder and __HANDLE__ with your own iMessage phone/email (see README). -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.heymybrain.imessage-bridge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__HOME__/code/talk_to_your_brain/voice/imessage-bridge/imessage-bridge</string>
+        <string>--handle</string>
+        <string>__HANDLE__</string>
+        <string>--server</string>
+        <string>http://127.0.0.1:3001</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/hey-my-brain-imessage.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/hey-my-brain-imessage.log</string>
+</dict>
+</plist>

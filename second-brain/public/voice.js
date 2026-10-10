@@ -21,6 +21,8 @@ const clearBtn = document.getElementById("clearBtn");
 const typeForm = document.getElementById("typeForm");
 const typeInput = document.getElementById("typeInput");
 const transcriptEl = document.getElementById("transcript");
+const deskEl = document.getElementById("desk");
+const deskCards = document.getElementById("deskCards");
 const remoteAudio = document.getElementById("remoteAudio");
 const folderList = document.getElementById("folderList");
 const folderPath = document.getElementById("folderPath");
@@ -35,6 +37,8 @@ const chatPriceEl = document.getElementById("chatPrice");
 const lastWaitEl = document.getElementById("lastWait");
 const avgWaitEl = document.getElementById("avgWait");
 const breakdownEl = document.getElementById("breakdown");
+const earsSelect = document.getElementById("earsSelect");
+const wakeSelect = document.getElementById("wakeSelect");
 
 let pc = null;
 let dc = null;
@@ -85,8 +89,8 @@ let speaker = null;
 
 talkBtn.addEventListener("click", async () => {
   if (connected) {
+    persistChat();
     await hangUp();
-    clearChatMemory();
     await releaseAllLocalModels();
     return;
   }
@@ -107,6 +111,7 @@ function stopSpeaking() {
   activeSpeech?.stop();
   kokoroSpeech?.stop();
   speechSynthesis.cancel();
+  silenceGeminiTurn();
   try { remoteAudio.pause(); } catch { /* nothing is playing */ }
   if (dc && dc.readyState === "open") {
     dc.send(JSON.stringify({ type: "response.cancel" }));
@@ -142,10 +147,46 @@ pauseBtn.addEventListener("click", () => {
   listenForNewQuestion();
 });
 
-stopBtn.addEventListener("click", () => {
+stopBtn.addEventListener("click", stopAnswer);
+
+function stopAnswer() {
   if (!connected && !brainBusy) return;
   listenForNewQuestion();
+}
+
+// Cmd+Opt+S stops the answer. Option changes e.key (to "ß"), so match the physical key.
+document.addEventListener("keydown", (event) => {
+  if (event.metaKey && event.altKey && event.code === "KeyS") {
+    event.preventDefault();
+    stopAnswer();
+  }
 });
+// The same shortcut from any app: Hammerspoon posts /control/stop, the server passes it here.
+const control = new EventSource("/control");
+control.addEventListener("stop", stopAnswer);
+/** Read a notice aloud when the page is quiet (a briefing, a reminder, a page change). */
+async function speakNotice(text) {
+  if (!text || !["idle", "listening", undefined].includes(capsule.dataset.state)) return;
+  const voice = kokoroVoice();
+  activeSpeech = voice;
+  setCapsuleState("speaking");
+  voice.push(text);
+  await voice.done.catch(() => {});
+  if (activeSpeech === voice) activeSpeech = null;
+  setCapsuleState(connected ? "listening" : "idle");
+}
+
+// The morning briefing (BRIEFING_AT in .env) is read aloud when this page is open and quiet.
+control.addEventListener("briefing", (event) => {
+  speakNotice(JSON.parse(event.data || "{}").text);
+});
+// A reminder or a watched page changed. The card list refreshes too.
+control.addEventListener("job", (event) => {
+  const data = JSON.parse(event.data || "{}");
+  speakNotice(data.text);
+  loadDesk();
+});
+control.addEventListener("desk", () => loadDesk());
 
 // A typed question skips the wake phrase. Use it when the mic or dictation fails.
 typeForm.addEventListener("submit", (event) => {
@@ -161,6 +202,14 @@ async function askTyped(raw) {
   }
   typeInput.value = "";
   questionEndedAt = performance.now();
+
+  // Gemini Live takes typed words on the same line.
+  if (gemini?.ready) {
+    stopGeminiAudio();
+    addBubble("user", question, false);
+    gemini.ws.send(JSON.stringify({ realtimeInput: { text: question } }));
+    return;
+  }
 
   // The listening loop is already running. Hand it the words and let it answer.
   if (connected && needsVoiceControl(selectedModel())) {
@@ -203,6 +252,7 @@ muteBtn.addEventListener("click", () => {
   if (!micStream) return;
   muted = !muted;
   for (const track of micStream.getAudioTracks()) track.enabled = !muted;
+  if (ears) muted ? ears.stop() : ears.start();
   muteBtn.textContent = muted ? "Unmute mic" : "Mute mic";
   muteBtn.classList.toggle("is-muted", muted);
   if (connected) {
@@ -218,6 +268,7 @@ clearBtn.addEventListener("click", () => {
   chatTurns = [];
   chatMemory = "";
   compressAbort?.abort();
+  forgetSavedChat();
 });
 
 let chosenModelId = "";
@@ -234,7 +285,9 @@ function rememberTurn(question, answer) {
     question: asked,
     answer: String(answer || "").trim() || "(The answer was stopped.)",
   });
+  lastAnswerAt = performance.now();
   if (chatTurns.length > 8) chatTurns = chatTurns.slice(-8);
+  persistChat();
 }
 
 function compressWhileSpeaking() {
@@ -256,6 +309,7 @@ function compressWhileSpeaking() {
     const data = await response.json();
     if (!data.memory || generation !== compressGen) return;
     chatMemory = data.memory;
+    persistChat();
     const last = snapshot[snapshot.length - 1];
     const stillThere = chatTurns.findIndex((turn) => turn.question === last?.question && turn.answer === last?.answer);
     if (stillThere >= 0) chatTurns = chatTurns.slice(stillThere);
@@ -276,6 +330,20 @@ async function startCall() {
   answerWaits = [];
   questionEndedAt = 0;
   renderWaits();
+
+  // Gemini Live hears and speaks on its own line (gemini.js).
+  if (selectedModel()?.gemini) {
+    try {
+      await startGeminiCall();
+    } catch (err) {
+      console.error("Failed while starting Gemini Live:", err);
+      setStatus(humanError(err));
+      setCapsuleState("idle");
+      await hangUp({ keepStatus: true });
+    }
+    setBusy(false);
+    return;
+  }
 
   // Bonsai does not speak. Voice control reads its answer.
   if (needsVoiceControl(selectedModel())) {
@@ -340,7 +408,7 @@ async function startCall() {
     syncCallButtons();
     talkBtn.setAttribute("aria-pressed", "true");
     talkLabel.textContent = "End call";
-    setStatus(WAKE_STATUS);
+    setStatus(wakeStatus());
     setCapsuleState("listening");
     setBusy(false);
     if (pendingReplay) {
@@ -363,6 +431,20 @@ function sleep(ms) {
 }
 
 const WAKE_STATUS = "Listening. I only answer when you start with Hey.";
+/** The listening line, plus who is writing down your words right now. */
+function wakeStatus() {
+  if (jevListening()) {
+    return wakeSelect.value === "jev"
+      ? "Listening. Say Hey, or just talk; Jev decides what is for me. (text goes to TypeSafe)"
+      : "Listening. Say Hey, or just talk; Gemma on this Mac decides what is for me.";
+  }
+  // Voice mini hears you itself, so no listener runs on this page.
+  if (!needsVoiceControl(selectedModel())) return WAKE_STATUS;
+  const who = ears
+    ? (ears.local ? "Chrome on this Mac, English only" : "Google cloud, English only")
+    : earsSelect.value === "whisper-auto" ? "Whisper, English + Arabic" : "Whisper on this Mac, English only";
+  return `${WAKE_STATUS} (${who})`;
+}
 // A short breath is not the end of the sentence. Wait this long before stopping the recording.
 const END_PAUSE_MS = 1200;
 
@@ -372,7 +454,8 @@ const END_PAUSE_MS = 1200;
  */
 function questionAfterWake(text) {
   const cleaned = String(text || "").replace(/^[\s"'“”]+/, "").trim();
-  const match = cleaned.match(/^hey\b(?:\s+my\s+brain\b)?[\s,.:;!?\-]*/i);
+  // Arabic openers too: هاي (hey), يا دماغي (hey my brain).
+  const match = cleaned.match(/^(?:hey\b(?:\s+my\s+brain\b)?|هاي|يا\s*دماغي)[\s,.:;!?،\-]*/i);
   if (!match) return null;
   return cleaned.slice(match[0].length).trim();
 }
@@ -384,7 +467,7 @@ function looksLikeSilence(text) {
   if (/^\([^)]*\)$/.test(raw) || /^\[[^\]]*\]$/.test(raw)) return true;
   const cleaned = raw
     .toLowerCase()
-    .replace(/[^\w\s']/g, "")
+    .replace(/[^\p{L}\p{N}\s']/gu, "")
     .trim();
   if (cleaned.length < 2) return true;
   const junk = [
@@ -494,7 +577,8 @@ function recordUntilSilence(stream) {
 }
 
 async function transcribeClip(clip) {
-  const response = await fetch("/transcribe", {
+  const auto = earsSelect.value === "whisper-auto";
+  const response = await fetch(auto ? "/transcribe?lang=auto" : "/transcribe", {
     method: "POST",
     headers: { "Content-Type": clip.type || "audio/webm" },
     body: clip,
@@ -503,6 +587,202 @@ async function transcribeClip(clip) {
   if (!response.ok) throw new Error(data.error || "The local voice model could not hear that.");
   return (data.text || "").trim();
 }
+
+/**
+ * Google ears (ears.js). Chrome's speech recognition runs for the whole call.
+ * Each finished sentence goes into heardQueue; the listening loop takes them in order.
+ * While an answer is thinking or speaking, "stop" or "hey" cuts it as soon as the word is heard.
+ */
+let ears = null;
+let heardQueue = [];
+let heardWake = null;
+let cutThisSentence = false;
+
+// Said at the start of a sentence while the answer plays.
+const CUT_WORDS = /^(hey|stop|enough|cancel|quiet|be quiet|shut up|ok(ay)? stop)\b/i;
+
+async function startEars() {
+  stopEars();
+  if (earsSelect.value.startsWith("whisper")) return;
+  // Jev mode listens with Chrome on this Mac; only the text goes to Jev.
+  let local = earsSelect.value === "chrome-local";
+  if (local) {
+    const ready = await prepareLocalEars();
+    if (ready !== "available") {
+      local = false;
+      setStatus(`Chrome on-device listening is not ready (${ready}). Using Google cloud.`);
+    }
+  }
+  if (!connected || localStop) return;
+  ears = createEars({
+    local,
+    onWords: heardWords,
+    onUtterance: (text) => {
+      cutThisSentence = false;
+      if (muted) return;
+      heardQueue.push({ text, at: performance.now() });
+      heardWake?.();
+    },
+    onFail: (reason) => {
+      ears = null;
+      setStatus(`Google listening stopped (${reason}). Using whisper on this Mac.`);
+      heardWake?.();
+    },
+  });
+  if (!ears) {
+    setStatus("This browser has no Google listening. Using whisper on this Mac.");
+    return;
+  }
+  heardQueue = [];
+  ears.start();
+}
+
+function stopEars() {
+  ears?.stop();
+  ears = null;
+  heardQueue = [];
+  heardWake?.();
+}
+
+/** The next finished sentence, or null when the call stops or Google listening fails. */
+async function nextHeard() {
+  // A tapped or typed question also ends the wait, so the loop can answer it.
+  while (connected && !localStop && ears && !queuedQuestion) {
+    // A sentence that waited too long belongs to an old moment. Drop it.
+    heardQueue = heardQueue.filter((item) => performance.now() - item.at < 20000);
+    if (heardQueue.length) return heardQueue.shift();
+    await new Promise((resolve) => {
+      heardWake = resolve;
+      setTimeout(resolve, 500);
+    });
+    heardWake = null;
+  }
+  return null;
+}
+
+/**
+ * Jev listening (server: jev.js). Each finished sentence without Hey is sent as text to
+ * /jev/judge, which answers send / hold / ask / ignore.
+ */
+let jevHeld = { text: "", at: 0 };
+let jevHoldTimer = 0;
+// A held sentence with no continuation after this pause is answered as it is.
+const JEV_HOLD_MS = 2500;
+let jevEarlier = [];
+let lastAnswerAt = 0;
+
+/** Hey + Jev or Hey + Gemma: sentences without Hey are judged. Works with every listener. */
+function jevListening() {
+  return wakeSelect.value !== "hey";
+}
+
+/** Gemma takes ~20 s to load the first time. Load it as soon as it may be needed. */
+function warmJudge() {
+  if (wakeSelect.value === "gemma") fetch("/jev/warm", { method: "POST" }).catch(() => {});
+}
+
+/** The question to answer, or "" when Jev says this sentence was not for the assistant. */
+async function jevQuestion(heard) {
+  // Words held as "cut off" join the next sentence if it comes within 10 seconds.
+  const text = jevHeld.text && heard.at - jevHeld.at < 10000 ? `${jevHeld.text} ${heard.text}` : heard.text;
+  jevHeld = { text: "", at: 0 };
+  clearTimeout(jevHoldTimer);
+  let verdict;
+  try {
+    const response = await fetch("/jev/judge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        latest: text,
+        backend: wakeSelect.value === "jev" ? "typesafe" : "gemma",
+        earlier: jevEarlier.slice(-3),
+        lastAnswer: chatTurns.at(-1)?.answer || "",
+        justAnswered: Boolean(lastAnswerAt) && performance.now() - lastAnswerAt < 20000,
+      }),
+    });
+    verdict = await response.json();
+    if (!response.ok) throw new Error(verdict.error || `Jev returned ${response.status}`);
+  } catch (err) {
+    console.error("Failed while asking Jev:", err);
+    setStatus("Jev is not answering. Say Hey to ask a question.");
+    return "";
+  } finally {
+    jevEarlier = [...jevEarlier, text].slice(-5);
+  }
+  if (verdict.decision === "send") return text;
+  if (verdict.decision === "hold") {
+    jevHeld = { text, at: heard.at };
+    jevHoldTimer = setTimeout(() => {
+      if (jevHeld.text !== text || brainBusy) return;
+      jevHeld = { text: "", at: 0 };
+      queuedQuestion = text;
+      heardWake?.();
+    }, JEV_HOLD_MS);
+  }
+  if (verdict.decision === "ask") offerJevQuestion(text);
+  return "";
+}
+
+/** Jev was not sure. Show the sentence with a button; one tap asks it. */
+function offerJevQuestion(text) {
+  const bubble = addBubble("user", text, true);
+  bubble.querySelector(".who").textContent = "Was that for me?";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost-btn";
+  button.textContent = "Yes, answer it";
+  button.addEventListener("click", () => {
+    // The listening loop shows the question again when it answers it.
+    bubble.remove();
+    queuedQuestion = text;
+    heardWake?.();
+  }, { once: true });
+  bubble.append(button);
+}
+
+/** The speaker's own voice can reach the mic. A long phrase taken from the answer is an echo. */
+function isEcho(text) {
+  const answer = (currentAnswerBubble?.textContent || "").toLowerCase();
+  const words = text.toLowerCase().split(/\s+/);
+  return words.length >= 3 && answer.includes(words.slice(0, 4).join(" "));
+}
+
+function heardWords(text) {
+  if (muted || !brainBusy || cutThisSentence) return;
+  if (!CUT_WORDS.test(text) || isEcho(text)) return;
+  cutThisSentence = true;
+  stopSpeaking();
+  cancelAnswer = true;
+  askAbort?.abort();
+  try { activeReader?.cancel(); } catch { /* already finished */ }
+  if (/^hey\b/i.test(text)) {
+    setStatus("Go ahead. A short pause is fine.");
+  } else {
+    setStatus("Stopped. Say Hey for a new question.");
+  }
+  setCapsuleState("listening");
+}
+
+earsSelect.value = localStorage.getItem("ears") || "chrome-local";
+// A saved choice that no longer exists (the old "Jev decides" listener) falls back to the default.
+if (!earsSelect.value) earsSelect.value = "chrome-local";
+wakeSelect.value = localStorage.getItem("wake") || "hey";
+if (!wakeSelect.value) wakeSelect.value = "hey";
+wakeSelect.addEventListener("change", () => {
+  localStorage.setItem("wake", wakeSelect.value);
+  warmJudge();
+  if (connected && needsVoiceControl(selectedModel())) setStatus(wakeStatus());
+});
+earsSelect.addEventListener("change", () => {
+  localStorage.setItem("ears", earsSelect.value);
+  // Picking on-device is a click, so Chrome allows the one-time model download here.
+  if (earsSelect.value === "chrome-local") {
+    prepareLocalEars().then((ready) => setStatus(
+      ready === "available" ? "Chrome on-device listening is ready." : `Chrome on-device listening is not ready (${ready}).`
+    ));
+  }
+  if (connected && needsVoiceControl(selectedModel()) && !muted) startEars();
+});
 
 /**
  * While an answer is playing, listen for Hey.
@@ -549,7 +829,7 @@ function watchWhileAnswering(stream) {
     try {
       const text = await transcribeClip(job.blob);
       if (stopped || epoch !== listenEpoch || heyIndex >= 0) return;
-      if (questionAfterWake(text) === null && !/\bhey\b/i.test(text)) return;
+      if (questionAfterWake(text) === null && !/\bhey\b|هاي/i.test(text)) return;
       heyIndex = job.index;
       stopSpeaking();
       cancelAnswer = true;
@@ -574,7 +854,9 @@ function watchWhileAnswering(stream) {
       return;
     }
     sliceLoud = false;
-    pendingSlice = { index, blob: event.data };
+    // Only the first slice carries the WebM header, so later slices ride on it.
+    const blob = index === 0 ? event.data : new Blob([chunks[0], event.data], { type: mime });
+    pendingSlice = { index, blob };
     pump();
   };
 
@@ -652,9 +934,11 @@ async function startLocalListen() {
   talkBtn.setAttribute("aria-pressed", "true");
   talkLabel.textContent = "End call";
   const macOnly = Boolean(selectedModel()?.local);
-  setStatus(WAKE_STATUS);
+  setStatus(wakeStatus());
   setCapsuleState("listening");
   setBusy(false);
+  await startEars();
+  warmJudge();
   // Open voice control now, while you talk, so the first answer starts sooner.
   // Local models use the Kokoro voice, so OpenAI is not needed at all.
   if (!macOnly) ensureSpeaker().catch(() => {});
@@ -686,8 +970,20 @@ async function startLocalListen() {
       await sleep(250);
       continue;
     }
-    setStatus(WAKE_STATUS);
+    setStatus(wakeStatus());
     setCapsuleState("listening");
+    if (ears) {
+      const heard = await nextHeard();
+      if (!heard || !connected || localStop || paused) continue;
+      // Hey is the instant path. In Jev mode, everything else is judged by Jev.
+      let question = questionAfterWake(heard.text);
+      if (!question && jevListening()) question = await jevQuestion(heard);
+      if (!question) continue;
+      questionEndedAt = heard.at;
+      addBubble("user", question, false);
+      await answerWithBrain(question);
+      continue;
+    }
     const clip = await recordUntilSilence(micStream);
     if (!connected || localStop || paused) {
       clearThinkCue();
@@ -712,15 +1008,16 @@ async function startLocalListen() {
     }
     if (looksLikeSilence(text)) {
       clearThinkCue();
-      setStatus(WAKE_STATUS);
+      setStatus(wakeStatus());
       setCapsuleState("listening");
       continue;
     }
-    const question = questionAfterWake(text);
+    let question = questionAfterWake(text);
+    if (!question && jevListening()) question = await jevQuestion({ text, at: performance.now() });
     // No wake phrase, or only the phrase with no question: stay quiet.
     if (!question) {
       clearThinkCue();
-      setStatus(WAKE_STATUS);
+      setStatus(wakeStatus());
       setCapsuleState("listening");
       continue;
     }
@@ -830,6 +1127,11 @@ function closeSpeaker(s = speaker, reason = "") {
  * done resolves once the last words have finished playing.
  */
 function speakStream(s) {
+  // Stop pauses the player. The voice line stays open, so play it again for this answer.
+  if (s.remoteStream) {
+    remoteAudio.srcObject = s.remoteStream;
+    remoteAudio.play().catch(() => {});
+  }
   const queue = [];
   const samples = new Uint8Array(s.analyser.fftSize);
   let active = false;
@@ -970,6 +1272,8 @@ function speakStream(s) {
  */
 let kokoroSpeech = null;
 
+const ARABIC = /[\u0600-\u06FF]/;
+
 function kokoroVoice() {
   let chain = Promise.resolve();
   let stopped = false;
@@ -981,7 +1285,9 @@ function kokoroVoice() {
     get done() { return chain; },
     // markWait is false for a cue that should not reset the wait clock.
     push(text, markWait = true) {
-      const clip = fetch("/speak", {
+      // Kokoro reads English only. Arabic goes to the Mac's Arabic voice.
+      const arabic = ARABIC.test(text);
+      const clip = arabic ? Promise.reject(new Error("Kokoro reads English only")) : fetch("/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
@@ -1011,9 +1317,15 @@ function kokoroVoice() {
           release = null;
           URL.revokeObjectURL(url);
         } catch (err) {
-          console.error("Failed while speaking with Kokoro, using the Mac voice:", err);
+          if (!arabic) console.error("Failed while speaking with Kokoro, using the Mac voice:", err);
           if (stopped) return;
           const utterance = new SpeechSynthesisUtterance(text);
+          if (arabic) utterance.lang = "ar-SA";
+          utterance.onstart = () => {
+            if (!markWait) return;
+            markAnswerStarted();
+            setCapsuleState("speaking");
+          };
           await new Promise((resolve) => {
             release = resolve;
             utterance.onend = resolve;
@@ -1066,6 +1378,7 @@ function macVoice(status) {
     push(text, markWait = true) {
       last = last.then(() => new Promise((resolve) => {
         const utterance = new SpeechSynthesisUtterance(text);
+        if (ARABIC.test(text)) utterance.lang = "ar-SA";
         utterance.onstart = () => {
           if (!markWait) return;
           markAnswerStarted();
@@ -1180,11 +1493,11 @@ async function releaseAllLocalModels() {
     if (!response.ok) throw new Error(data.error || "Could not stop the local models.");
     const count = Array.isArray(data.stopped) ? data.stopped.length : 0;
     setStatus(count
-      ? "Call ended. Local models were stopped and the chat memory was cleared."
-      : "Call ended. Chat memory was cleared. No local model was using memory.");
+      ? "Call ended. Local models were stopped. This conversation is saved for next time."
+      : "Call ended. This conversation is saved for next time.");
   } catch (err) {
     console.error("Failed while stopping local models:", err);
-    setStatus("Call ended. Chat memory was cleared, but a local model may still be in memory.");
+    setStatus("Call ended. This conversation is saved, but a local model may still be in memory.");
   }
 }
 async function hangUp({ keepStatus = false } = {}) {
@@ -1207,6 +1520,8 @@ async function hangUp({ keepStatus = false } = {}) {
   } catch { /* already closed */ }
   pc = null;
   closeSpeaker();
+  stopEars();
+  stopGeminiCall();
   kokoroSpeech?.stop();
   speechSynthesis.cancel();
   if (micStream) {
@@ -1302,7 +1617,7 @@ function handleServerEvent(event) {
         userPartialEl.remove();
         userPartialEl = null;
       }
-      setStatus(WAKE_STATUS);
+      setStatus(wakeStatus());
       return;
     }
     stopSpeaking();
@@ -1590,6 +1905,7 @@ function armThinkCue() {}
 
 /** Bonsai and GPT-6 write the answer. Voice control is what speaks it. */
 async function answerWithBrain(question) {
+  await deskReady;
   if (brainBusy || paused) return;
   if (!connected) setBusy(true);
   compressAbort?.abort();
@@ -1600,7 +1916,7 @@ async function answerWithBrain(question) {
   cancelAnswer = false;
   currentAnswerBubble = null;
   askAbort = new AbortController();
-  if (micStream && !muted) watchWhileAnswering(micStream);
+  if (micStream && !muted && !ears) watchWhileAnswering(micStream);
   setStatus(`Thinking with ${selectedModel()?.label || "the selected model"}…`);
   setCapsuleState("thinking");
   // Local models (Bonsai) always use the Kokoro voice on this Mac: free, no OpenAI.
@@ -1698,7 +2014,13 @@ async function answerWithBrain(question) {
         if (event.type === "status") {
           setStatus(event.message || "Looking on the web…");
           setCapsuleState("thinking");
+          if (/look|search/i.test(event.message || "Looking")) setActivity("searching");
+        } else if (event.type === "work" && event.card) {
+          showFlash(event.card);
+        } else if (event.type === "sources") {
+          if (event.sources?.length) setActivity("searching");
         } else if (event.type === "outlook") {
+          setActivity("writing");
           outlook = {
             to: event.to || "",
             subject: event.subject || "",
@@ -1741,13 +2063,18 @@ async function answerWithBrain(question) {
       bubble.classList.remove("partial");
       bubble.querySelector(".text").textContent = spoken || written;
     }
-    if (outlook) attachOutlookButton(bubble, outlook, written || spoken);
+    if (outlook) {
+      attachOutlookButton(bubble, outlook, written || spoken);
+      saveEmailDraft(outlook, written || spoken);
+    }
     rememberTurn(question, answer);
     remembered = true;
     compressWhileSpeaking();
     await speakReady(true);
     speech?.end();
     await speech?.done;
+    // The server confirms a saved memo or an opened meeting with these words.
+    if (/^I (?:saved that memo|opened that meeting)/.test(spoken)) flashSaved();
     if (connected && !localStop) {
       setCapsuleState("listening");
       setStatus(macOnly
@@ -1768,6 +2095,7 @@ async function answerWithBrain(question) {
     scriptedReply = false;
   } finally {
     clearThinkCue();
+    if (capsule.dataset.activity !== "saved") setActivity("");
     if (keepMemory && !remembered) rememberTurn(question, answer);
     if (activeReader === reader) activeReader = null;
     brainBusy = false;
@@ -1853,6 +2181,12 @@ function finalizeUser(text) {
 
 function setStatus(text) { statusText.textContent = text; }
 function setCapsuleState(state) { capsule.dataset.state = state; }
+// What Tiny is doing for the answer: "searching", "writing", "saved", or "".
+function setActivity(name) { capsule.dataset.activity = name; }
+function flashSaved() {
+  setActivity("saved");
+  setTimeout(() => capsule.dataset.activity === "saved" && setActivity(""), 2500);
+}
 function setBusy(busy) { talkBtn.disabled = busy; }
 
 function waitForIceGathering(peer, timeoutMs) {
@@ -2112,6 +2446,232 @@ function fillFolders(state) {
   }
   pushInstructions(state.instructions);
 }
+
+// Saved jobs, ideas, and the last conversation. Loaded once before the first question.
+let flashes = [];
+let chatRestored = false;
+let deskView = { jobs: [], suggestions: [], memory: {} };
+
+function showFlash(card) {
+  if (!card) return;
+  flashes.unshift(card);
+  flashes = flashes.slice(0, 3);
+  renderDesk();
+}
+
+function persistChat() {
+  fetch("/desk/memory", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ memory: chatMemory, turns: chatTurns }),
+  }).then(async (response) => {
+    if (!response.ok) throw new Error("Could not save the conversation.");
+    const data = await response.json();
+    if (data?.jobs) {
+      deskView = data;
+      renderDesk();
+    }
+  }).catch((err) => {
+    console.error("Failed while saving the conversation:", err);
+  });
+}
+
+function forgetSavedChat() {
+  fetch("/desk/memory", { method: "DELETE" })
+    .then(() => loadDesk())
+    .catch((err) => console.error("Failed while forgetting the conversation:", err));
+}
+
+async function saveEmailDraft(outlook, body) {
+  const letter = polishReply(body, outlook?.name);
+  if (!letter) return;
+  try {
+    const response = await fetch("/desk/draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: outlook.to || "",
+        name: outlook.name || "",
+        subject: outlook.subject || "",
+        body: letter,
+        original: outlook.original || "",
+      }),
+    });
+    if (!response.ok) throw new Error("Could not save the draft.");
+    await loadDesk();
+  } catch (err) {
+    console.error("Failed while saving the email draft:", err);
+  }
+}
+
+async function deskAction(url) {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "That did not work.");
+    return data;
+  } catch (err) {
+    console.error("Failed while updating the work list:", err);
+    setStatus(err.message || "That did not work.");
+    return null;
+  }
+}
+
+function addCardButton(parent, label, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost-btn small";
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  parent.append(button);
+}
+
+function renderDesk() {
+  const jobs = deskView.jobs || [];
+  const suggestions = deskView.suggestions || [];
+  const memory = deskView.memory || {};
+  const showMemory = Boolean(memory.summary || memory.lastQuestion);
+  deskCards.replaceChildren();
+  if (!jobs.length && !suggestions.length && !showMemory && !flashes.length) {
+    deskEl.hidden = true;
+    return;
+  }
+  deskEl.hidden = false;
+
+  for (const card of flashes) {
+    const article = document.createElement("article");
+    article.className = "work-card";
+    const kicker = document.createElement("p");
+    kicker.className = "work-kicker";
+    kicker.textContent = card.title || "Just now";
+    const list = document.createElement("ul");
+    for (const line of card.lines || []) {
+      const item = document.createElement("li");
+      item.textContent = line;
+      list.append(item);
+    }
+    article.append(kicker, list);
+    deskCards.append(article);
+  }
+
+  for (const job of jobs) {
+    const article = document.createElement("article");
+    article.className = "work-card";
+    const kicker = document.createElement("p");
+    kicker.className = "work-kicker";
+    kicker.textContent = job.kind === "draft"
+      ? "Draft · waiting for you"
+      : job.kind === "watch"
+        ? (job.status === "alerted" ? "Watch · changed" : "Watch")
+        : "Reminder";
+    const title = document.createElement("h3");
+    title.textContent = job.title;
+    const detail = document.createElement("p");
+    detail.textContent = job.detail || job.receipt || "";
+    article.append(kicker, title, detail);
+    const actions = document.createElement("div");
+    actions.className = "work-actions";
+    if (job.kind === "draft") {
+      addCardButton(actions, "Open in Outlook", async (event) => {
+        event.currentTarget.disabled = true;
+        setStatus("Opening Outlook…");
+        const data = await deskAction(`/desk/jobs/${job.id}/open`);
+        if (data?.text) setStatus(data.text);
+        await loadDesk();
+      });
+      addCardButton(actions, "Drop", async () => {
+        await deskAction(`/desk/jobs/${job.id}/skip`);
+        setStatus("Dropped. Nothing was opened.");
+        await loadDesk();
+      });
+    } else {
+      if (job.status === "alerted") addCardButton(actions, "Got it", () => askTyped("got it"));
+      addCardButton(actions, "Drop", async () => {
+        await deskAction(`/desk/jobs/${job.id}/skip`);
+        flashes = flashes.filter((card) => card.title !== job.title && !(card.lines || []).includes(job.title));
+        setStatus(job.kind === "watch" ? "Stopped watching." : "Dropped that reminder.");
+        await loadDesk();
+      });
+    }
+    article.append(actions);
+    deskCards.append(article);
+  }
+
+  for (const item of suggestions) {
+    const article = document.createElement("article");
+    article.className = "work-card";
+    const kicker = document.createElement("p");
+    kicker.className = "work-kicker";
+    kicker.textContent = `Idea · ${item.source || "recent email"}`;
+    const title = document.createElement("h3");
+    title.textContent = item.title;
+    article.append(kicker, title);
+    const actions = document.createElement("div");
+    actions.className = "work-actions";
+    addCardButton(actions, "Do this", async (event) => {
+      event.currentTarget.disabled = true;
+      const data = await deskAction(`/desk/suggestions/${item.id}/do`);
+      await loadDesk();
+      if (data?.question) askTyped(data.question);
+    });
+    addCardButton(actions, "Skip", async () => {
+      await deskAction(`/desk/suggestions/${item.id}/skip`);
+      await loadDesk();
+    });
+    article.append(actions);
+    deskCards.append(article);
+  }
+
+  if (showMemory) {
+    const article = document.createElement("article");
+    article.className = "work-card";
+    const kicker = document.createElement("p");
+    kicker.className = "work-kicker";
+    kicker.textContent = "Last conversation";
+    const title = document.createElement("h3");
+    title.textContent = memory.lastQuestion || "Saved for the next time you start talking";
+    article.append(kicker, title);
+    if (memory.summary) {
+      const detail = document.createElement("p");
+      detail.textContent = memory.summary.slice(0, 280);
+      article.append(detail);
+    }
+    const actions = document.createElement("div");
+    actions.className = "work-actions";
+    addCardButton(actions, "Forget this", () => {
+      chatTurns = [];
+      chatMemory = "";
+      forgetSavedChat();
+    });
+    article.append(actions);
+    deskCards.append(article);
+  }
+}
+
+async function loadDesk() {
+  try {
+    const response = await fetch("/desk");
+    if (!response.ok) throw new Error("Could not load saved work.");
+    deskView = await response.json();
+    if (!chatRestored) {
+      chatRestored = true;
+      const memory = deskView.memory || {};
+      if (!chatTurns.length) {
+        chatMemory = memory.summary || "";
+        chatTurns = Array.isArray(memory.turns) ? memory.turns : [];
+      }
+    }
+    renderDesk();
+  } catch (err) {
+    console.error("Failed while loading saved work:", err);
+  }
+}
+
+const deskReady = loadDesk();
 
 async function loadSettings() {
   try {
