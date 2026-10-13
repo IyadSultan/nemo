@@ -63,7 +63,7 @@
         </div>
 
         <span class="state-pill" aria-hidden="true"></span>
-        <p class="status" id="statusText">Ready when you are</p>
+        <p class="status" id="statusText">Ready. Say Hey, then your question.</p>
 
         <form class="type-ask" id="typeForm">
           <label for="typeInput">Or type a question</label>
@@ -78,6 +78,34 @@
             <button type="submit" class="ghost-btn" id="typeBtn">Ask</button>
           </span>
         </form>
+
+        <button
+          type="button"
+          class="ghost-btn meeting-knob"
+          id="meetingBtn"
+          disabled
+          aria-pressed="false"
+          title="On: write down the meeting and stay quiet. Off: summarize it, then answer questions about it."
+        >
+          Meeting
+        </button>
+
+        <section class="skills" aria-label="Skills">
+          <div class="skills-head">
+            <span>Skills</span>
+            <button type="button" class="ghost-btn small" id="uploadSkillBtn">Upload</button>
+            <input id="skillFile" type="file" accept=".md,.txt,text/markdown,text/plain" hidden />
+          </div>
+          <div id="skillList" class="skill-list"></div>
+        </section>
+
+        <label class="field mic-pick">
+          <span>Microphone</span>
+          <select id="micSelect" aria-label="Microphone">
+            <option value="local">Local (this Mac)</option>
+            <option value="iphone">iPhone</option>
+          </select>
+        </label>
 
         <div class="controls">
           <button type="button" class="ghost-btn" id="muteBtn" disabled>Mute mic</button>
@@ -111,16 +139,16 @@
             <label class="field">
               <span>Listening</span>
               <select id="earsSelect" aria-label="Who writes down what you say">
-                <option value="chrome-local" selected>Chrome on this Mac, fast and private</option>
-                <option value="google">Google cloud (Chrome), most accurate</option>
-                <option value="whisper">Whisper on this Mac, private</option>
-                <option value="whisper-auto">Whisper on this Mac, English + Arabic (auto)</option>
+                <option value="whisper-auto" selected>Whisper on this Mac, English + Arabic</option>
+                <option value="whisper-both">Whisper English and Arabic together</option>
+                <option value="whisper">Whisper on this Mac, English only</option>
               </select>
             </label>
             <label class="field">
               <span>Wake</span>
               <select id="wakeSelect" aria-label="What starts a question">
                 <option value="hey" selected>Hey</option>
+                <option value="medical">Medical speech (GPT-OSS 20B on this Mac)</option>
                 <option value="jev">Hey + Jev (TypeSafe cloud)</option>
                 <option value="gemma">Hey + Gemma (on this Mac)</option>
               </select>
@@ -153,7 +181,7 @@
           <button type="button" class="ghost-btn small" id="clearBtn">Clear</button>
         </div>
         <div class="transcript" id="transcript" role="log" aria-live="polite">
-          <p class="empty">Press Start talking and say Hey, or type a question below the orb.</p>
+          <p class="empty">Press Start talking and say Hey, or type a question below the orb. Turn Meeting on to write down a conversation without answering.</p>
         </div>
         <p class="breakdown" id="breakdown">These totals add up for the whole call, from Start talking until you end it.</p>
       </section>
@@ -161,7 +189,6 @@
 
     <audio id="remoteAudio" autoplay playsinline></audio>
     <script src="/vendor/rive/rive.js"></script>
-    <script src="/ears.js"></script>
     <script src="/voice.js"></script>
     <script src="/gemini.js"></script>
     <script src="/mascot.js"></script>

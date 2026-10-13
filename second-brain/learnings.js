@@ -94,6 +94,46 @@ export function runLearningJob(job) {
   return `Done. I forgot: ${removed}`;
 }
 
+/**
+ * A saved rule can name a place, such as "when I ask you to go to inotes, open this site".
+ * "Go to inotes" then opens that site. Whisper sometimes hears iNotes as "ions".
+ */
+function placeShortcuts() {
+  const found = [];
+  for (const line of readLines()) {
+    const urlMatch = line.match(/https?:\/\/[^\s)]+/i);
+    const place = line.match(/\bgo to\s+([a-z0-9][a-z0-9 .'-]{0,40}?)(?:\s+(?:go|open|and|then|at|on)\b|,)/i);
+    if (!urlMatch || !place) continue;
+    const name = place[1].trim();
+    if (!name || /^(?:this|the|that|my|a|an)$/i.test(name)) continue;
+    const url = urlMatch[0].replace(/[.,]+$/, "");
+    if (!found.some((item) => item.name.toLowerCase() === name.toLowerCase() && item.url === url)) {
+      found.push({ name, url });
+    }
+  }
+  return found;
+}
+
+/** True when the spoken words are that saved place, including a misheard iNotes. */
+function samePlace(said, name) {
+  const heard = said.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const wanted = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!heard || !wanted) return false;
+  if (heard === wanted) return true;
+  if (wanted === "inotes" && /^(?:ions?|ionotes?|inote|eyenotes|ainotes)$/.test(heard)) return true;
+  return false;
+}
+
+/** { name, url } when the question asks to open a saved place, else null. */
+export function siteShortcut(question) {
+  const q = String(question || "").trim().replace(/[.!?]+$/g, "");
+  const match = q.match(/^(?:please\s+)?(?:can you\s+|could you\s+|would you\s+)?(?:please\s+)?(?:go to|open|show(?:\s+me)?|pull up|bring up|take me to|launch)\s+(?:the\s+)?(?:site\s+|page\s+|app\s+|website\s+)?(.+)$/i);
+  if (!match) return null;
+  const said = match[1].replace(/\b(?:site|page|app|website|please|now)\b/gi, " ").replace(/\s+/g, " ").trim();
+  if (!said || /https?:\/\/|(?:[a-z0-9-]+\.)+(?:com|org|net|io|gov|edu)/i.test(said)) return null;
+  return placeShortcuts().find((shortcut) => samePlace(said, shortcut.name)) || null;
+}
+
 /** The prompt block, newest first, within the size limits. */
 export function learningsBlock() {
   const kept = [];

@@ -64,17 +64,17 @@ async function startGeminiCall() {
   const session = await response.json();
   if (!response.ok) throw new Error(session.error || "Gemini did not start.");
 
-  micStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-  });
+  micStream = await openMic();
   const micCtx = new AudioContext({ sampleRate: 16000 });
   await micCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([PCM_WORKLET], { type: "text/javascript" })));
   const worklet = new AudioWorkletNode(micCtx, "pcm16");
-  micCtx.createMediaStreamSource(micStream).connect(worklet);
+  const micSource = micCtx.createMediaStreamSource(micStream);
+  micSource.connect(worklet);
 
   const g = {
     ws: new WebSocket(`${GEMINI_WS}?access_token=${encodeURIComponent(session.token)}`),
     micCtx,
+    micSource,
     playCtx: new AudioContext({ sampleRate: 24000 }),
     worklet,
     playing: new Set(),
@@ -121,6 +121,15 @@ async function startGeminiCall() {
   talkLabel.textContent = "End call";
   setStatus("Listening. Talk over Gemini to cut it off.");
   setCapsuleState("listening");
+}
+
+/** Point Gemini at a new microphone without starting the call again. */
+function retargetGeminiMic(stream) {
+  const g = gemini;
+  if (!g?.micCtx || !g.worklet) return;
+  try { g.micSource?.disconnect(); } catch { /* already disconnected */ }
+  g.micSource = g.micCtx.createMediaStreamSource(stream);
+  g.micSource.connect(g.worklet);
 }
 
 function stopGeminiCall() {
@@ -221,6 +230,14 @@ function addGeminiUsage(usage) {
 function handleGeminiMessage(g, msg) {
   if (gemini !== g) return;
   if (msg.usageMetadata) addGeminiUsage(msg.usageMetadata);
+  // Meeting mode keeps the words and drops Gemini's reply, so the room stays quiet.
+  if (meetingOn) {
+    const heardNow = msg.serverContent?.inputTranscription?.text;
+    if (heardNow) addMeetingPiece(heardNow);
+    if (msg.serverContent?.modelTurn || msg.serverContent?.outputTranscription) stopGeminiAudio(g);
+    if (msg.serverContent?.turnComplete) finishMeetingLine();
+    return;
+  }
   if (msg.toolCall?.functionCalls?.length) answerGeminiTools(g, msg.toolCall.functionCalls);
 
   const content = msg.serverContent;

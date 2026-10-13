@@ -25,6 +25,9 @@ const deskEl = document.getElementById("desk");
 const deskCards = document.getElementById("deskCards");
 const remoteAudio = document.getElementById("remoteAudio");
 const folderList = document.getElementById("folderList");
+const skillList = document.getElementById("skillList");
+const skillFile = document.getElementById("skillFile");
+const uploadSkillBtn = document.getElementById("uploadSkillBtn");
 const folderPath = document.getElementById("folderPath");
 const addFolderBtn = document.getElementById("addFolderBtn");
 const modelSelect = document.getElementById("modelSelect");
@@ -39,6 +42,8 @@ const avgWaitEl = document.getElementById("avgWait");
 const breakdownEl = document.getElementById("breakdown");
 const earsSelect = document.getElementById("earsSelect");
 const wakeSelect = document.getElementById("wakeSelect");
+const micSelect = document.getElementById("micSelect");
+const meetingBtn = document.getElementById("meetingBtn");
 
 let pc = null;
 let dc = null;
@@ -56,6 +61,21 @@ let cancelAnswer = false;
 let currentAnswerBubble = null;
 let listenEpoch = 0;
 let activeReader = null;
+// Meeting mode: write down every sentence and do not answer until it is turned off.
+let meetingOn = false;
+let meetingLines = [];
+let meetingPartial = "";
+let meetingPartialBubble = null;
+let closeMeetingAfterClip = false;
+let linesToSummarize = null;
+let meetingSummaryBusy = false;
+let savedMeeting = "";
+// The skill the user turned on. Later questions keep using it until they stop it.
+let activeSkillId = "";
+let skillCatalog = [];
+let skillLabel = "";
+let recordingClip = false;
+let localEars = false;
 let queuedQuestion = "";
 let micBusy = false;
 const handledCalls = new Set();
@@ -102,6 +122,7 @@ function syncCallButtons() {
   // Stop also cancels an answer that was typed before the call started.
   stopBtn.disabled = !connected && !brainBusy;
   restartBtn.disabled = !lastQuestion;
+  meetingBtn.disabled = !connected;
   pauseBtn.textContent = paused ? "Resume" : "Pause";
   pauseBtn.classList.toggle("is-muted", paused);
 }
@@ -134,8 +155,13 @@ function listenForNewQuestion() {
   syncCallButtons();
   queuedQuestion = "";
   if (connected) {
-    setStatus("Say Hey, then your new question.");
-    setCapsuleState(muted ? "muted" : "listening");
+    if (meetingOn) {
+      setStatus("Meeting. I'm writing down every word and staying quiet.");
+      setCapsuleState(muted ? "muted" : "meeting");
+    } else {
+      setStatus(medicalListening() ? "Stopped. Keep talking. Only a real question goes to the brain." : "Say Hey, then your new question.");
+      setCapsuleState(muted ? "muted" : "listening");
+    }
   } else {
     setStatus("Type a question, or press Start talking.");
     setCapsuleState("idle");
@@ -201,6 +227,12 @@ async function askTyped(raw) {
     return;
   }
   typeInput.value = "";
+  if (meetingOn) {
+    addMeetingLine(question);
+    setStatus("Added to the meeting. I'm still only listening.");
+    setCapsuleState("meeting");
+    return;
+  }
   questionEndedAt = performance.now();
 
   // Gemini Live takes typed words on the same line.
@@ -252,21 +284,27 @@ muteBtn.addEventListener("click", () => {
   if (!micStream) return;
   muted = !muted;
   for (const track of micStream.getAudioTracks()) track.enabled = !muted;
-  if (ears) muted ? ears.stop() : ears.start();
   muteBtn.textContent = muted ? "Unmute mic" : "Mute mic";
   muteBtn.classList.toggle("is-muted", muted);
   if (connected) {
-    setStatus(muted ? "Mic muted" : "Listening…");
-    setCapsuleState(muted ? "idle" : "listening");
+    if (meetingOn && !muted) {
+      setStatus("Meeting. I'm writing down every word and staying quiet.");
+      setCapsuleState("meeting");
+    } else {
+      setStatus(muted ? "Mic muted" : "Listening…");
+      setCapsuleState(muted ? "idle" : "listening");
+    }
   }
 });
 
 clearBtn.addEventListener("click", () => {
-  transcriptEl.innerHTML = '<p class="empty">Press Start talking and say Hey, or type a question below the orb.</p>';
+  transcriptEl.innerHTML = '<p class="empty">Press Start talking and say Hey, or type a question below the orb. Turn Meeting on to write down a conversation without answering.</p>';
   assistantPartialEl = null;
   userPartialEl = null;
   chatTurns = [];
   chatMemory = "";
+  savedMeeting = "";
+  meetingLines = [];
   compressAbort?.abort();
   forgetSavedChat();
 });
@@ -331,6 +369,21 @@ async function startCall() {
   questionEndedAt = 0;
   renderWaits();
 
+  // Medical speech stays on this Mac. It never opens Gemini Live.
+  // GPT-OSS 20B writes the transcript. The model you picked answers only a real question.
+  if (medicalListening()) {
+    try {
+      await startLocalListen();
+    } catch (err) {
+      console.error("Failed while starting medical listening:", err);
+      setStatus(humanError(err));
+      setCapsuleState("idle");
+      await hangUp({ keepStatus: true });
+      setBusy(false);
+    }
+    return;
+  }
+
   // Gemini Live hears and speaks on its own line (gemini.js).
   if (selectedModel()?.gemini) {
     try {
@@ -360,9 +413,7 @@ async function startCall() {
   }
 
   try {
-    micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    micStream = await openMic();
 
     pc = new RTCPeerConnection();
     pc.ontrack = (event) => {
@@ -433,6 +484,9 @@ function sleep(ms) {
 const WAKE_STATUS = "Listening. I only answer when you start with Hey.";
 /** The listening line, plus who is writing down your words right now. */
 function wakeStatus() {
+  if (medicalListening()) {
+    return "Medical speech. Whisper hears English and Arabic, with no Hey. GPT-OSS keeps only the medical words, in English, with names removed. A question for me goes to the brain.";
+  }
   if (jevListening()) {
     return wakeSelect.value === "jev"
       ? "Listening. Say Hey, or just talk; Jev decides what is for me. (text goes to TypeSafe)"
@@ -440,9 +494,11 @@ function wakeStatus() {
   }
   // Voice mini hears you itself, so no listener runs on this page.
   if (!needsVoiceControl(selectedModel())) return WAKE_STATUS;
-  const who = ears
-    ? (ears.local ? "Chrome on this Mac, English only" : "Google cloud, English only")
-    : earsSelect.value === "whisper-auto" ? "Whisper, English + Arabic" : "Whisper on this Mac, English only";
+  const who = earsSelect.value === "whisper"
+    ? "Whisper on this Mac, English only"
+    : earsSelect.value === "whisper-both"
+      ? "Whisper twice, English and Arabic, both lines shown"
+      : "Whisper, English + Arabic";
   return `${WAKE_STATUS} (${who})`;
 }
 // A short breath is not the end of the sentence. Wait this long before stopping the recording.
@@ -458,6 +514,22 @@ function questionAfterWake(text) {
   const match = cleaned.match(/^(?:hey\b(?:\s+my\s+brain\b)?|هاي|يا\s*دماغي)[\s,.:;!?،\-]*/i);
   if (!match) return null;
   return cleaned.slice(match[0].length).trim();
+}
+
+/**
+ * The question after Hey, looking at each line.
+ * The two-whisper option starts a line with "English:" or "Arabic:".
+ */
+function questionFromHeard(text) {
+  const raw = String(text || "");
+  const lines = /^(?:English|Arabic):/im.test(raw)
+    ? raw.split("\n").map((line) => line.replace(/^(?:English|Arabic):\s*/i, "").trim())
+    : [raw];
+  for (const line of lines) {
+    const question = questionAfterWake(line);
+    if (question) return question;
+  }
+  return null;
 }
 
 /** Whisper sometimes invents these on a quiet room. Ignore them. */
@@ -495,6 +567,7 @@ function looksLikeSilence(text) {
  */
 function recordUntilSilence(stream) {
   const epoch = listenEpoch;
+  recordingClip = true;
   return new Promise((resolve) => {
     const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
@@ -507,6 +580,7 @@ function recordUntilSilence(stream) {
       if (event.data.size) chunks.push(event.data);
     };
     rec.onstop = () => {
+      recordingClip = false;
       if (settled) return;
       settled = true;
       resolve(discard ? new Blob() : new Blob(chunks, { type: mime }));
@@ -525,7 +599,8 @@ function recordUntilSilence(stream) {
 
     const timer = setInterval(() => {
       if (epoch !== listenEpoch) {
-        discard = true;
+        // Turning Meeting off keeps this last sentence. Stop and a new question throw it away.
+        discard = !closeMeetingAfterClip;
         finish();
         return;
       }
@@ -569,6 +644,7 @@ function recordUntilSilence(stream) {
       ctx.close().catch(() => {});
       if (rec.state !== "inactive") rec.stop();
       else if (!settled) {
+        recordingClip = false;
         settled = true;
         resolve(new Blob());
       }
@@ -576,9 +652,18 @@ function recordUntilSilence(stream) {
   });
 }
 
-async function transcribeClip(clip) {
-  const auto = earsSelect.value === "whisper-auto";
-  const response = await fetch(auto ? "/transcribe?lang=auto" : "/transcribe", {
+async function transcribeClip(clip, meeting) {
+  // A meeting always uses the model that can write Arabic and English together.
+  // both: English whisper and Arabic whisper listen to the same clip.
+  // any: one whisper picks the language. English only cannot write Arabic.
+  const query = meeting
+    ? "?lang=any"
+    : earsSelect.value === "whisper-both"
+    ? "?lang=both"
+    : earsSelect.value === "whisper" && !medicalListening()
+      ? ""
+      : "?lang=any";
+  const response = await fetch(`/transcribe${query}`, {
     method: "POST",
     headers: { "Content-Type": clip.type || "audio/webm" },
     body: clip,
@@ -588,76 +673,15 @@ async function transcribeClip(clip) {
   return (data.text || "").trim();
 }
 
-/**
- * Google ears (ears.js). Chrome's speech recognition runs for the whole call.
- * Each finished sentence goes into heardQueue; the listening loop takes them in order.
- * While an answer is thinking or speaking, "stop" or "hey" cuts it as soon as the word is heard.
- */
-let ears = null;
-let heardQueue = [];
+// Kept so an old pause timer can wake the loop. Chrome no longer listens.
 let heardWake = null;
 let cutThisSentence = false;
 
 // Said at the start of a sentence while the answer plays.
 const CUT_WORDS = /^(hey|stop|enough|cancel|quiet|be quiet|shut up|ok(ay)? stop)\b/i;
 
-async function startEars() {
-  stopEars();
-  if (earsSelect.value.startsWith("whisper")) return;
-  // Jev mode listens with Chrome on this Mac; only the text goes to Jev.
-  let local = earsSelect.value === "chrome-local";
-  if (local) {
-    const ready = await prepareLocalEars();
-    if (ready !== "available") {
-      local = false;
-      setStatus(`Chrome on-device listening is not ready (${ready}). Using Google cloud.`);
-    }
-  }
-  if (!connected || localStop) return;
-  ears = createEars({
-    local,
-    onWords: heardWords,
-    onUtterance: (text) => {
-      cutThisSentence = false;
-      if (muted) return;
-      heardQueue.push({ text, at: performance.now() });
-      heardWake?.();
-    },
-    onFail: (reason) => {
-      ears = null;
-      setStatus(`Google listening stopped (${reason}). Using whisper on this Mac.`);
-      heardWake?.();
-    },
-  });
-  if (!ears) {
-    setStatus("This browser has no Google listening. Using whisper on this Mac.");
-    return;
-  }
-  heardQueue = [];
-  ears.start();
-}
-
 function stopEars() {
-  ears?.stop();
-  ears = null;
-  heardQueue = [];
   heardWake?.();
-}
-
-/** The next finished sentence, or null when the call stops or Google listening fails. */
-async function nextHeard() {
-  // A tapped or typed question also ends the wait, so the loop can answer it.
-  while (connected && !localStop && ears && !queuedQuestion) {
-    // A sentence that waited too long belongs to an old moment. Drop it.
-    heardQueue = heardQueue.filter((item) => performance.now() - item.at < 20000);
-    if (heardQueue.length) return heardQueue.shift();
-    await new Promise((resolve) => {
-      heardWake = resolve;
-      setTimeout(resolve, 500);
-    });
-    heardWake = null;
-  }
-  return null;
 }
 
 /**
@@ -673,12 +697,60 @@ let lastAnswerAt = 0;
 
 /** Hey + Jev or Hey + Gemma: sentences without Hey are judged. Works with every listener. */
 function jevListening() {
-  return wakeSelect.value !== "hey";
+  return wakeSelect.value === "jev" || wakeSelect.value === "gemma";
 }
 
-/** Gemma takes ~20 s to load the first time. Load it as soon as it may be needed. */
+/** Medical speech: every sentence goes to GPT-OSS 20B. Hey is not required. */
+function medicalListening() {
+  return wakeSelect.value === "medical";
+}
+
+/** The local model takes a while to load the first time. Load the one in use now. */
 function warmJudge() {
   if (wakeSelect.value === "gemma") fetch("/jev/warm", { method: "POST" }).catch(() => {});
+  if (wakeSelect.value === "medical") fetch("/medgem/warm", { method: "POST" }).catch(() => {});
+  // The bigger whisper is slow to load the first time. Start it before they talk.
+  if (earsSelect.value === "whisper-both") {
+    fetch("/transcribe/warm?lang=both", { method: "POST" }).catch(() => {});
+  } else if (wakeSelect.value === "medical" || earsSelect.value !== "whisper") {
+    fetch("/transcribe/warm", { method: "POST" }).catch(() => {});
+  }
+}
+
+/**
+ * Send one heard sentence to GPT-OSS 20B.
+ * Returns the cleaned English note and, only when it heard a real question, that question.
+ */
+async function medicalTurn(heard) {
+  const raw = String(heard?.text || "").trim();
+  if (!raw || looksLikeSilence(raw)) return null;
+  setStatus("GPT-OSS is keeping the medical part…");
+  setCapsuleState("thinking");
+  let data;
+  try {
+    const response = await fetch("/medgem/clean", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: raw.slice(0, 4000) }),
+    });
+    data = await response.json();
+    if (!response.ok) throw new Error(data.error || "GPT-OSS did not answer.");
+  } catch (err) {
+    console.error("Failed while cleaning medical speech:", err);
+    setStatus("GPT-OSS is not ready. Try that again in a moment.");
+    return null;
+  }
+  const english = String(data.english || "").trim();
+  const question = String(data.question || "").trim();
+  if (!data.medical || (!english && !question)) return null;
+  return { english, question };
+}
+
+/** Show the cleaned transcript. This is a note, not a question for the brain. */
+function showMedicalNote(text) {
+  const bubble = addBubble("note", text, false);
+  bubble.querySelector(".who").textContent = "Medical";
+  return bubble;
 }
 
 /** The question to answer, or "" when Jev says this sentence was not for the assistant. */
@@ -763,9 +835,11 @@ function heardWords(text) {
   setCapsuleState("listening");
 }
 
-earsSelect.value = localStorage.getItem("ears") || "chrome-local";
-// A saved choice that no longer exists (the old "Jev decides" listener) falls back to the default.
-if (!earsSelect.value) earsSelect.value = "chrome-local";
+// Chrome and Google cloud only heard English. A saved choice of either becomes English + Arabic.
+const savedEars = localStorage.getItem("ears");
+earsSelect.value = savedEars === "whisper" || savedEars === "whisper-both" ? savedEars : "whisper-auto";
+if (!earsSelect.value) earsSelect.value = "whisper-auto";
+localStorage.setItem("ears", earsSelect.value);
 wakeSelect.value = localStorage.getItem("wake") || "hey";
 if (!wakeSelect.value) wakeSelect.value = "hey";
 wakeSelect.addEventListener("change", () => {
@@ -775,14 +849,156 @@ wakeSelect.addEventListener("change", () => {
 });
 earsSelect.addEventListener("change", () => {
   localStorage.setItem("ears", earsSelect.value);
-  // Picking on-device is a click, so Chrome allows the one-time model download here.
-  if (earsSelect.value === "chrome-local") {
-    prepareLocalEars().then((ready) => setStatus(
-      ready === "available" ? "Chrome on-device listening is ready." : `Chrome on-device listening is not ready (${ready}).`
-    ));
-  }
-  if (connected && needsVoiceControl(selectedModel()) && !muted) startEars();
+  warmJudge();
+  if (connected && needsVoiceControl(selectedModel())) setStatus(wakeStatus());
 });
+warmJudge();
+
+// The Mac offers many microphones (this computer, an iPhone nearby, Teams, and so on).
+// The menu below is the only way a call picks one. "local" is this Mac. "iphone" is the phone.
+micSelect.value = localStorage.getItem("micSource") === "iphone" ? "iphone" : "local";
+localStorage.setItem("micSource", micSelect.value);
+micSelect.addEventListener("change", async () => {
+  const next = chosenMic();
+  const previousChoice = localStorage.getItem("micSource") === "iphone" ? "iphone" : "local";
+  localStorage.setItem("micSource", next);
+  if (!connected && !micStream) {
+    setStatus(next === "iphone"
+      ? "Next call will use your iPhone. Unlock it and keep it nearby."
+      : "Next call will use the microphone on this Mac.");
+    return;
+  }
+  micSelect.disabled = true;
+  try {
+    await useChosenMic();
+    setStatus(next === "iphone" ? "Now listening on your iPhone." : "Now listening on this Mac.");
+  } catch (err) {
+    micSelect.value = previousChoice;
+    localStorage.setItem("micSource", previousChoice);
+    console.error("Failed while switching the microphone:", err);
+    setStatus(humanError(err));
+  } finally {
+    micSelect.disabled = false;
+  }
+});
+navigator.mediaDevices?.addEventListener("devicechange", () => {
+  labelMicChoices().catch(() => {});
+});
+labelMicChoices().catch(() => {});
+
+/** "iphone", "local" (this Mac), or "other" (Teams, Zoom, and similar apps). */
+function micKind(device) {
+  const label = device.label || "";
+  if (/iphone/i.test(label)) return "iphone";
+  if (/teams|zoom|blackhole|aggregate|loopback|virtual|cable|obs |krisp/i.test(label)) return "other";
+  return "local";
+}
+
+function chosenMic() {
+  return micSelect.value === "iphone" ? "iphone" : "local";
+}
+
+/** The real device id, not Chrome's extra "default" copy of the same microphone. */
+function realInputs(devices) {
+  return devices.filter((device) => (
+    device.kind === "audioinput"
+    && device.deviceId
+    && device.deviceId !== "default"
+    && device.deviceId !== "communications"
+  ));
+}
+
+function pickMic(inputs, choice) {
+  if (choice === "iphone") return inputs.find((device) => micKind(device) === "iphone") || null;
+  const builtIn = inputs.find((device) => (
+    micKind(device) === "local" && /macbook|built-?in|internal/i.test(device.label || "")
+  ));
+  return builtIn || inputs.find((device) => micKind(device) === "local") || null;
+}
+
+function noteMicName(choice, label) {
+  const option = micSelect.querySelector(`option[value="${choice}"]`);
+  if (!option || !label) return;
+  const nice = label.replace(/\s*\(Built-in\)/i, "").trim();
+  option.textContent = choice === "iphone" ? `iPhone (${nice})` : `Local (${nice})`;
+}
+
+/** Fill the menu with the real names, once the browser is allowed to see them. */
+async function labelMicChoices() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  const inputs = realInputs(await navigator.mediaDevices.enumerateDevices());
+  const iphone = inputs.find((device) => micKind(device) === "iphone");
+  const local = pickMic(inputs, "local");
+  if (iphone) noteMicName("iphone", iphone.label);
+  if (local) noteMicName("local", local.label);
+}
+
+/**
+ * Open the microphone the user picked.
+ * Names stay hidden until the first allow, so a short listen unlocks the list, then we open the right one.
+ */
+async function openMic() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("This window cannot use a microphone.");
+  }
+  const choice = chosenMic();
+  let inputs = realInputs(await navigator.mediaDevices.enumerateDevices());
+  if (!inputs.length || inputs.every((device) => !device.label)) {
+    const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+    probe.getTracks().forEach((track) => track.stop());
+    inputs = realInputs(await navigator.mediaDevices.enumerateDevices());
+  }
+  const device = pickMic(inputs, choice);
+  if (!device) {
+    throw new Error(choice === "iphone"
+      ? "No iPhone microphone. Unlock your iPhone, keep it nearby, then try again."
+      : "No microphone on this Mac. Check Sound in System Settings, then try again.");
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: { exact: device.deviceId },
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+  } catch (err) {
+    console.error("Failed while opening the chosen microphone:", err);
+    throw new Error(choice === "iphone"
+      ? "The iPhone microphone did not open. Unlock your iPhone and try again."
+      : "The Mac microphone did not open. Check Sound in System Settings, then try again.");
+  }
+  noteMicName(choice, device.label);
+  return stream;
+}
+
+/** Swap the live call onto the microphone picked in the menu. */
+async function useChosenMic() {
+  const stream = await openMic();
+  const track = stream.getAudioTracks()[0];
+  if (!track) {
+    stream.getTracks().forEach((item) => item.stop());
+    throw new Error("The microphone opened with no sound.");
+  }
+  track.enabled = !muted;
+  const previous = micStream;
+  try {
+    if (pc) {
+      const sender = pc.getSenders().find((item) => item.track && item.track.kind === "audio");
+      if (sender) await sender.replaceTrack(track);
+    }
+    if (typeof retargetGeminiMic === "function") retargetGeminiMic(stream);
+  } catch (err) {
+    stream.getTracks().forEach((item) => item.stop());
+    console.error("Failed while attaching the new microphone:", err);
+    throw err;
+  }
+  micStream = stream;
+  if (previous && previous !== stream) previous.getTracks().forEach((item) => item.stop());
+  return stream;
+}
 
 /**
  * While an answer is playing, listen for Hey.
@@ -829,7 +1045,7 @@ function watchWhileAnswering(stream) {
     try {
       const text = await transcribeClip(job.blob);
       if (stopped || epoch !== listenEpoch || heyIndex >= 0) return;
-      if (questionAfterWake(text) === null && !/\bhey\b|هاي/i.test(text)) return;
+      if (questionFromHeard(text) === null && !/\bhey\b|هاي/i.test(text)) return;
       heyIndex = job.index;
       stopSpeaking();
       cancelAnswer = true;
@@ -896,7 +1112,7 @@ function watchWhileAnswering(stream) {
       try {
         if (keepQuestion && heyIndex >= 0) {
           const text = await transcribeClip(new Blob(chunks.slice(heyIndex), { type: mime }));
-          const question = questionAfterWake(text);
+          const question = questionFromHeard(text);
           if (question) queuedQuestion = question;
           else clearThinkCue();
         } else {
@@ -917,14 +1133,361 @@ function watchWhileAnswering(stream) {
   }
 }
 
+const MEETING_STATUS = "Meeting. I am writing the words as they are said, in Arabic or English.";
+// How often a meeting line is sent to the listener while people are still talking.
+const MEETING_SLICE_MS = 2000;
+// Start a new line after this long so the words on screen stay close to the voices.
+const MEETING_LINE_MS = 18000;
+
+/** Show the Meeting button as on or off. */
+function paintMeetingButton() {
+  meetingBtn.setAttribute("aria-pressed", meetingOn ? "true" : "false");
+  meetingBtn.classList.toggle("is-on", meetingOn);
+  meetingBtn.textContent = meetingOn ? "Meeting on" : "Meeting";
+}
+
+/** One finished sentence from the meeting. Repeats and room noise are skipped. */
+function addMeetingLine(text) {
+  const line = String(text || "").trim();
+  if (!line || looksLikeSilence(line)) return;
+  if (meetingLines.at(-1) === line) return;
+  meetingLines.push(line);
+  const bubble = addBubble("meeting", line, false);
+  bubble.querySelector(".who").textContent = "Meeting";
+}
+
+/** Gemini sends a meeting one piece at a time. Keep them in one line until the turn ends. */
+function addMeetingPiece(piece) {
+  const bit = String(piece || "");
+  if (!bit.trim()) return;
+  meetingPartial += bit;
+  if (!meetingPartialBubble) {
+    meetingPartialBubble = addBubble("meeting", "", true);
+    meetingPartialBubble.querySelector(".who").textContent = "Meeting";
+  }
+  meetingPartialBubble.querySelector(".text").textContent = meetingPartial.trim();
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+/** Close the line Gemini has been building. */
+function finishMeetingLine() {
+  const line = meetingPartial.trim();
+  meetingPartial = "";
+  if (meetingPartialBubble) {
+    meetingPartialBubble.classList.remove("partial");
+    meetingPartialBubble = null;
+  }
+  if (!line || looksLikeSilence(line)) return;
+  if (meetingLines.at(-1) === line) return;
+  meetingLines.push(line);
+}
+
+function showMeetingStatus() {
+  setStatus(MEETING_STATUS);
+  setCapsuleState(muted ? "muted" : "meeting");
+}
+
+/** Replace the live meeting line with the words heard so far. */
+function showMeetingDraft(text) {
+  const line = String(text || "").trim();
+  if (!line || looksLikeSilence(line)) return;
+  meetingPartial = line;
+  if (!meetingPartialBubble) {
+    meetingPartialBubble = addBubble("meeting", line, true);
+    meetingPartialBubble.querySelector(".who").textContent = "Meeting";
+  } else {
+    meetingPartialBubble.querySelector(".text").textContent = line;
+  }
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+/** Lock the live line into the transcript. `into` is the list that keeps it. */
+function freezeMeetingDraft(text, into) {
+  const line = String(text || meetingPartial || "").trim();
+  const bubble = meetingPartialBubble;
+  meetingPartial = "";
+  meetingPartialBubble = null;
+  if (!line || looksLikeSilence(line)) {
+    bubble?.remove();
+    return "";
+  }
+  if (bubble) {
+    bubble.classList.remove("partial");
+    bubble.querySelector(".text").textContent = line;
+  } else {
+    const created = addBubble("meeting", line, false);
+    created.querySelector(".who").textContent = "Meeting";
+  }
+  const list = into || meetingLines;
+  if (list.at(-1) !== line) list.push(line);
+  return line;
+}
+
+/**
+ * Write one stretch of the meeting while it is still being said.
+ * Every couple of seconds the words so far replace the live line.
+ * Arabic and English stay in the language that was spoken.
+ * The line closes on a short pause, or after a few seconds, so the next words can start a new line.
+ */
+function captureMeetingLine(stream) {
+  const epoch = listenEpoch;
+  recordingClip = true;
+  return new Promise((resolve) => {
+    const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
+    let rec;
+    try {
+      rec = new MediaRecorder(stream, { mimeType: mime });
+    } catch (err) {
+      recordingClip = false;
+      console.error("Failed while opening the meeting recorder:", err);
+      resolve("");
+      return;
+    }
+    const chunks = [];
+    let latest = "";
+    let transcribing = false;
+    let pendingBlob = null;
+    let stopped = false;
+    let settled = false;
+    let sliceLoud = false;
+    let heard = false;
+    let quietSince = 0;
+    const started = performance.now();
+    const ctx = new AudioContext();
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    const samples = new Uint8Array(analyser.fftSize);
+
+    function level() {
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (const value of samples) {
+        const sample = (value - 128) / 128;
+        sum += sample * sample;
+      }
+      return Math.sqrt(sum / samples.length);
+    }
+
+    function cleanup() {
+      try { source.disconnect(); } catch { /* already disconnected */ }
+      ctx.close().catch(() => {});
+    }
+
+    function finish() {
+      if (settled) return;
+      if (transcribing || pendingBlob) return;
+      settled = true;
+      recordingClip = false;
+      cleanup();
+      resolve(latest.trim());
+    }
+
+    async function pump() {
+      if (transcribing || !pendingBlob) return;
+      transcribing = true;
+      const blob = pendingBlob;
+      pendingBlob = null;
+      try {
+        if (blob.size >= 2000) {
+          const text = await transcribeClip(blob, true);
+          if (text && !looksLikeSilence(text)) {
+            latest = text;
+            showMeetingDraft(text);
+          }
+        }
+      } catch (err) {
+        console.error("Failed while writing the meeting:", err);
+      } finally {
+        transcribing = false;
+        if (pendingBlob) pump();
+        else if (stopped) finish();
+      }
+    }
+
+    rec.ondataavailable = (event) => {
+      if (!event.data?.size) return;
+      chunks.push(event.data);
+      // A quiet room at the start is not a line. Once someone has spoken, keep updating.
+      if (!sliceLoud && !heard) return;
+      sliceLoud = false;
+      pendingBlob = new Blob(chunks, { type: mime });
+      pump();
+    };
+    rec.onstop = () => {
+      if (!transcribing && !pendingBlob) finish();
+    };
+
+    function stopRec() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(timer);
+      if (rec.state !== "inactive") rec.stop();
+      else finish();
+    }
+
+    const timer = setInterval(() => {
+      if (epoch !== listenEpoch || !connected || localStop || !meetingOn) {
+        stopRec();
+        return;
+      }
+      const now = performance.now();
+      if (level() > 0.025) {
+        heard = true;
+        sliceLoud = true;
+        quietSince = 0;
+      } else if (heard) {
+        if (!quietSince) quietSince = now;
+        if (now - quietSince > END_PAUSE_MS) stopRec();
+      }
+      if (heard && now - started > MEETING_LINE_MS) stopRec();
+    }, 80);
+
+    try {
+      rec.start(MEETING_SLICE_MS);
+    } catch (err) {
+      console.error("Failed while starting the meeting recorder:", err);
+      stopRec();
+    }
+  });
+}
+
+/**
+ * Turn Meeting on in the middle of a call.
+ * Any answer that is playing stops. From here, speech is only written down.
+ */
+function beginMeeting() {
+  if (!connected) return;
+  closeMeetingAfterClip = false;
+  linesToSummarize = null;
+  meetingSummaryBusy = false;
+  meetingOn = true;
+  meetingLines = [];
+  meetingPartial = "";
+  if (meetingPartialBubble) {
+    meetingPartialBubble.remove();
+    meetingPartialBubble = null;
+  }
+  paintMeetingButton();
+  const interrupt = brainBusy || micBusy;
+  stopSpeaking();
+  if (interrupt) {
+    listenEpoch += 1;
+    cancelAnswer = true;
+    askAbort?.abort();
+    try { activeReader?.cancel(); } catch { /* the answer already finished */ }
+    queuedQuestion = "";
+  }
+  const bubble = addBubble("meeting", "Listening. Arabic and English are written as they are said. I will stay quiet until you turn Meeting off.", false);
+  bubble.querySelector(".who").textContent = "Meeting";
+  // Load the listener that can write both languages before the first words arrive.
+  fetch("/transcribe/warm", { method: "POST" }).catch(() => {});
+  showMeetingStatus();
+  syncCallButtons();
+}
+
+/**
+ * Turn Meeting off. The last sentence is kept, then the meeting is summarized.
+ * The local listening loop speaks the summary when it is the one holding the mic.
+ */
+function endMeeting() {
+  if (!meetingOn || meetingSummaryBusy) return;
+  finishMeetingLine();
+  meetingOn = false;
+  paintMeetingButton();
+  // Keep these lines even if a new recording is still finishing.
+  linesToSummarize = meetingLines.slice();
+  meetingLines = [];
+  closeMeetingAfterClip = true;
+  stopSpeaking();
+  setStatus("Meeting off. Writing the minutes…");
+  setCapsuleState("thinking");
+  if (recordingClip) listenEpoch += 1;
+  if (localEars) return;
+  closeMeetingAfterClip = false;
+  speakMeetingSummary();
+}
+
+meetingBtn.addEventListener("click", () => {
+  if (!connected) return;
+  if (meetingOn) endMeeting();
+  else beginMeeting();
+});
+
+/** Hand the transcript to a model that hears for itself, so it can summarize and remember it. */
+function summarizeWithLiveModel() {
+  const script = [
+    "The meeting is over. Write the minutes, then say them.",
+    "Keep Arabic and English as they were spoken. Do not translate.",
+    "Cover what the meeting was about, the topics, any decisions, and who will do what.",
+    "Do not invent facts that are not written here.",
+    "After the minutes, answer questions about this meeting.",
+    "",
+    savedMeeting.slice(-12000),
+  ].join("\n");
+  if (gemini?.ready && gemini.ws?.readyState === WebSocket.OPEN) {
+    gemini.ws.send(JSON.stringify({ realtimeInput: { text: script } }));
+    setStatus("Writing the minutes…");
+    setCapsuleState("thinking");
+    return true;
+  }
+  if (selectedModel()?.hears && dc?.readyState === "open") {
+    sendEvent({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: script }],
+      },
+    });
+    sendEvent({ type: "response.create" });
+    setStatus("Writing the minutes…");
+    setCapsuleState("thinking");
+    return true;
+  }
+  return false;
+}
+
+/** Write the minutes, say them, and keep the exact words for later questions. */
+async function speakMeetingSummary() {
+  if (meetingSummaryBusy) return;
+  const lines = Array.isArray(linesToSummarize) ? linesToSummarize : meetingLines.slice();
+  linesToSummarize = null;
+  meetingLines = [];
+  if (!lines.length) {
+    setStatus(connected ? "Meeting off. I did not catch any words. Say Hey when you have a question." : "Meeting off. I did not catch any words.");
+    setCapsuleState(connected ? (muted ? "muted" : "listening") : "idle");
+    return;
+  }
+  savedMeeting = lines.join("\n");
+  const count = lines.length === 1 ? "1 line" : `${lines.length} lines`;
+  const note = addBubble("meeting", `Wrote down ${count}. Writing the minutes now.`, false);
+  note.querySelector(".who").textContent = "Meeting";
+  meetingSummaryBusy = true;
+  syncCallButtons();
+  try {
+    if (summarizeWithLiveModel()) return;
+    while (brainBusy) await sleep(40);
+    if (meetingOn || !connected) return;
+    paused = false;
+    addBubble("user", "Write the minutes of this meeting.", false);
+    await answerWithBrain("Write the minutes of the meeting that was just written down.", { summarizeMeeting: true });
+  } finally {
+    meetingSummaryBusy = false;
+    syncCallButtons();
+  }
+}
+
 /**
  * Bonsai and GPT-6: the Mac listens, that model writes, voice control speaks.
  */
 async function startLocalListen() {
   localStop = false;
-  micStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-  });
+  localEars = true;
+  micStream = await openMic();
   connected = true;
   voiceSelect.disabled = true;
   modelSelect.disabled = true;
@@ -937,7 +1500,6 @@ async function startLocalListen() {
   setStatus(wakeStatus());
   setCapsuleState("listening");
   setBusy(false);
-  await startEars();
   warmJudge();
   // Open voice control now, while you talk, so the first answer starts sooner.
   // Local models use the Kokoro voice, so OpenAI is not needed at all.
@@ -953,9 +1515,18 @@ async function startLocalListen() {
   while (connected && !localStop) {
     while (micBusy) await sleep(40);
     if (!connected || localStop) break;
+    if (closeMeetingAfterClip && !meetingOn && !recordingClip) {
+      closeMeetingAfterClip = false;
+      await speakMeetingSummary();
+      continue;
+    }
     if (queuedQuestion) {
       const question = queuedQuestion;
       queuedQuestion = "";
+      if (meetingOn) {
+        addMeetingLine(question);
+        continue;
+      }
       addBubble("user", question, false);
       await answerWithBrain(question);
       continue;
@@ -970,31 +1541,47 @@ async function startLocalListen() {
       await sleep(250);
       continue;
     }
-    setStatus(wakeStatus());
-    setCapsuleState("listening");
-    if (ears) {
-      const heard = await nextHeard();
-      if (!heard || !connected || localStop || paused) continue;
-      // Hey is the instant path. In Jev mode, everything else is judged by Jev.
-      let question = questionAfterWake(heard.text);
-      if (!question && jevListening()) question = await jevQuestion(heard);
-      if (!question) continue;
-      questionEndedAt = heard.at;
-      addBubble("user", question, false);
-      await answerWithBrain(question);
+    if (meetingOn) {
+      showMeetingStatus();
+      const heard = await captureMeetingLine(micStream);
+      if (!connected || localStop) {
+        closeMeetingAfterClip = false;
+        break;
+      }
+      const list = closeMeetingAfterClip && !meetingOn && Array.isArray(linesToSummarize)
+        ? linesToSummarize
+        : meetingLines;
+      freezeMeetingDraft(heard, list);
+      if (closeMeetingAfterClip && !meetingOn) {
+        closeMeetingAfterClip = false;
+        await speakMeetingSummary();
+        continue;
+      }
+      showMeetingStatus();
       continue;
     }
+    setStatus(wakeStatus());
+    setCapsuleState("listening");
     const clip = await recordUntilSilence(micStream);
-    if (!connected || localStop || paused) {
+    if (!connected || localStop) {
+      clearThinkCue();
+      closeMeetingAfterClip = false;
+      break;
+    }
+    if (paused) {
       clearThinkCue();
       continue;
     }
     if (!clip || clip.size < 2000) {
       clearThinkCue();
+      if (closeMeetingAfterClip && !meetingOn) {
+        closeMeetingAfterClip = false;
+        await speakMeetingSummary();
+      }
       continue;
     }
 
-    setStatus("Writing down what you said…");
+    setStatus(meetingOn ? "Writing down the meeting…" : "Writing down what you said…");
     setCapsuleState("thinking");
     let text = "";
     try {
@@ -1002,8 +1589,30 @@ async function startLocalListen() {
     } catch (err) {
       console.error("Failed while transcribing locally:", err);
       clearThinkCue();
+      if (closeMeetingAfterClip && !meetingOn) {
+        closeMeetingAfterClip = false;
+        await speakMeetingSummary();
+        continue;
+      }
       setStatus(err.message || "The local voice model could not hear that.");
       await sleep(600);
+      continue;
+    }
+    if (closeMeetingAfterClip && !meetingOn) {
+      closeMeetingAfterClip = false;
+      const line = String(text || "").trim();
+      if (line && !looksLikeSilence(line) && Array.isArray(linesToSummarize) && linesToSummarize.at(-1) !== line) {
+        linesToSummarize.push(line);
+        const bubble = addBubble("meeting", line, false);
+        bubble.querySelector(".who").textContent = "Meeting";
+      }
+      await speakMeetingSummary();
+      continue;
+    }
+    if (meetingOn) {
+      clearThinkCue();
+      addMeetingLine(text);
+      showMeetingStatus();
       continue;
     }
     if (looksLikeSilence(text)) {
@@ -1012,7 +1621,21 @@ async function startLocalListen() {
       setCapsuleState("listening");
       continue;
     }
-    let question = questionAfterWake(text);
+    // Two whispers: show both lines before anything else happens to the words.
+    if (earsSelect.value === "whisper-both") {
+      const heard = addBubble("note", text, false);
+      heard.querySelector(".who").textContent = "Heard";
+    }
+    if (medicalListening()) {
+      const cleaned = await medicalTurn({ text, at: performance.now() });
+      if (!cleaned || !connected || localStop) continue;
+      if (cleaned.english && cleaned.english !== cleaned.question) showMedicalNote(cleaned.english);
+      if (!cleaned.question) continue;
+      addBubble("user", cleaned.question, false);
+      await answerWithBrain(cleaned.question);
+      continue;
+    }
+    let question = questionFromHeard(text);
     if (!question && jevListening()) question = await jevQuestion({ text, at: performance.now() });
     // No wake phrase, or only the phrase with no question: stay quiet.
     if (!question) {
@@ -1024,6 +1647,7 @@ async function startLocalListen() {
     addBubble("user", question, false);
     await answerWithBrain(question);
   }
+  localEars = false;
 }
 
 /**
@@ -1537,6 +2161,28 @@ async function hangUp({ keepStatus = false } = {}) {
   modelSelect.disabled = false;
   reasoningSelect.disabled = false;
   paused = false;
+  finishMeetingLine();
+  const pending = [
+    ...(Array.isArray(linesToSummarize) ? linesToSummarize : []),
+    ...meetingLines,
+  ];
+  if (pending.length) {
+    const extra = pending.join("\n");
+    if (!savedMeeting.includes(extra)) {
+      savedMeeting = savedMeeting ? `${savedMeeting}\n${extra}` : extra;
+    }
+    if (meetingOn) {
+      const bubble = addBubble("meeting", "Meeting kept. Ask me about it the next time you start talking.", false);
+      bubble.querySelector(".who").textContent = "Meeting";
+    }
+  }
+  meetingOn = false;
+  meetingLines = [];
+  closeMeetingAfterClip = false;
+  linesToSummarize = null;
+  localEars = false;
+  recordingClip = false;
+  paintMeetingButton();
   muteBtn.disabled = true;
   muteBtn.textContent = "Mute mic";
   muteBtn.classList.remove("is-muted");
@@ -1551,6 +2197,10 @@ function handleServerEvent(event) {
   const type = event.type;
 
   if (type === "input_audio_buffer.speech_started") {
+    if (meetingOn) {
+      showMeetingStatus();
+      return;
+    }
     clearThinkCue();
     setCapsuleState("listening");
     setStatus("Listening…");
@@ -1565,6 +2215,10 @@ function handleServerEvent(event) {
     return;
   }
   if (type === "input_audio_buffer.speech_stopped") {
+    if (meetingOn) {
+      showMeetingStatus();
+      return;
+    }
     questionEndedAt = performance.now();
     // Models that do not hear for themselves beep while the answer is prepared.
     if (needsVoiceControl(selectedModel())) armThinkCue(questionEndedAt);
@@ -1573,6 +2227,11 @@ function handleServerEvent(event) {
     return;
   }
   if (type === "response.created" || type === "response.output_item.added") {
+    if (meetingOn) {
+      stopSpeaking();
+      showMeetingStatus();
+      return;
+    }
     setCapsuleState("speaking");
     setStatus("Speaking…");
     return;
@@ -1583,8 +2242,11 @@ function handleServerEvent(event) {
       scriptedReply = false;
     }
     if (connected && !muted) {
-      setCapsuleState("listening");
-      setStatus("Listening… speak anytime");
+      if (meetingOn) showMeetingStatus();
+      else {
+        setCapsuleState("listening");
+        setStatus("Listening… speak anytime");
+      }
     }
     if (assistantPartialEl) {
       assistantPartialEl.classList.remove("partial");
@@ -1610,6 +2272,11 @@ function handleServerEvent(event) {
     type === "conversation.item.input_audio_transcription.done"
   ) {
     const text = event.transcript || event.item?.content?.[0]?.transcript || "";
+    if (meetingOn) {
+      freezeMeetingDraft(text, meetingLines);
+      showMeetingStatus();
+      return;
+    }
     const question = questionAfterWake(text.trim());
     if (question === null) {
       clearThinkCue();
@@ -1636,6 +2303,10 @@ function handleServerEvent(event) {
     type === "conversation.item.input_audio_transcription.partial"
   ) {
     const text = event.delta || event.transcript || "";
+    if (meetingOn) {
+      if (text) addMeetingPiece(text);
+      return;
+    }
     if (text) updateUserPartial(text);
     return;
   }
@@ -1657,6 +2328,7 @@ function handleServerEvent(event) {
 
 /** Run a tool the voice model asked for, then hand the result back. */
 async function answerToolCall(event) {
+  if (meetingOn) return;
   const item = event.item || event;
   const callId = item.call_id || event.call_id;
   const name = item.name || event.name;
@@ -1697,32 +2369,59 @@ async function answerToolCall(event) {
 }
 
 /**
- * A reply has two parts. The voice reads the words before EMAIL_BODY.
- * The words after it are the letter that Outlook opens.
- * While the answer is still arriving, hold back a half-written EMAIL_BODY
+ * A reply can have two parts. The voice reads the words before the marker.
+ * EMAIL_BODY is the letter that Outlook opens.
+ * SKILL_BODY is a document, such as a product plan, that stays on the screen.
+ * While the answer is still arriving, hold back a half-written marker
  * so the voice does not say it.
  */
 function splitEmailDraft(raw, finished) {
-  const match = /EMAIL_BODY/i.exec(raw);
-  if (match) {
-    const spoken = raw.slice(0, match.index);
-    const written = raw.slice(match.index + match[0].length).replace(/^[\s:—-]+/, "");
+  const emailAt = raw.search(/EMAIL_BODY/i);
+  const skillAt = raw.search(/SKILL_BODY/i);
+  let token = "";
+  let at = -1;
+  if (emailAt >= 0 && (skillAt < 0 || emailAt <= skillAt)) {
+    token = "EMAIL_BODY";
+    at = emailAt;
+  } else if (skillAt >= 0) {
+    token = "SKILL_BODY";
+    at = skillAt;
+  }
+  if (at >= 0) {
+    const spoken = raw.slice(0, at);
+    const written = raw.slice(at + token.length).replace(/^[\s:—-]+/, "");
     return {
       spoken: finished ? spoken.trim() : spoken,
       written: finished ? written.trim() : written,
       closed: true,
+      kind: token === "SKILL_BODY" ? "skill" : "email",
     };
   }
   if (!finished) {
     const upper = raw.toUpperCase();
-    const token = "EMAIL_BODY";
-    for (let size = token.length - 1; size > 3; size -= 1) {
-      if (upper.endsWith(token.slice(0, size))) {
-        return { spoken: raw.slice(0, -size), written: "", closed: false };
+    for (const name of ["EMAIL_BODY", "SKILL_BODY"]) {
+      for (let size = name.length - 1; size > 3; size -= 1) {
+        if (upper.endsWith(name.slice(0, size))) {
+          return { spoken: raw.slice(0, -size), written: "", closed: false, kind: "" };
+        }
       }
     }
   }
-  return { spoken: finished ? raw.trim() : raw, written: "", closed: false };
+  return { spoken: finished ? raw.trim() : raw, written: "", closed: false, kind: "" };
+}
+
+/** Put a skill's written document under the short spoken line. */
+function showSkillDoc(bubble, text) {
+  const clean = String(text || "").trim();
+  if (!bubble || !clean) return;
+  let doc = bubble.querySelector(".skill-doc");
+  if (!doc) {
+    doc = document.createElement("pre");
+    doc.className = "skill-doc";
+    bubble.append(doc);
+  }
+  doc.textContent = clean;
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
 }
 
 /** "Haitham Aryan" becomes "Haitham". */
@@ -1904,9 +2603,10 @@ function beepDelay(endedAt) {
 function armThinkCue() {}
 
 /** Bonsai and GPT-6 write the answer. Voice control is what speaks it. */
-async function answerWithBrain(question) {
+async function answerWithBrain(question, extras) {
+  const writingMinutes = Boolean(extras?.summarizeMeeting);
   await deskReady;
-  if (brainBusy || paused) return;
+  if (meetingOn || brainBusy || paused) return;
   if (!connected) setBusy(true);
   compressAbort?.abort();
   compressGen += 1;
@@ -1916,7 +2616,7 @@ async function answerWithBrain(question) {
   cancelAnswer = false;
   currentAnswerBubble = null;
   askAbort = new AbortController();
-  if (micStream && !muted && !ears) watchWhileAnswering(micStream);
+  if (micStream && !muted) watchWhileAnswering(micStream);
   setStatus(`Thinking with ${selectedModel()?.label || "the selected model"}…`);
   setCapsuleState("thinking");
   // Local models (Bonsai) always use the Kokoro voice on this Mac: free, no OpenAI.
@@ -1943,6 +2643,9 @@ async function answerWithBrain(question) {
         question,
         history: chatTurns,
         memory: chatMemory,
+        meetingNotes: savedMeeting,
+        summarizeMeeting: Boolean(extras?.summarizeMeeting),
+        skill: activeSkillId,
         model: modelSelect.value,
         reasoning: reasoningSelect.value,
         spoken: true,
@@ -2027,6 +2730,10 @@ async function answerWithBrain(question) {
             name: event.name || "",
             original: event.original || "",
           };
+        } else if (event.type === "skill") {
+          // The server grabbed a skill, or put one away. Highlight the list.
+          setActiveSkill(event.id || "");
+          skillLabel = event.name || "";
         } else if (event.type === "delta") {
           rawAnswer += event.text || "";
           const parts = splitEmailDraft(rawAnswer, false);
@@ -2037,7 +2744,15 @@ async function answerWithBrain(question) {
           unspoken += fresh;
           bubble ??= addBubble("assistant", "", true);
           currentAnswerBubble = bubble;
+          if (writingMinutes) {
+            bubble.classList.add("minutes");
+            bubble.querySelector(".who").textContent = "Minutes";
+          }
+          if (parts.kind === "skill" && skillLabel) {
+            bubble.querySelector(".who").textContent = skillLabel;
+          }
           bubble.querySelector(".text").textContent = spokenShown.trim();
+          if (parts.kind === "skill" && parts.written) showSkillDoc(bubble, parts.written);
           transcriptEl.scrollTop = transcriptEl.scrollHeight;
         } else if (event.type === "usage") addBrainUsage(event);
         else if (event.type === "ignored") {
@@ -2061,7 +2776,17 @@ async function answerWithBrain(question) {
     if (!answer.trim()) throw new Error("The selected model returned an empty answer.");
     if (bubble) {
       bubble.classList.remove("partial");
-      bubble.querySelector(".text").textContent = spoken || written;
+      if (finalParts.kind === "skill") {
+        bubble.querySelector(".text").textContent = spoken || "The plan is on the screen.";
+        if (skillLabel) bubble.querySelector(".who").textContent = skillLabel;
+        showSkillDoc(bubble, written);
+      } else {
+        bubble.querySelector(".text").textContent = spoken || written;
+      }
+      if (writingMinutes) {
+        bubble.classList.add("minutes");
+        bubble.querySelector(".who").textContent = "Minutes";
+      }
     }
     if (outlook) {
       attachOutlookButton(bubble, outlook, written || spoken);
@@ -2077,7 +2802,9 @@ async function answerWithBrain(question) {
     if (/^I (?:saved that memo|opened that meeting)/.test(spoken)) flashSaved();
     if (connected && !localStop) {
       setCapsuleState("listening");
-      setStatus(macOnly
+      setStatus(writingMinutes
+        ? "The minutes are written. Say Hey, then ask anything about the meeting."
+        : macOnly
         ? WAKE_STATUS
         : voiceBlocked
         ? "Listening. Say Hey, then your question. Voice control has no credits, so the Mac voice spoke."
@@ -2139,7 +2866,7 @@ function addBubble(role, text, partial) {
   bubble.className = `bubble ${role}${partial ? " partial" : ""}`;
   const who = document.createElement("div");
   who.className = "who";
-  who.textContent = role === "user" ? "You" : "Brain";
+  who.textContent = role === "user" ? "You" : role === "note" ? "Medical" : role === "meeting" ? "Meeting" : "Brain";
   const body = document.createElement("p");
   body.className = "text";
   body.textContent = text;
@@ -2211,6 +2938,7 @@ function safeParse(data) {
 function humanError(err) {
   const msg = err?.message || String(err);
   if (/Permission|NotAllowed/i.test(msg)) return "Microphone permission denied. Allow the mic for this window.";
+  if (/NotFound|DevicesNotFound|Overconstrained/i.test(msg)) return "That microphone is not connected. Pick Local or iPhone again.";
   if (/OPENAI_API_KEY|Missing/i.test(msg)) return "The API key is missing from the .env file.";
   if (/Failed to fetch|NetworkError/i.test(msg)) return "The voice app is not running. Start it, then press Start talking again.";
   return msg;
@@ -2365,6 +3093,12 @@ function fillModels() {
     option.textContent = model.label;
     if (model.id === defaultModelId) option.selected = true;
     modelSelect.append(option);
+  }
+  // Opening the page starts on the Hey brain (Claude). Gemini Live is still in the list if you pick it for this call.
+  if (selectedModel()?.gemini) {
+    const heyModel = catalog.models.find((model) => model.id === defaultModelId && !model.gemini)
+      || catalog.models.find((model) => !model.gemini && !model.hears);
+    if (heyModel) modelSelect.value = heyModel.id;
   }
   chosenModelId = modelSelect.value;
   fillReasoning();
@@ -2645,6 +3379,7 @@ function renderDesk() {
     addCardButton(actions, "Forget this", () => {
       chatTurns = [];
       chatMemory = "";
+      savedMeeting = "";
       forgetSavedChat();
     });
     article.append(actions);
@@ -2672,6 +3407,89 @@ async function loadDesk() {
 }
 
 const deskReady = loadDesk();
+
+/** Highlight the skill that is on. Click a row to turn it on or off. */
+function setActiveSkill(id) {
+  activeSkillId = id || "";
+  renderSkills();
+}
+
+function renderSkills() {
+  if (!skillList) return;
+  skillList.replaceChildren();
+  if (!skillCatalog.length) {
+    const empty = document.createElement("p");
+    empty.className = "skill-empty";
+    empty.textContent = "No skills yet. Upload a markdown file.";
+    skillList.append(empty);
+    return;
+  }
+  for (const skill of skillCatalog) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "skill-row";
+    const on = skill.id === activeSkillId;
+    if (on) row.classList.add("is-on");
+    row.setAttribute("aria-pressed", on ? "true" : "false");
+    const title = document.createElement("strong");
+    title.textContent = skill.name;
+    const about = document.createElement("span");
+    about.textContent = skill.description || "No description";
+    row.append(title, about);
+    row.addEventListener("click", () => {
+      if (activeSkillId === skill.id) {
+        setActiveSkill("");
+        setStatus("Skill off.");
+      } else {
+        setActiveSkill(skill.id);
+        setStatus(`${skill.name} is on. Say Hey, then tell me what to do with it.`);
+      }
+    });
+    skillList.append(row);
+  }
+}
+
+/** Read the skill files the server keeps, and show their names. */
+async function loadSkills() {
+  try {
+    const response = await fetch("/skills");
+    if (!response.ok) throw new Error("Could not load skills.");
+    const data = await response.json();
+    skillCatalog = Array.isArray(data.skills) ? data.skills : [];
+    if (activeSkillId && !skillCatalog.some((skill) => skill.id === activeSkillId)) {
+      activeSkillId = "";
+    }
+    renderSkills();
+  } catch (err) {
+    console.error("Failed while loading skills:", err);
+  }
+}
+
+uploadSkillBtn?.addEventListener("click", () => skillFile?.click());
+skillFile?.addEventListener("change", async () => {
+  const file = skillFile.files?.[0];
+  skillFile.value = "";
+  if (!file) return;
+  setStatus("Adding that skill…");
+  try {
+    const text = await file.text();
+    const response = await fetch("/skills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: file.name.replace(/\.(md|txt)$/i, ""), text }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not add that skill.");
+    await loadSkills();
+    setActiveSkill(data.id || "");
+    setStatus(`${data.name || "That skill"} is on. Say Hey, then tell me what to do with it.`);
+  } catch (err) {
+    console.error("Failed while uploading a skill:", err);
+    setStatus(err.message || "Could not add that skill.");
+  }
+});
+
+loadSkills();
 
 async function loadSettings() {
   try {

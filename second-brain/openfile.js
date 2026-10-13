@@ -6,7 +6,8 @@
  * "Open" looks in the notes first, then in Spotlight under your home folder.
  * Spotlight results skip Library, hidden folders, apps, and code folders.
  * File names are never logged (they may name patients).
- * The brain does not write to the file; you edit it yourself in that app.
+ * Word files (.doc and .docx) open in LibreOffice, so you can read and edit them there.
+ * The brain does not change the file itself.
  */
 
 import fs from "node:fs";
@@ -15,7 +16,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { words } from "./learnings.js";
 
-const OPEN = /^(?:hey,?\s+)?(?:please\s+)?(?:can\s?you\s+|could\s?you\s+|would\s?you\s+)?(?:please\s+)?(?:open|pull up|bring up)\s+(?:up\s+)?(?:my\s+|the\s+)?(.+?)(?:\s+(file|note|document|doc|page|word file|pdf))?(?:\s+for me)?(?:\s+please)?[?.!]*$/i;
+const OPEN = /^(?:hey,?\s+)?(?:please\s+)?(?:can\s?you\s+|could\s?you\s+|would\s?you\s+)?(?:please\s+)?(?:open|pull up|bring up|edit|read)\s+(?:up\s+)?(?:my\s+|the\s+)?(.+?)(?:\s+(file|note|document|doc|page|word file|pdf))?(?:\s+for me)?(?:\s+please)?[?.!]*$/i;
 // These "open" requests belong to email and the calendar.
 const NOT_A_FILE = /\b(?:e-?mails?|mail|inbox|outlook|calendar|meetings?|messages?)\b/i;
 
@@ -28,6 +29,9 @@ const KINDS = /\s+(?:file|document|doc|word file|pdf|presentation|spreadsheet)$/
 // The last numbered list (files or emails), so "open number two" works for a few minutes.
 let lastFound = { items: [], open: null, at: 0 };
 const LIST_MS = 10 * 60 * 1000;
+// Word files open in LibreOffice. Other files still use their usual app.
+const WORD_EXT = new Set([".doc", ".docx", ".docm", ".odt", ".rtf"]);
+const LIBREOFFICE = "/Applications/LibreOffice.app";
 
 /** Squash a name so "to-do dot md", "To Do.md" and "todo" all compare equal. */
 function compact(name) {
@@ -42,9 +46,18 @@ export function openFileJob(question) {
   const q = String(question || "").trim().replace(/^["“'\s.,]+|["”'\s]+$/g, "");
   const match = q.match(OPEN);
   if (!match || NOT_A_FILE.test(match[1])) return null;
-  const name = match[1].trim();
+  // "Read the news" is a question. "Read the protocol word document" is a file.
+  const reading = /^(?:hey,?\s+)?(?:please\s+)?(?:can\s?you\s+|could\s?you\s+|would\s?you\s+)?(?:please\s+)?read\b/i.test(q);
+  if (reading && !/\b(?:word|docx?|dot\s+docx?)\b/i.test(q)) return null;
+  // "protocol word document" means the file "protocol", not a file named "word".
+  let name = match[1].trim();
+  if (/\b(?:word\s+(?:documents?|docs?|files?)|docx?|dot\s+docx?)\b/i.test(q)) {
+    name = name.replace(/\.(?:docx?|dot\s+docx?)\b/gi, " ").replace(/\b(?:word|documents?|docs?|files?|docx)\b/gi, " ");
+  }
+  name = name.replace(/\s+/g, " ").trim();
+  if (!name) return null;
   // "file", ".md", "dot md" say for sure that a file is meant.
-  const explicit = Boolean(match[2]) || /(?:\.|\bdot\s+)(?:md|pdf|docx?)\b/i.test(name);
+  const explicit = Boolean(match[2]) || /(?:\.|\bdot\s+)(?:md|pdf|docx?)\b/i.test(match[1]) || /\bword\b/i.test(q);
   return { name, explicit };
 }
 
@@ -98,9 +111,19 @@ function spotlight(name) {
   });
 }
 
+function isWordFile(full) {
+  return WORD_EXT.has(path.extname(full).toLowerCase());
+}
+
+/** Open a file. Word files go to LibreOffice so they can be read and edited. */
 function openPath(full) {
+  const word = isWordFile(full);
+  if (word && !fs.existsSync(LIBREOFFICE)) {
+    return Promise.reject(new Error("LibreOffice is not installed."));
+  }
+  const args = word ? ["-a", LIBREOFFICE, full] : [full];
   return new Promise((resolve, reject) => {
-    execFile("/usr/bin/open", [full], { timeout: 15_000 }, (err) => (err ? reject(err) : resolve()));
+    execFile("/usr/bin/open", args, { timeout: 20_000 }, (err) => (err ? reject(err) : resolve()));
   });
 }
 
@@ -136,16 +159,132 @@ export async function runFindOnMac(job) {
   return listSentence(hits.map((hit) => hit.file));
 }
 
-/** Open the file in its usual app and return the sentence to say back, or null to answer normally. */
-export async function runOpenFile(job, notes, roots) {
-  const pick = job.name.match(PICK);
+// "Open the one we discussed" has no file name. These phrases mean the last document.
+const VAGUE_NAME = /^(?:it|that|this|one|the one|that one|this one|same one|we discussed|one we discussed|document we discussed|file we discussed|the one we discussed)$/i;
+// The last Word file actually opened, so "open it" still works a few minutes later.
+let lastOpenedFile = { full: "", at: 0 };
+
+function isVagueName(name) {
+  return VAGUE_NAME.test(String(name || "").toLowerCase().replace(/[?.!]+$/g, "").trim());
+}
+
+/** Full path of a note, only if it sits inside one of the selected folders. */
+function notePath(note, roots) {
+  for (const root of roots) {
+    const full = path.resolve(root, note.rel || "");
+    const rootResolved = path.resolve(root);
+    if ((full === rootResolved || full.startsWith(rootResolved + path.sep)) && fs.existsSync(full)) return full;
+  }
+  return null;
+}
+
+/**
+ * Word or PDF files whose title was written out in the recent conversation.
+ * An Arabic file name matches even when the user asked for it in English,
+ * as long as the last answer said that Arabic name.
+ */
+function filesNamedInTalk(text, notes, roots) {
+  const hay = compact(String(text || ""));
+  if (hay.length < 8) return [];
+  const found = [];
+  for (const note of notes) {
+    const ext = path.extname(note.rel || "").toLowerCase();
+    if (!WORD_EXT.has(ext) && ext !== ".pdf") continue;
+    const title = compact(note.title || path.basename(note.rel || ""));
+    if (title.length < 8 || !hay.includes(title)) continue;
+    const full = notePath(note, roots);
+    if (full) found.push({ full, at: hay.lastIndexOf(title) });
+  }
+  found.sort((a, b) => b.at - a.at);
+  const seen = new Set();
+  return found.filter((item) => (seen.has(item.full) ? false : seen.add(item.full))).map((item) => item.full);
+}
+
+/**
+ * English words such as "legal questions" will not be in an Arabic file name.
+ * Meaning search still knows which Word file is about that subject.
+ * Open it only when one Word file is clearly closer than the rest.
+ */
+async function wordFileByMeaning(name, notes, roots, findByMeaning) {
+  let hits = [];
+  try {
+    hits = await findByMeaning(name);
+  } catch (err) {
+    console.error("Failed while matching a Word file by meaning:", err?.message || err);
+    return null;
+  }
+  const ranked = [];
+  const seen = new Set();
+  for (const hit of hits || []) {
+    const rel = hit?.note?.rel || "";
+    if (!WORD_EXT.has(path.extname(rel).toLowerCase())) continue;
+    const full = notePath(hit.note, roots);
+    if (!full || seen.has(full)) continue;
+    seen.add(full);
+    ranked.push({ full, score: Number(hit.score) || 0 });
+  }
+  ranked.sort((a, b) => b.score - a.score);
+  const first = ranked[0];
+  const second = ranked[1];
+  if (!first || first.score < 0.26) return null;
+  const gap = second ? first.score - second.score : 1;
+  // One Word file is clearly about this. A typo still counts when the gap stays wide.
+  if ((first.score >= 0.3 && gap >= 0.05) || (first.score >= 0.27 && gap >= 0.06)) return { full: first.full };
+  return { files: ranked.slice(0, 3).map((item) => item.full) };
+}
+
+/** The one Word file named in the recent chat, when the user's words are in that chat too. */
+function discussedFile(name, text, notes, roots) {
+  const named = filesNamedInTalk(text, notes, roots).filter((full) => WORD_EXT.has(path.extname(full).toLowerCase()));
+  if (named.length !== 1) return null;
+  const said = [...words(name)];
+  if (!said.length) return null;
+  const heard = words(String(text || ""));
+  return said.every((word) => heard.has(word)) ? named[0] : null;
+}
+
+/** Decide which file to open. Does not open it. */
+export async function planOpen(job, notes, roots, help = {}) {
+  const pick = String(job.name || "").match(PICK);
   if (pick && Date.now() - lastFound.at < LIST_MS) {
     const item = lastFound.items[PICK_INDEX[pick[1].toLowerCase()]];
-    if (!item) return `The last list has only ${lastFound.items.length}.`;
-    return lastFound.open(item);
+    if (!item) return { text: `The last list has only ${lastFound.items.length}.` };
+    return { full: item };
   }
-  const full = findFile(job.name, notes, roots);
-  if (full) return openAndSay(full);
+  const byName = findFile(job.name, notes, roots);
+  if (byName) return { full: byName };
+
+  const fromTalk = discussedFile(job.name, help.recentText, notes, roots);
+  if (fromTalk) return { full: fromTalk };
+
+  if (isVagueName(job.name)) {
+    let named = filesNamedInTalk(help.recentText, notes, roots);
+    if (/\bword\b/i.test(String(help.asked || ""))) named = named.filter((full) => WORD_EXT.has(path.extname(full).toLowerCase()));
+    if (named.length === 1) return { full: named[0] };
+    if (named.length > 1) return { files: named.slice(0, 3) };
+    if (lastOpenedFile.full && Date.now() - lastOpenedFile.at < LIST_MS && fs.existsSync(lastOpenedFile.full)) {
+      return { full: lastOpenedFile.full };
+    }
+    return { text: "I don't know which file you mean yet. Say open, then the name, or what the document is about." };
+  }
+
+  const asked = String(help.asked || "");
+  if (/\b(?:word|docx?)\b/i.test(asked) && typeof help.findByMeaning === "function") {
+    const meant = await wordFileByMeaning(job.name, notes, roots, help.findByMeaning);
+    if (meant?.full) return meant;
+    if (meant?.files?.length) return { files: meant.files };
+  }
+  return null;
+}
+
+/** Open the file in its usual app and return the sentence to say back, or null to answer normally. */
+export async function runOpenFile(job, notes, roots, help = {}) {
+  const planned = await planOpen(job, notes, roots, help);
+  if (planned?.text) return planned.text;
+  if (planned?.full) return openAndSay(planned.full);
+  if (planned?.files?.length === 1) return openAndSay(planned.files[0]);
+  if (planned?.files?.length) return listSentence(planned.files);
+
   // Not in the notes: try the whole Mac. One clear match opens; several are listed.
   const hits = await spotlight(job.name);
   console.log(`Spotlight search for open: ${hits.length} match(es)`);
@@ -155,11 +294,18 @@ export async function runOpenFile(job, notes, roots) {
 }
 
 async function openAndSay(full) {
+  const word = isWordFile(full);
   try {
     await openPath(full);
-    return `I opened ${path.basename(full)}.`;
+    lastOpenedFile = { full, at: Date.now() };
+    const spokenName = path.basename(full, path.extname(full)).replace(/[_]+/g, " ");
+    if (word) return `I opened ${spokenName} in LibreOffice. You can read it and edit it there. The Word file itself is not changed until you save.`;
+    return `I opened ${spokenName}.`;
   } catch (err) {
     console.error("Failed while opening a file for the user:", err?.message || err);
+    if (word && !fs.existsSync(LIBREOFFICE)) {
+      return `I found ${path.basename(full)}, but LibreOffice is not installed, so I could not open that Word file.`;
+    }
     return `I found ${path.basename(full)} but could not open it.`;
   }
 }

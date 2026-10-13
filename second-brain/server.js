@@ -29,7 +29,8 @@ import { fileURLToPath } from "node:url";
 import { MODELS, VOICE_MODELS, REASONING_LEVELS, getModel, getAnyModel, priceForUsage } from "./pricing.js";
 import { createSemanticIndex } from "./embed.js";
 import { judgeSpeech, warmJudge } from "./jev.js";
-import { learningJob, runLearningJob, learningsBlock, closestIndex } from "./learnings.js";
+import { cleanMedical, warmMedgem } from "./medgem.js";
+import { learningJob, runLearningJob, learningsBlock, closestIndex, siteShortcut } from "./learnings.js";
 import { loadDocs } from "./docs.js";
 import { openFileJob, runOpenFile, findOnMacJob, runFindOnMac } from "./openfile.js";
 import { emailSearchJob, runEmailSearch } from "./emailsearch.js";
@@ -56,7 +57,10 @@ const WHISPER_SERVER_URL = "http://127.0.0.1:8178/inference";
 // Optional: hears English and Arabic and detects which one. Started only when first used.
 const MULTI_VOICE_MODEL = path.join(__dirname, "..", "voice", "models", "ggml-large-v3-turbo-q5_0.bin");
 const WHISPER_MULTI_URL = "http://127.0.0.1:8180/inference";
+// A second copy of the big model, locked to Arabic, so English and Arabic can listen at once.
+const WHISPER_AR_URL = "http://127.0.0.1:8182/inference";
 let multiWhisperUp = null;
+let arabicWhisperUp = null;
 // Kokoro: the same local voice the claude-voice app uses. Local models speak with it.
 const KOKORO_PYTHON = "/usr/local/bin/python3.11";
 const KOKORO_SCRIPT = path.join(__dirname, "..", "voice", "kokoro_server.py");
@@ -273,7 +277,7 @@ function excerpt(text, terms, maxLen = 900) {
   return slice;
 }
 
-function buildPrompt(question, hits, pages = [], history = [], memory = "") {
+function buildPrompt(question, hits, pages = [], history = [], memory = "", meetingNotes = "") {
   const blocks = hits.map((hit) => {
     const { note, terms } = hit;
     return [
@@ -326,12 +330,20 @@ function buildPrompt(question, hits, pages = [], history = [], memory = "") {
   const memoryBlock = memory
     ? `Compressed memory of older turns:\n${memory}`
     : "";
+  const meetingBlock = meetingNotes
+    ? [
+        "Meeting written down in this call, in the order it was heard:",
+        meetingNotes,
+        "If the user asks about that meeting, answer from those lines. Do not say the meeting is missing from the notes. Do not invent people, numbers, or decisions that are not written there. Do not turn a question about this meeting into a new calendar event.",
+      ].join("\n")
+    : "";
 
   return [
     // here_and_now already ran. The model must copy these words, not invent a clock time.
     `Here and now: ${hereAndNow()}`,
     learningsBlock(),
     memoryBlock,
+    meetingBlock,
     "Earlier in this conversation:",
     earlier,
     "",
@@ -374,6 +386,15 @@ function cleanHistory(raw) {
 
 function cleanMemory(raw) {
   return typeof raw === "string" ? raw.trim().slice(0, 2000) : "";
+}
+
+/** Recent questions and answers, so "open the one we discussed" can find that file. */
+function fileTalk(history) {
+  const saved = desk.savedChat();
+  const bits = [saved.summary];
+  for (const turn of saved.turns || []) bits.push(turn.question, turn.answer);
+  for (const turn of history || []) bits.push(turn.question, turn.answer);
+  return bits.filter(Boolean).join("\n");
 }
 /** @type {{ rel: string, title: string, full: string, mtime: number, words: string[] }[]} */
 let rawMail = [];
@@ -1469,6 +1490,18 @@ function calendarRead(question) {
   return "today";
 }
 
+/**
+ * The Outlook calendar, as opposed to a meeting that was just written down.
+ * "What is still missing from the meeting?" is about the recording.
+ * "What meetings do I have today?" is about Outlook.
+ */
+function asksForOutlookCalendar(question) {
+  const q = String(question || "").toLowerCase();
+  return /\b(?:calendar|schedule|agenda|appointments?)\b/.test(q)
+    || /\b(?:what|which) meetings?\b/.test(q)
+    || /\bmeetings? (?:today|tomorrow|tonight|do i have|have i got)\b/.test(q);
+}
+
 /** Outlook keeps a small calendar file for the calendar widget. AppleScript cannot see this calendar. */
 function outlookCalendarFile() {
   return path.join(
@@ -2087,6 +2120,30 @@ function decodeHtml(text) {
     .trim();
 }
 
+/**
+ * "Show me cnn.com" or "open https://www.cnn.com" opens that page in the browser.
+ * A file name such as todo.md is not a web page.
+ */
+function showSiteJob(question) {
+  const q = String(question || "").trim().replace(/^["“'\s.,]+|["”'\s.?!]+$/g, "");
+  const asking = /^(?:please\s+)?(?:can you\s+|could you\s+|would you\s+)?(?:please\s+)?(?:show(?:\s+me)?|open|pull up|bring up|go to)\b/i.test(q);
+  if (!asking) return null;
+  const found = q.match(/https?:\/\/[^\s]+/i)
+    || q.match(/\b(?:[a-z0-9-]+\.)+(?:com|org|net|io|gov|edu|ai|co\.uk|uk|jo|news|tv|info|me)(?:\/[^\s]*)?/i);
+  if (!found) return null;
+  let url = found[0].replace(/[.,!?;)]+$/g, "");
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  try {
+    const parsed = new URL(url);
+    if (!isPublicWebUrl(parsed.href)) return null;
+    const name = parsed.hostname.replace(/^www\./, "");
+    return { url: parsed.href, name };
+  } catch (err) {
+    console.error("Failed while reading a web address to open:", err.message);
+    return null;
+  }
+}
+
 /** Only fetch normal public web pages. Never call this Mac or a private network. */
 function isPublicWebUrl(raw) {
   try {
@@ -2243,10 +2300,11 @@ const APP_ABILITIES = [
   "Keep a standing rule for every answer: say from now on, then the rule. List rules and memos: say what are your memories. Remove one: say forget, then what it was about.",
   "Draft an email: say send an email to, then the name and what it says. A draft waits on the page. The user says send it, or presses Open. Outlook opens the draft. The user presses Send. Say don't to drop it.",
   "Put a meeting on the calendar: say schedule a meeting with, then the person, day, and time. It waits until the user says send it. Outlook then opens the event to check and save. Say don't to drop it.",
+  "Show a web page in the browser: say show me, then the address, such as show me cnn.com. It opens right away. A saved place works the same way: if a memory says go to inotes opens a site, then go to inotes opens that site.",
   "Watch a public web page: say watch, then the address. A change texts the user's phone.",
   "A reminder: say remind me in 20 minutes to, then the task. It still fires after a restart.",
   "The last conversation is saved on this Mac and comes back the next time they press Start talking.",
-  "Open a file in its usual app on the Mac, such as Word or a text editor: say open, then the file name. It looks in the notes first, then the whole Mac. The user then edits it there.",
+  "Open a file: say open, then the file name. It looks in the notes first, then the whole Mac. A Word file opens in LibreOffice, where the user can read and edit it. Say open, then what it is about, then word document. This works when the file name is Arabic and the user asks in English. Never say you cannot open a file. Never tell the user to rename it or to save a PDF just so it can be opened.",
   "Find an email: say find the email from, or about, then the name or subject. Then say open number one, two, or three, and Outlook searches for it.",
   "Search the whole Mac like the Finder: say find, then the file name, then on my Mac. Then say open number one, two, or three.",
   "Read today's or tomorrow's calendar, today's emails, and which emails need an urgent reply.",
@@ -2888,7 +2946,7 @@ function voiceInstructions() {
     "Answer those questions only from the notes the tool returns and from the code.md rulebooks.",
     "If the notes do not contain the answer, say you could not find it in the notes.",
     "For a simple check like can you hear me, just confirm that you can hear them.",
-    "In this live call you can only search notes and tell the time. The app can also text his phone, save memos and rules, open files, draft emails, and open meetings in Outlook, but only in the regular voice mode. If he asks for one of those, say so and ask him to switch modes. Never say the app cannot do them.",
+    "In this live call you can only search notes and tell the time. The app can also text his phone, save memos and rules, open files, show a web page, draft emails, and open meetings in Outlook, but only in the regular voice mode. If he asks for one of those, say so and ask him to switch modes. Never say the app cannot do them.",
     "Follow the things the user asked you to always keep in mind, listed below.",
     "",
     learningsBlock(),
@@ -3062,13 +3120,13 @@ function startKokoro() {
   process.on("exit", () => child.kill());
 }
 
-/** Start the English + Arabic whisper once, and wait until it answers (the model takes a few seconds to load). */
-function ensureMultiWhisper() {
-  if (!multiWhisperUp) {
-    multiWhisperUp = (async () => {
-      await fs.access(MULTI_VOICE_MODEL);
-      startWhisperServer(MULTI_VOICE_MODEL, WHISPER_MULTI_URL, "auto");
-      const health = WHISPER_MULTI_URL.replace("/inference", "/");
+/** Start one whisper server and wait until it answers. The model takes a few seconds to load. */
+function ensureWhisper(slot, model, url, lang) {
+  if (!slot.current) {
+    slot.current = (async () => {
+      await fs.access(model);
+      startWhisperServer(model, url, lang);
+      const health = url.replace("/inference", "/");
       for (let i = 0; i < 60; i += 1) {
         try {
           await fetch(health);
@@ -3077,11 +3135,21 @@ function ensureMultiWhisper() {
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
       }
-      throw new Error("The English + Arabic whisper did not start.");
+      throw new Error("The voice model did not start.");
     })();
-    multiWhisperUp.catch(() => { multiWhisperUp = null; });
+    slot.current.catch(() => { slot.current = null; });
   }
-  return multiWhisperUp;
+  return slot.current;
+}
+
+/** Start the English + Arabic whisper once, and wait until it answers (the model takes a few seconds to load). */
+function ensureMultiWhisper() {
+  return ensureWhisper({ get current() { return multiWhisperUp; }, set current(value) { multiWhisperUp = value; } }, MULTI_VOICE_MODEL, WHISPER_MULTI_URL, "auto");
+}
+
+/** Start the Arabic-only whisper once. It is a second listener, not a replacement for the English one. */
+function ensureArabicWhisper() {
+  return ensureWhisper({ get current() { return arabicWhisperUp; }, set current(value) { arabicWhisperUp = value; } }, MULTI_VOICE_MODEL, WHISPER_AR_URL, "ar");
 }
 
 // "Hey" as the English model writes it, including an Arabic accent (hay, hi, hei).
@@ -3103,6 +3171,49 @@ async function whisperText(wav, auto) {
     "-t", "4",
   ]);
   return text.replace(/\s+/g, " ").trim();
+}
+
+/** The Arabic listener. Same kind of model as the big one, but it is told the speech is Arabic. */
+async function whisperArabic(wav) {
+  const text = (await transcribeWithServer(wav, WHISPER_AR_URL)) ?? await runCommand(WHISPER_BIN, [
+    "-m", MULTI_VOICE_MODEL,
+    "-f", wav,
+    "-l", "ar",
+    "-nt",
+    "-np",
+    "-bs", "1",
+    "-bo", "1",
+    "-nf",
+    "-t", "4",
+  ]);
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** Whisper writes these on a quiet room. They are not speech. */
+function whisperJunk(text) {
+  const raw = String(text || "").trim();
+  if (/^\([^)]*\)$/.test(raw) || /^\[[^\]]*\]$/.test(raw)) return true;
+  const cleaned = raw.toLowerCase().replace(/[^\p{L}\p{N}\s']/gu, "").trim();
+  if (cleaned.length < 2) return true;
+  if (["thank you", "thanks for watching", "you", "bye", "silence", "music", "blank audio"].includes(cleaned)) return true;
+  // Arabic YouTube-style captions the model invents when the speech was English.
+  const arabic = raw.normalize("NFKD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}\s]/gu, "").replace(/\s+/g, " ").trim();
+  return ["شكرا للمشاهدة", "المترجم للقناة", "اشتركوا في القناة", "ترجمة نانسي قنقر"].includes(arabic);
+}
+
+/** Put the English line and the Arabic line one under the other. */
+function combineLanguages(english, arabic) {
+  const en = whisperJunk(english) ? "" : String(english || "").trim();
+  const ar = whisperJunk(arabic) ? "" : String(arabic || "").trim();
+  const lines = [];
+  if (en) lines.push(`English: ${en}`);
+  if (ar) lines.push(`Arabic: ${ar}`);
+  return {
+    text: lines.join("\n"),
+    english: en,
+    arabic: ar,
+    language: en && ar ? "both" : ar ? "ar" : "en",
+  };
 }
 
 /** Ask the warm whisper server. Returns null if it is not up, so the caller can use whisper-cli. */
@@ -3133,7 +3244,11 @@ app.post(
       return res.status(400).json({ error: "No audio was sent." });
     }
     // ?lang=auto: "Hey" in English starts the question; the question itself may be English or Arabic.
+    // ?lang=any: hear the whole clip in whichever language was spoken. No Hey needed.
+    // ?lang=both: the English whisper and the Arabic whisper both listen, and both lines come back.
     const auto = req.query.lang === "auto";
+    const hearAny = req.query.lang === "any";
+    const hearBoth = req.query.lang === "both";
     const dir = path.join(__dirname, "tmp");
     const stamp = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
     const source = path.join(dir, `${stamp}.webm`);
@@ -3142,24 +3257,50 @@ app.post(
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(source, req.body);
       await runCommand(FFMPEG_BIN, ["-y", "-loglevel", "error", "-i", source, "-ac", "1", "-ar", "16000", wav]);
-      // The fast English model always listens first. It hears an Arabic-accented "hey" as hay or hi.
-      const english = await whisperText(wav, false);
-      let text = english;
+      let text = "";
       let language = "en";
-      if (auto && WAKE_HEARD.test(english)) {
-        // Wake word found: now write the whole clip in whichever language was spoken.
+      if (hearBoth) {
+        // Two listeners at once. The English one is already running. The Arabic one starts on first use.
+        try {
+          await ensureArabicWhisper();
+        } catch (err) {
+          console.error("Failed while starting the Arabic whisper:", err?.message || err);
+          return res.status(503).json({ error: "The Arabic voice model is not installed." });
+        }
+        const [english, arabic] = await Promise.all([whisperText(wav, false), whisperArabic(wav)]);
+        const combined = combineLanguages(english, arabic);
+        text = combined.text;
+        language = combined.language;
+      } else if (hearAny) {
+        // Medical speech may be Arabic with no Hey. The English-only model would miss it.
         try {
           await ensureMultiWhisper();
         } catch (err) {
           console.error("Failed while starting the English + Arabic whisper:", err?.message || err);
           return res.status(503).json({ error: "The English + Arabic voice model is not installed." });
         }
-        const heard = await whisperText(wav, true);
-        // Whisper may write the wake word as هاي or Hi. The page looks for "Hey", so put that back.
-        text = `Hey ${heard.replace(ARABIC_WAKE, "")}`;
-        if (/[\u0600-\u06FF]/.test(heard)) language = "ar";
+        text = await whisperText(wav, true);
+        if (/[\u0600-\u06FF]/.test(text)) language = "ar";
+      } else {
+        // The fast English model always listens first. It hears an Arabic-accented "hey" as hay or hi.
+        const english = await whisperText(wav, false);
+        text = english;
+        if (auto && WAKE_HEARD.test(english)) {
+          // Wake word found: now write the whole clip in whichever language was spoken.
+          try {
+            await ensureMultiWhisper();
+          } catch (err) {
+            console.error("Failed while starting the English + Arabic whisper:", err?.message || err);
+            return res.status(503).json({ error: "The English + Arabic voice model is not installed." });
+          }
+          const heard = await whisperText(wav, true);
+          // Whisper may write the wake word as هاي or Hi. The page looks for "Hey", so put that back.
+          text = `Hey ${heard.replace(ARABIC_WAKE, "")}`;
+          if (/[\u0600-\u06FF]/.test(heard)) language = "ar";
+        }
       }
-      console.log(`Transcribed (${auto ? "auto" : "english"}): ${language}, ${text.length} chars, wake ${WAKE_HEARD.test(english) ? "yes" : "no"}`);
+      const mode = hearBoth ? "both" : hearAny ? "any" : auto ? "auto" : "english";
+      console.log(`Transcribed (${mode}): ${language}, ${text.length} chars, wake ${WAKE_HEARD.test(text) ? "yes" : "no"}`);
       res.json({ text, language });
     } catch (err) {
       console.error("Failed while transcribing locally:", err?.message || err);
@@ -3170,6 +3311,13 @@ app.post(
     }
   }
 );
+
+/** Load the English + Arabic whisper now, so the first medical clip is not a cold start. */
+app.post("/transcribe/warm", (req, res) => {
+  const start = req.query.lang === "both" ? ensureArabicWhisper() : ensureMultiWhisper();
+  start.catch((err) => console.error("Failed while loading a whisper:", err?.message || err));
+  res.json({ ok: true });
+});
 
 /** Turn one piece of the answer into speech with Kokoro, on this Mac. */
 app.post("/speak", async (req, res) => {
@@ -3291,6 +3439,26 @@ function sendControl(event, data = {}) {
 app.post("/control/stop", (_req, res) => {
   for (const client of controlClients) client.write("event: stop\ndata: {}\n\n");
   res.json({ ok: true, pages: controlClients.size });
+});
+
+/**
+ * Medical speech (medgem.js). GPT-OSS 20B on this Mac turns a transcript into
+ * English medical words with identifiers removed. It does not answer.
+ * A question, when there is one, is forwarded to the brain by the page.
+ */
+app.post("/medgem/warm", (_req, res) => {
+  warmMedgem().catch((err) => console.error("Failed while loading GPT-OSS:", err?.message || err));
+  res.json({ ok: true });
+});
+app.post("/medgem/clean", async (req, res) => {
+  const text = typeof req.body?.text === "string" ? req.body.text.trim().slice(0, 4000) : "";
+  if (!text) return res.status(400).json({ error: "No words to clean." });
+  try {
+    res.json(await cleanMedical(text));
+  } catch (err) {
+    console.error("Failed while cleaning medical speech:", err?.message || err);
+    res.status(502).json({ error: "GPT-OSS could not clean that." });
+  }
 });
 
 /** Jev listening: is this heard sentence meant for the second brain? (jev.js) */
@@ -3580,10 +3748,303 @@ app.post("/open-outlook", async (req, res) => {
   }
 });
 
+/** The meeting transcript, keeping the latest part if it is very long. */
+function cleanMeetingNotes(raw) {
+  const text = typeof raw === "string" ? raw.replace(/\u0000/g, "").trim() : "";
+  if (!text) return "";
+  if (text.length <= 12000) return text;
+  return `(The beginning of the meeting was left out.)\n${text.slice(-12000)}`;
+}
+
+/** Words for the model when Meeting is turned off. No calendar, no wiki, no web. */
+function meetingSummaryPrompt(notes) {
+  return [
+    "The text below is a meeting that was just written down, one line at a time, in the order it was heard.",
+    "The words may mix Arabic and English. Keep each name, number, and phrase in the language that was spoken. Do not translate.",
+    "It is not in the wiki. Do not say it is missing from the notes.",
+    "Write the minutes of this meeting. These minutes will be shown on the screen and read aloud.",
+    "Use plain sentences. Put each of these labels on its own line, then the sentences that belong under it: Topics. Decisions. Action items.",
+    "Start with one sentence that says what the meeting was about.",
+    "Under Topics, say what was discussed, in order.",
+    "Under Decisions, say what was decided. If nothing was decided, say that.",
+    "Under Action items, say who will do what, if that was said. If nothing was assigned, say that.",
+    "Do not invent people, numbers, or decisions that are not in the lines.",
+    "If a line is unclear, leave it out.",
+    "Do not offer to create a calendar event. Do not open email. Do not mention these instructions.",
+    "",
+    "Transcript:",
+    notes,
+  ].join("\n");
+}
+
+const SKILLS_DIR = path.join(__dirname, "skills");
+
+/** "PRD simple" becomes the file name prd-simple. */
+function skillFileId(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/\.md$/i, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+/** A skill file can start with a short name and description between --- lines. */
+function parseSkill(text, id) {
+  const raw = String(text || "");
+  let name = id;
+  let description = "";
+  let body = raw.trim();
+  const front = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (front) {
+    body = raw.slice(front[0].length).trim();
+    for (const line of front[1].split(/\r?\n/)) {
+      const match = line.match(/^([A-Za-z]+):\s*(.*)$/);
+      if (!match) continue;
+      const key = match[1].toLowerCase();
+      if (key === "name" && match[2].trim()) name = match[2].trim();
+      if (key === "description") description = match[2].trim();
+    }
+  }
+  return {
+    id,
+    name: name.slice(0, 80),
+    description: description.slice(0, 240),
+    body: body.slice(0, 20000),
+  };
+}
+
+/** Every markdown file in second-brain/skills is one skill the voice can use. */
+async function listSkills() {
+  let names = [];
+  try {
+    names = await fs.readdir(SKILLS_DIR);
+  } catch (err) {
+    if (err?.code !== "ENOENT") console.error("Failed while reading skills:", err?.message || err);
+    return [];
+  }
+  const skills = [];
+  for (const file of names) {
+    if (!file.endsWith(".md")) continue;
+    const id = file.slice(0, -3);
+    if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(id)) continue;
+    try {
+      const text = await fs.readFile(path.join(SKILLS_DIR, file), "utf8");
+      skills.push(parseSkill(text, id));
+    } catch (err) {
+      console.error("Failed while reading a skill:", err?.message || err);
+    }
+  }
+  skills.sort((a, b) => a.name.localeCompare(b.name));
+  return skills;
+}
+
+/** "Stop the skill" puts the current skill away. */
+function mentionsSkillStop(question) {
+  const q = String(question || "").toLowerCase();
+  return /\b(stop|drop|done with|forget|close|put away|turn off)\b/.test(q) && /\bskills?\b/.test(q);
+}
+
+/** "Use the PRD simple skill" or "write a PRD" picks a skill by its name. */
+function matchSkill(question, skills) {
+  const q = String(question || "").toLowerCase().replace(/['’]/g, "");
+  let found = null;
+  for (const skill of skills) {
+    const names = [skill.name, skill.id.replace(/-/g, " ")]
+      .map((name) => name.toLowerCase().trim())
+      .filter((name) => name.length >= 3);
+    const mentioned = names.some((name) => q.includes(name));
+    const asksToUse = /\b(use|using|grab|open|follow|start|load|switch to|with the)\b/.test(q) || /\bskills?\b/.test(q);
+    if (mentioned && asksToUse) found = skill;
+    if (/\bprd\b/.test(skill.id) && /\bprds?\b/.test(q) && /\b(write|create|draft|make|build|start|use)\b/.test(q)) {
+      found = skill;
+    }
+  }
+  return found;
+}
+
+/** Calendar, email, and the other built-in jobs still win unless the user named a skill. */
+function looksLikeOwnJob(question) {
+  return Boolean(
+    desk.parseDesk(question)
+    || textMeJob(question)
+    || learningJob(question)
+    || showSiteJob(question)
+    || siteShortcut(question)
+    || emailSearchJob(question)
+    || openFileJob(question)
+    || findOnMacJob(question)
+    || meetingJob(question)
+    || calendarRead(question)
+    || memoJob(question)
+    || wantsEmail(question)
+  );
+}
+
+/** The words the model follows when a skill is on. The voice reads only the part before SKILL_BODY. */
+function skillInstructions(skill, question, history, memory, meetingNotes) {
+  const earlier = history.length
+    ? history.map((turn) => `User: ${turn.question}\nAssistant: ${turn.answer}`).join("\n\n")
+    : "";
+  return [
+    `The user wants you to use the skill "${skill.name}".`,
+    "Follow the skill below. It decides the shape of the answer.",
+    "Say a short spoken intro first. If the skill produces a document, put the marker SKILL_BODY on its own line, then write the document.",
+    "The voice reads only the words before SKILL_BODY. Do not read the document aloud.",
+    "After SKILL_BODY, short labels on their own lines are fine.",
+    "Do not invent facts. Write TBD when something was not said.",
+    "Keep Arabic and English as the user said them.",
+    "",
+    skill.body,
+    meetingNotes ? `Meeting that was just written down:\n${meetingNotes}` : "",
+    memory ? `What you remember:\n${memory}` : "",
+    earlier ? `Earlier in this conversation:\n${earlier}` : "",
+    "",
+    `Question: ${question}`,
+  ].filter(Boolean).join("\n");
+}
+
+function replySkillStop(res) {
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.flushHeaders?.();
+  writeEvent(res, { type: "skill", id: "", name: "" });
+  writeEvent(res, { type: "delta", text: "I put that skill away." });
+  writeEvent(res, { type: "done" });
+  return res.end();
+}
+
+/**
+ * Speak one prepared prompt with the model selected on the page.
+ * Used for the meeting summary, which must not run the calendar or email tools.
+ * firstEvent is sent before the words, so the page can highlight a skill.
+ */
+async function streamSpokenPrompt(req, res, prompt, firstEvent) {
+  const model = getModel(req.body?.model) || getModel(DEFAULT_MODEL);
+  let reasoning = typeof req.body?.reasoning === "string" ? req.body.reasoning : DEFAULT_REASONING;
+  if (!model.reasoning.includes(reasoning)) reasoning = model.reasoning[0];
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!model.local && !model.subscription && !apiKey) {
+    return res.status(500).json({
+      error: "Missing OPENAI_API_KEY. Add it to the .env file in the project folder.",
+    });
+  }
+
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+  if (firstEvent) writeEvent(res, firstEvent);
+
+  if (model.local && loadedLocalId && !ollamaNamesMatch(loadedLocalId, model.id)) {
+    try {
+      await stopOllamaModel(loadedLocalId);
+    } catch (err) {
+      console.error("Failed while switching local models:", err?.message || err);
+    }
+  }
+  if (model.local) loadedLocalId = model.id;
+
+  try {
+    // longSpoken so a real meeting can be more than three sentences.
+    if (model.local) await streamLocalAnswer(prompt, res, model, reasoning, true, true);
+    else if (model.subscription) await streamClaudeAnswer(prompt, res, model, reasoning, true);
+    else await streamAnswer(apiKey, prompt, res, model, reasoning, true);
+    writeEvent(res, { type: "done" });
+    res.end();
+  } catch (err) {
+    console.error("Failed while summarizing the meeting:", err?.message || err);
+    writeEvent(res, {
+      type: "error",
+      message: err?.message || "Could not summarize the meeting.",
+    });
+    res.end();
+  }
+}
+
+/** The names of the skills on this Mac. The page shows this list. */
+app.get("/skills", async (_req, res) => {
+  const skills = await listSkills();
+  res.json({
+    skills: skills.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+    })),
+  });
+});
+
+/** Save a markdown skill the user uploaded from the voice page. */
+app.post("/skills", async (req, res) => {
+  const text = typeof req.body?.text === "string" ? req.body.text : "";
+  if (text.trim().length < 20) {
+    return res.status(400).json({ error: "That file is too short to be a skill." });
+  }
+  if (text.length > 80000) {
+    return res.status(400).json({ error: "That skill file is too long." });
+  }
+  const hinted = parseSkill(text, "draft");
+  const id = skillFileId(req.body?.name || hinted.name || "skill");
+  if (!id || !/^[a-z0-9][a-z0-9-]{0,59}$/.test(id)) {
+    return res.status(400).json({ error: "Give the skill a name made of letters and numbers." });
+  }
+  await fs.mkdir(SKILLS_DIR, { recursive: true });
+  const filePath = path.join(SKILLS_DIR, `${id}.md`);
+  if (path.dirname(filePath) !== SKILLS_DIR) {
+    return res.status(400).json({ error: "That name is not allowed." });
+  }
+  let saved = text.trim();
+  if (!saved.startsWith("---")) {
+    const title = String(req.body?.name || hinted.name || id).replace(/[\r\n]/g, " ").slice(0, 80);
+    saved = `---\nname: ${title}\ndescription: A skill you uploaded.\n---\n\n${saved}\n`;
+  }
+  await fs.writeFile(filePath, `${saved.trim()}\n`, "utf8");
+  const skill = parseSkill(saved, id);
+  res.json({ id: skill.id, name: skill.name, description: skill.description });
+});
+
 app.post("/ask", async (req, res) => {
   let question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
   if (!question) {
     return res.status(400).json({ error: "Type or say a question first." });
+  }
+  // A meeting summary must not open the calendar or search the wiki.
+  if (req.body?.summarizeMeeting === true) {
+    const notes = cleanMeetingNotes(req.body?.meetingNotes);
+    if (!notes) return replyNow(res, "The meeting was quiet. I did not catch any words.");
+    await streamSpokenPrompt(req, res, meetingSummaryPrompt(notes));
+    return;
+  }
+  // A skill is a saved set of instructions. "Use the PRD skill" loads that file.
+  const skills = await listSkills();
+  const requestedId = typeof req.body?.skill === "string" ? req.body.skill : "";
+  if (mentionsSkillStop(question)) return replySkillStop(res);
+  const named = matchSkill(question, skills);
+  const kept = skills.find((skill) => skill.id === requestedId) || null;
+  let activeSkill = named || kept;
+  const asksForASkill = /\b(use|grab|open|start|follow) (?:the |a )?skills?\b/i.test(question);
+  if (asksForASkill && !named && !kept) {
+    if (skills.length === 1) activeSkill = skills[0];
+    else if (!skills.length) return replyNow(res, "There are no skills yet. Upload one on the page.");
+    else {
+      const names = skills.map((skill) => skill.name).join(", ");
+      return replyNow(res, `Which skill should I use? I have ${names}.`);
+    }
+  }
+  if (activeSkill && (named || asksForASkill || !looksLikeOwnJob(question))) {
+    const notes = cleanMeetingNotes(req.body?.meetingNotes);
+    const prompt = skillInstructions(
+      activeSkill,
+      question,
+      cleanHistory(req.body?.history),
+      cleanMemory(req.body?.memory),
+      notes,
+    );
+    await streamSpokenPrompt(req, res, prompt, {
+      type: "skill",
+      id: activeSkill.id,
+      name: activeSkill.name,
+    });
+    return;
   }
   if (isNoise(question)) {
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -3627,12 +4088,28 @@ app.post("/ask", async (req, res) => {
     writeEvent(res, { type: "done" });
     return res.end();
   }
+  // "Show me cnn.com" opens the browser. A file name is not a web address.
+  const site = showSiteJob(question) || siteShortcut(question);
+  if (site) {
+    try {
+      await runCommand("open", [site.url]);
+      const label = site.name.toLowerCase() === "inotes" ? "iNotes" : site.name;
+      return replyNow(res, `I opened ${label} in your browser.`, { title: label, lines: [site.url] });
+    } catch (err) {
+      console.error("Failed while opening a web page:", err?.message || err);
+      return replyNow(res, `I could not open ${site.name}.`);
+    }
+  }
   // Email first: "open the email from Sara" must not look for a file called "email from Sara".
   const mailSearch = emailSearchJob(question);
   const openFile = mailSearch ? null : openFileJob(question);
   const findOnMac = mailSearch || openFile ? null : findOnMacJob(question);
   const opened = mailSearch ? await runEmailSearch(mailSearch, rawMail)
-    : openFile ? await runOpenFile(openFile, notes, selected)
+    : openFile ? await runOpenFile(openFile, notes, selected, {
+      asked: question,
+      recentText: fileTalk(cleanHistory(req.body?.history)),
+      findByMeaning: (text) => semantic.search(text, 100),
+    })
     : findOnMac ? await runFindOnMac(findOnMac) : null;
   if (opened) {
     const text = typeof opened === "string" ? opened : opened.text;
@@ -3660,11 +4137,14 @@ app.post("/ask", async (req, res) => {
 
   const aboutChat = isChatQuestion(question);
   const history = cleanHistory(req.body?.history);
+  const recordedMeeting = cleanMeetingNotes(req.body?.meetingNotes);
+  // A question about the recording must not open today's Outlook calendar.
+  const aboutRecorded = Boolean(recordedMeeting) && !asksForOutlookCalendar(question);
   const meeting = aboutChat ? null : meetingJob(question);
-  const calendarWhen = aboutChat || meeting ? null : calendarRead(question);
+  const calendarWhen = aboutChat || meeting || aboutRecorded ? null : calendarRead(question);
   const memo = aboutChat || meeting || calendarWhen ? null : memoJob(question);
   const aboutEmail = wantsEmail(question);
-  const hits = aboutChat || memo === "save" || meeting || calendarWhen
+  const hits = aboutChat || memo === "save" || meeting || calendarWhen || aboutRecorded
     ? []
     : memo
       ? await memosForPrompt(memo)
@@ -3693,8 +4173,8 @@ app.post("/ask", async (req, res) => {
   }
   if (model.local) loadedLocalId = model.id;
 
-  if (!aboutChat && !memo && !meeting && !calendarWhen && shouldBrowse(question)) writeEvent(res, { type: "status", message: "Looking on the web…" });
-  const pages = aboutChat || memo || meeting || calendarWhen ? [] : await searchWeb(question);
+  if (!aboutChat && !memo && !meeting && !calendarWhen && !aboutRecorded && shouldBrowse(question)) writeEvent(res, { type: "status", message: "Looking on the web…" });
+  const pages = aboutChat || memo || meeting || calendarWhen || aboutRecorded ? [] : await searchWeb(question);
   const sources = [
     ...hits.map(({ note }) => ({ title: note.title, file: note.rel })),
     ...pages.map((page) => ({ title: page.title, file: page.url })),
@@ -3727,7 +4207,7 @@ app.post("/ask", async (req, res) => {
       writeEvent(res, { type: "done" });
       return res.end();
     }
-    const prompt = buildPrompt(question, hits, pages, history, cleanMemory(req.body?.memory));
+    const prompt = buildPrompt(question, hits, pages, history, cleanMemory(req.body?.memory), recordedMeeting);
     const spoken = req.body?.spoken === true;
     const longSpoken = hits.emailJob === "read" || hits.emailJob === "reply" || hits.emailJob === "send" || hits.emailJob === "list" || hits.emailJob === "review" || hits.memoJob === "recent" || hits.memoJob === "all" || hits.memoJob === "find";
     if (model.local) await streamLocalAnswer(prompt, res, model, reasoning, spoken, longSpoken);
