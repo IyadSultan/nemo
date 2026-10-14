@@ -70,6 +70,11 @@ let closeMeetingAfterClip = false;
 let linesToSummarize = null;
 let meetingSummaryBusy = false;
 let savedMeeting = "";
+let meetingStartedAt = 0;
+let meetingEndedAt = 0;
+// The last finished meeting, for the Save minutes buttons.
+let meetingToSave = null;
+let meetingSaveRow = null;
 // The skill the user turned on. Later questions keep using it until they stop it.
 let activeSkillId = "";
 let skillCatalog = [];
@@ -78,6 +83,15 @@ let recordingClip = false;
 let localEars = false;
 let queuedQuestion = "";
 let micBusy = false;
+// Command and Control together arms the next sentence, so it does not have to start with Hey.
+let keyboardWake = false;
+// Both keys are down. commandControlUsed means a letter was pressed while they were held.
+let commandControlDown = false;
+let commandControlUsed = false;
+// The page and Hammerspoon can both notice the same press. Answer only once.
+let lastKeyboardWake = 0;
+// True while Start talking is still connecting, so a second press does not open two calls.
+let wakeInFlight = false;
 const handledCalls = new Set();
 const countedResponses = new Set();
 let catalog = null;
@@ -141,6 +155,7 @@ function stopSpeaking() {
 
 function listenForNewQuestion() {
   // Drop the answer that is playing, keep the call, and wait for a new wake phrase.
+  keyboardWake = false;
   listenEpoch += 1;
   cancelAnswer = true;
   paused = false;
@@ -159,7 +174,7 @@ function listenForNewQuestion() {
       setStatus("Meeting. I'm writing down every word and staying quiet.");
       setCapsuleState(muted ? "muted" : "meeting");
     } else {
-      setStatus(medicalListening() ? "Stopped. Keep talking. Only a real question goes to the brain." : "Say Hey, then your new question.");
+      setStatus(medicalListening() ? "Stopped. Keep talking. Only a real question goes to the brain." : "Say Hey, or press Command and Control together, then your new question.");
       setCapsuleState(muted ? "muted" : "listening");
     }
   } else {
@@ -181,15 +196,71 @@ function stopAnswer() {
 }
 
 // Cmd+Opt+S stops the answer. Option changes e.key (to "ß"), so match the physical key.
+// Command and Control together starts listening, the same as saying Hey.
+// A letter pressed while both are held is a different shortcut, so it does not listen.
+function isCommandOrControl(code) {
+  return code === "MetaLeft" || code === "MetaRight" || code === "ControlLeft" || code === "ControlRight";
+}
+
 document.addEventListener("keydown", (event) => {
-  if (event.metaKey && event.altKey && event.code === "KeyS") {
+  if (event.metaKey && event.altKey && event.code === "KeyS" && !event.repeat) {
     event.preventDefault();
     stopAnswer();
+    return;
   }
+  const cleanChord = event.metaKey && event.ctrlKey && !event.altKey && !event.shiftKey;
+  if (cleanChord && isCommandOrControl(event.code) && !event.repeat) {
+    commandControlDown = true;
+    commandControlUsed = false;
+    return;
+  }
+  if (!commandControlDown) return;
+  // Shift, Option, or a letter means this is not the listen shortcut.
+  if (event.altKey || event.shiftKey || !isCommandOrControl(event.code)) commandControlUsed = true;
 });
-// The same shortcut from any app: Hammerspoon posts /control/stop, the server passes it here.
+
+document.addEventListener("keyup", (event) => {
+  if (!commandControlDown || !isCommandOrControl(event.code)) return;
+  const el = event.target;
+  const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+  const wake = !commandControlUsed && !typing;
+  commandControlDown = false;
+  commandControlUsed = false;
+  if (wake) wakeFromKeyboard();
+});
+
+/**
+ * Command and Control together, or the same keys from Hammerspoon.
+ * The next thing you say is the question. You can still say Hey instead.
+ */
+function wakeFromKeyboard() {
+  const now = performance.now();
+  if (lastKeyboardWake && now - lastKeyboardWake < 800) return;
+  lastKeyboardWake = now;
+  if (meetingOn) {
+    setStatus("Meeting is on. I'm still only writing the words down.");
+    return;
+  }
+  if (!connected) {
+    keyboardWake = true;
+    if (wakeInFlight) return;
+    wakeInFlight = true;
+    startCall().finally(() => {
+      wakeInFlight = false;
+    });
+    return;
+  }
+  // Stop whatever is playing, then take the next sentence without Hey.
+  listenForNewQuestion();
+  keyboardWake = true;
+  setStatus(KEY_WAKE_STATUS);
+  setCapsuleState(muted ? "muted" : "listening");
+}
+
+// The same shortcuts from any app: Hammerspoon posts here, the server passes them on.
 const control = new EventSource("/control");
 control.addEventListener("stop", stopAnswer);
+control.addEventListener("listen", wakeFromKeyboard);
 /** Read a notice aloud when the page is quiet (a briefing, a reminder, a page change). */
 async function speakNotice(text) {
   if (!text || !["idle", "listening", undefined].includes(capsule.dataset.state)) return;
@@ -298,7 +369,7 @@ muteBtn.addEventListener("click", () => {
 });
 
 clearBtn.addEventListener("click", () => {
-  transcriptEl.innerHTML = '<p class="empty">Press Start talking and say Hey, or type a question below the orb. Turn Meeting on to write down a conversation without answering.</p>';
+  transcriptEl.innerHTML = '<p class="empty">Press Start talking and say Hey, or press Command and Control together. You can also type a question below the orb. Turn Meeting on to write down a conversation without answering.</p>';
   assistantPartialEl = null;
   userPartialEl = null;
   chatTurns = [];
@@ -459,7 +530,7 @@ async function startCall() {
     syncCallButtons();
     talkBtn.setAttribute("aria-pressed", "true");
     talkLabel.textContent = "End call";
-    setStatus(wakeStatus());
+    setStatus(listenStatus());
     setCapsuleState("listening");
     setBusy(false);
     if (pendingReplay) {
@@ -481,7 +552,12 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const WAKE_STATUS = "Listening. I only answer when you start with Hey.";
+const WAKE_STATUS = "Listening. Say Hey, or press Command and Control together, then your question.";
+const KEY_WAKE_STATUS = "Go ahead. I'm listening. You do not need to say Hey.";
+/** The line to show while waiting: the key, or the normal Hey reminder. */
+function listenStatus() {
+  return keyboardWake ? KEY_WAKE_STATUS : wakeStatus();
+}
 /** The listening line, plus who is writing down your words right now. */
 function wakeStatus() {
   if (medicalListening()) {
@@ -528,6 +604,24 @@ function questionFromHeard(text) {
   for (const line of lines) {
     const question = questionAfterWake(line);
     if (question) return question;
+  }
+  return null;
+}
+
+/**
+ * The sentence to answer after Command and Control together.
+ * Hey at the start is still removed. Null means the clip was only noise, so the key stays armed.
+ */
+function wordsFromKey(text) {
+  const raw = String(text || "");
+  const lines = /^(?:English|Arabic):/im.test(raw)
+    ? raw.split("\n").map((line) => line.replace(/^(?:English|Arabic):\s*/i, "").trim()).filter(Boolean)
+    : [raw.trim()];
+  for (const line of lines) {
+    if (!line || looksLikeSilence(line)) continue;
+    const after = questionAfterWake(line);
+    if (after !== null) return after;
+    return line;
   }
   return null;
 }
@@ -845,12 +939,12 @@ if (!wakeSelect.value) wakeSelect.value = "hey";
 wakeSelect.addEventListener("change", () => {
   localStorage.setItem("wake", wakeSelect.value);
   warmJudge();
-  if (connected && needsVoiceControl(selectedModel())) setStatus(wakeStatus());
+  if (connected && needsVoiceControl(selectedModel())) setStatus(listenStatus());
 });
 earsSelect.addEventListener("change", () => {
   localStorage.setItem("ears", earsSelect.value);
   warmJudge();
-  if (connected && needsVoiceControl(selectedModel())) setStatus(wakeStatus());
+  if (connected && needsVoiceControl(selectedModel())) setStatus(listenStatus());
 });
 warmJudge();
 
@@ -1365,6 +1459,7 @@ function beginMeeting() {
   linesToSummarize = null;
   meetingSummaryBusy = false;
   meetingOn = true;
+  meetingStartedAt = Date.now();
   meetingLines = [];
   meetingPartial = "";
   if (meetingPartialBubble) {
@@ -1397,6 +1492,7 @@ function endMeeting() {
   if (!meetingOn || meetingSummaryBusy) return;
   finishMeetingLine();
   meetingOn = false;
+  meetingEndedAt = Date.now();
   paintMeetingButton();
   // Keep these lines even if a new recording is still finishing.
   linesToSummarize = meetingLines.slice();
@@ -1451,6 +1547,59 @@ function summarizeWithLiveModel() {
   return false;
 }
 
+/** Save the minutes as a Markdown file. With pick, macOS asks for the folder first. */
+async function saveMinutes(meeting, pick, row) {
+  const buttons = row.querySelectorAll("button");
+  const status = row.querySelector(".minutes-saved");
+  let folder = "";
+  buttons.forEach((button) => { button.disabled = true; });
+  try {
+    if (pick) {
+      const chosen = await fetch("/meeting/folder", { method: "POST" }).then((r) => r.json());
+      folder = chosen.folder || "";
+      if (!folder) return;
+    }
+    status.textContent = "Saving…";
+    const response = await fetch("/meeting/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...meeting, folder, model: modelSelect.value }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not save the minutes.");
+    status.textContent = `Saved: ${data.path}`;
+    flashSaved();
+  } catch (err) {
+    console.error("Failed while saving the minutes:", err);
+    status.textContent = err.message || "Could not save the minutes.";
+  } finally {
+    buttons.forEach((button) => { button.disabled = false; });
+  }
+}
+
+/** Two buttons under the meeting: save to raw/meetings, or pick another folder. */
+function attachMinutesButtons(bubble, meeting) {
+  const row = document.createElement("div");
+  row.className = "minutes-actions";
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "ghost-btn small";
+  save.textContent = "Save minutes";
+  save.title = "Save as a Markdown file in raw/meetings";
+  const elsewhere = document.createElement("button");
+  elsewhere.type = "button";
+  elsewhere.className = "ghost-btn small";
+  elsewhere.textContent = "Save to…";
+  elsewhere.title = "Choose another folder";
+  const status = document.createElement("span");
+  status.className = "minutes-saved";
+  save.addEventListener("click", () => saveMinutes(meeting, false, row));
+  elsewhere.addEventListener("click", () => saveMinutes(meeting, true, row));
+  row.append(save, elsewhere, status);
+  bubble.append(row);
+  meetingSaveRow = row;
+}
+
 /** Write the minutes, say them, and keep the exact words for later questions. */
 async function speakMeetingSummary() {
   if (meetingSummaryBusy) return;
@@ -1466,6 +1615,8 @@ async function speakMeetingSummary() {
   const count = lines.length === 1 ? "1 line" : `${lines.length} lines`;
   const note = addBubble("meeting", `Wrote down ${count}. Writing the minutes now.`, false);
   note.querySelector(".who").textContent = "Meeting";
+  meetingToSave = { lines: savedMeeting, startedAt: meetingStartedAt, endedAt: meetingEndedAt, minutes: "" };
+  attachMinutesButtons(note, meetingToSave);
   meetingSummaryBusy = true;
   syncCallButtons();
   try {
@@ -1497,7 +1648,7 @@ async function startLocalListen() {
   talkBtn.setAttribute("aria-pressed", "true");
   talkLabel.textContent = "End call";
   const macOnly = Boolean(selectedModel()?.local);
-  setStatus(wakeStatus());
+  setStatus(listenStatus());
   setCapsuleState("listening");
   setBusy(false);
   warmJudge();
@@ -1560,7 +1711,7 @@ async function startLocalListen() {
       showMeetingStatus();
       continue;
     }
-    setStatus(wakeStatus());
+    setStatus(listenStatus());
     setCapsuleState("listening");
     const clip = await recordUntilSilence(micStream);
     if (!connected || localStop) {
@@ -1617,7 +1768,7 @@ async function startLocalListen() {
     }
     if (looksLikeSilence(text)) {
       clearThinkCue();
-      setStatus(wakeStatus());
+      setStatus(listenStatus());
       setCapsuleState("listening");
       continue;
     }
@@ -1636,11 +1787,26 @@ async function startLocalListen() {
       continue;
     }
     let question = questionFromHeard(text);
-    if (!question && jevListening()) question = await jevQuestion({ text, at: performance.now() });
+    if (keyboardWake) {
+      // The key already said this sentence is for the brain. Hey is optional.
+      if (!question) {
+        const fromKey = wordsFromKey(text);
+        if (fromKey) question = fromKey;
+      }
+      if (question) keyboardWake = false;
+      else {
+        clearThinkCue();
+        setStatus(KEY_WAKE_STATUS);
+        setCapsuleState("listening");
+        continue;
+      }
+    } else if (!question && jevListening()) {
+      question = await jevQuestion({ text, at: performance.now() });
+    }
     // No wake phrase, or only the phrase with no question: stay quiet.
     if (!question) {
       clearThinkCue();
-      setStatus(wakeStatus());
+      setStatus(listenStatus());
       setCapsuleState("listening");
       continue;
     }
@@ -2126,6 +2292,7 @@ async function releaseAllLocalModels() {
 }
 async function hangUp({ keepStatus = false } = {}) {
   // Stop the answer first, so Ollama is free to unload the model.
+  keyboardWake = false;
   listenEpoch += 1;
   cancelAnswer = true;
   askAbort?.abort();
@@ -2277,16 +2444,22 @@ function handleServerEvent(event) {
       showMeetingStatus();
       return;
     }
-    const question = questionAfterWake(text.trim());
+    let question = questionAfterWake(text.trim());
+    // null means they did not say Hey. "" means they said only Hey.
+    if (question === null && keyboardWake) {
+      const fromKey = wordsFromKey(text);
+      if (fromKey) question = fromKey;
+    }
     if (question === null) {
       clearThinkCue();
       if (userPartialEl) {
         userPartialEl.remove();
         userPartialEl = null;
       }
-      setStatus(wakeStatus());
+      setStatus(listenStatus());
       return;
     }
+    keyboardWake = false;
     stopSpeaking();
     if (!question) {
       setStatus("Go ahead. A short pause is fine.");
@@ -2294,7 +2467,10 @@ function handleServerEvent(event) {
       return;
     }
     finalizeUser(question);
-    if (selectedModel()?.hears) sendEvent({ type: "response.create" });
+    if (selectedModel()?.hears) {
+      playTinyMove(question);
+      sendEvent({ type: "response.create" });
+    }
     else if (needsVoiceControl(selectedModel())) answerWithBrain(question);
     return;
   }
@@ -2607,6 +2783,7 @@ async function answerWithBrain(question, extras) {
   const writingMinutes = Boolean(extras?.summarizeMeeting);
   await deskReady;
   if (meetingOn || brainBusy || paused) return;
+  const tinyMove = writingMinutes ? "" : playTinyMove(question);
   if (!connected) setBusy(true);
   compressAbort?.abort();
   compressGen += 1;
@@ -2645,6 +2822,7 @@ async function answerWithBrain(question, extras) {
         memory: chatMemory,
         meetingNotes: savedMeeting,
         summarizeMeeting: Boolean(extras?.summarizeMeeting),
+        tinyMove,
         skill: activeSkillId,
         model: modelSelect.value,
         reasoning: reasoningSelect.value,
@@ -2786,6 +2964,9 @@ async function answerWithBrain(question, extras) {
       if (writingMinutes) {
         bubble.classList.add("minutes");
         bubble.querySelector(".who").textContent = "Minutes";
+        // The saved file uses these minutes, and the buttons move under them.
+        if (meetingToSave) meetingToSave.minutes = spoken;
+        if (meetingSaveRow) bubble.append(meetingSaveRow);
       }
     }
     if (outlook) {
@@ -2883,7 +3064,7 @@ function appendAssistantPartial(delta) {
 }
 
 function updateUserPartial(text) {
-  const question = questionAfterWake(text);
+  const question = questionAfterWake(text) || (keyboardWake ? wordsFromKey(text) : "");
   if (!question) {
     if (userPartialEl) {
       userPartialEl.remove();
@@ -2910,6 +3091,32 @@ function setStatus(text) { statusText.textContent = text; }
 function setCapsuleState(state) { capsule.dataset.state = state; }
 // What Tiny is doing for the answer: "searching", "writing", "saved", or "".
 function setActivity(name) { capsule.dataset.activity = name; }
+// What the user can ask Tiny to do, and the pose for it.
+const TINY_MOVES = [
+  [/\b(?:dance|dancing|boogie)\b/, "dancing"],
+  [/\bwave\b/, "hand_wave"],
+  [/\bdrink\b.*\bcoffee\b|\bcoffee break\b/, "coffeedrink"],
+  [/\b(?:boba|bubble tea)\b/, "bobbateadrink"],
+  [/\bcelebrate\b/, "celebration"],
+];
+
+/**
+ * "Can you dance?" or "Tiny, wave" makes Tiny do that move for a few seconds.
+ * Only short requests count, so "add the dance class to my calendar" is left alone.
+ * Returns the pose, or "".
+ */
+function playTinyMove(text) {
+  const q = String(text || "").toLowerCase().replace(/[^\w\s']/g, " ").replace(/\s+/g, " ").trim();
+  if (!q || q.split(" ").length > 8) return "";
+  if (!/^(?:hey )?(?:tiny )?(?:(?:can|could|will|would) you|please|show me|let's|let us|do a|dance|wave|drink|celebrate|have a (?:coffee|boba|bubble))\b/.test(q)) return "";
+  const move = TINY_MOVES.find(([pattern]) => pattern.test(q));
+  if (!move) return "";
+  const activity = `move-${move[1]}`;
+  setActivity(activity);
+  setTimeout(() => capsule.dataset.activity === activity && setActivity(""), 6000);
+  return move[1];
+}
+
 function flashSaved() {
   setActivity("saved");
   setTimeout(() => capsule.dataset.activity === "saved" && setActivity(""), 2500);

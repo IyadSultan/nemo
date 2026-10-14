@@ -441,3 +441,61 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 
 - Email search (second-brain/emailsearch.js): "find the email from/about X" / "search my inbox for X" lists up to 3 saved raw/ emails (subject match, then first 2 KB of newest 1500 for senders); "open number N" or "open the email about X" (single match) brings Outlook forward and pastes the subject into its search (Cmd+Opt+F, clipboard restored). Needs Accessibility for node once. Numbered list now shared with Finder results. Search tested (3 hits / no-match); Outlook step left for the user to try. Server now restarted via launchctl kickstart (LaunchAgent), not nohup.
 **Response:** Server restarted. Testing email search; I'll show only the match count, not subjects, since they may contain patient names.
+
+## 2026-10-13 22:43 — talk_to_your_brain
+
+**Prompt:** address command and control the should record what I'm saying and transcribe it. But that's not happening. Check what the problem is.
+- 2026-10-13: Diagnosed ⌘⌃ listen hotkey not working — voice tab stale/disconnected from /control (pages: 0); reload fixed it. Logged error_100.
+**Response:** Now check the chain: is the Hammerspoon config loaded, the server route, and the page handler.
+
+## 2026-10-13 22:45 — talk_to_your_brain
+
+**Prompt:** still not transcribing.
+**Response:** I logged this gotcha as `~/.claude/errors/error_100.md`. **Next:** press ⌘⌃ and say one sentence. If it doesn't transcribe, tell me what the status line on the voice page shows.
+
+## 2026-10-13 22:47 — talk_to_your_brain
+
+**Prompt:** not starting
+
+## 2026-10-13 22:49 — talk_to_your_brain
+
+**Prompt:** hammerspoon not restarting the app
+- 2026-10-13: Added "Restart voice app" to the Hammerspoon brain menu (kickstarts launchd server, reopens Chrome window). Cause: config reload never restarted the server or the page.
+**Response:** Reloading Hammerspoon and running the restart now:
+
+## 2026-10-14 18:47 — talk_to_your_brain
+
+**Prompt:** for the meeting function when a meeting is finished and minutes are prepared please give an option to save minutes as an MD file and uh, make it uh, uh, like a save um, by default in the row folder but give the uh, user an option to save it somewhere else Start the minutes with the date and time of the meeting, uh, the title of the meeting if known, or uh, you assign it, or uh, and sorry, uh, add the names of attendees if known.
+
+## 2026-10-14 18:47 — talk_to_your_brain
+
+**Prompt:** can we check the calendar and get the names uh, from the calendar invite?
+
+- 2026-10-14: Meeting minutes can now be saved as Markdown (raw/meetings by default, or a chosen folder). Title comes from the overlapping Outlook event, else the model names it; attendees come from names in the transcript, because the Outlook widget calendar file has no invitee list. Not committed yet; the running server needs a restart.
+**Response:** Step 3 of 3 done: title/attendee parsing, calendar match, and Markdown output tested.
+
+## 2026-10-14 18:56 — talk_to_your_brain
+
+**Prompt:** 2
+**Response:** The brain server runs under launchd, so macOS will ask about calendar access for the helper itself, not for Terminal. Testing that path once.
+
+## 2026-10-14 19:01 — talk_to_your_brain
+
+**Prompt:** a popup appeared and i accepted
+- 2026-10-14: Added voice/calendar-attendees (EventKit Swift helper, Info.plist embedded so macOS grants Calendar access). /meeting/save now takes title + invitees from the overlapping macOS Calendar invite; falls back to Outlook widget title and spoken names. AppleScript route rejected: 20 s per lookup and no recurring events. Exchange account not yet added to macOS Calendar.
+**Response:** Testing the new helper the way the server runs it. macOS may show the pop-up once more, because the helper moved to a new path.
+
+## 2026-10-14 19:03 — talk_to_your_brain
+
+**Prompt:** trying to save Save minutes Save to… Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+**Response:** Cause: the page loaded the new buttons, but the running server is still on yesterday's code, so `/meeting/save` returns a "not found" HTML page. Restarting the server. Your minutes stay in the open page, so you can click Save again right after.
+
+## 2026-10-14 19:07 — talk_to_your_brain
+
+**Prompt:** do we have any control over tiny: <pasted_content id="1986"> You Can you dance? Brain I can't dance, since I don't have a body, but I can keep you company while you do. </pasted_content id="1986">
+- 2026-10-14: Tiny now does moves on request (dance, wave, drink coffee, bubble tea, celebrate) via playTinyMove in voice.js; brain models get a canned line from the server, live models got one instruction line. Tiny holds the recording pose while Meeting is on. Server restarted.
+**Response:** Testing which phrases trigger a move.
+
+## 2026-10-15 00:24 — talk_to_your_brain
+
+**Prompt:** commit

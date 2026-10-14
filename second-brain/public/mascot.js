@@ -5,8 +5,10 @@
  *   thinking / connecting -> thinking pose
  *   speaking              -> mouth moves with the voice
  *   idle / listening      -> idle pose, a wave when a call starts
+ * In a meeting, Tiny holds the recording pose.
  * It also follows data-activity (set by voice.js), unless Tiny is speaking:
  *   searching -> reading a book, writing -> writing, saved -> celebration
+ * A move the user asked for ("move-dancing") wins even while Tiny speaks.
  * When nothing happens for a while, Tiny does a little idle move now and then.
  * If the character cannot load, the orb stays.
  *
@@ -83,7 +85,8 @@
       return;
     }
     stopMouth();
-    if (state === "thinking" || state === "connecting") setPose("thinking");
+    if (state === "meeting") setPose("recording");
+    else if (state === "thinking" || state === "connecting") setPose("thinking");
     else if (state === "listening" && (lastState === "connecting" || lastState === "idle")) {
       // A call just started: wave hello, then settle.
       setPose("hand_wave");
@@ -94,7 +97,13 @@
   // An activity pose wins over thinking and idle, but not over speaking.
   function render() {
     const state = capsule.dataset.state;
-    const pose = ACTIVITY_POSES[capsule.dataset.activity];
+    const activity = capsule.dataset.activity || "";
+    if (activity.startsWith("move-")) {
+      stopMouth();
+      setPose(activity.slice(5));
+      return;
+    }
+    const pose = ACTIVITY_POSES[activity];
     if (pose && state !== "speaking") {
       stopMouth();
       setPose(pose);

@@ -89,12 +89,43 @@ local function openVoice()
     if menu then menu:setTitle("🧠") end
 end
 
+-- Tell the open voice page to take the next sentence, the same as saying Hey.
+local function startListening()
+    hs.http.asyncPost("http://127.0.0.1:" .. PORT .. "/control/listen", "", nil, function(status)
+        if status ~= 200 then hs.alert.show("Voice app is not running.", 2) end
+    end)
+end
+
+-- Restart the server (launchd keeps it alive), then reopen the window so it loads the new page.
+local function restartVoice()
+    hs.alert.show("Restarting voice app…", 2)
+    for _, pid in ipairs(brainPids()) do
+        local app = hs.application.applicationForPID(pid)
+        if app then app:kill() end
+    end
+    hs.execute("/bin/launchctl kickstart -k gui/$(id -u)/com.iyad.talk-to-your-brain")
+    local tries = 0
+    local timer
+    timer = hs.timer.doEvery(1, function()
+        tries = tries + 1
+        if serverUp() then
+            timer:stop()
+            openVoice()
+        elseif tries >= 30 then
+            timer:stop()
+            hs.alert.show("Voice app did not come back. See ~/Library/Logs/talk-to-your-brain/brain.err.log", 4)
+        end
+    end)
+end
+
 if menu then
     menu:setTitle("🧠")
     -- Left click the brain: open or focus. Right click: show the menu.
     menu:setClickCallback(openVoice)
     menu:setMenu({
         { title = "Open voice control", fn = openVoice },
+        { title = "Start listening (⌘⌃)", fn = startListening },
+        { title = "Restart voice app", fn = restartVoice },
     })
 end
 
@@ -106,5 +137,64 @@ _G.heyMyBrainStopKey = hs.hotkey.bind({ "cmd", "alt" }, "s", function()
         if status ~= 200 then hs.alert.show("Voice app is not running.", 2) end
     end)
 end)
+
+-- Command and Control together, from any app: start listening. Saying Hey still works too.
+-- Let go of both keys with no letter in between. Command–Control plus a letter
+-- (read-aloud, the panel, the lock screen) is left alone, and Spotlight keeps Command–Space.
+if _G.heyMyBrainListenKey then
+    _G.heyMyBrainListenKey:delete()
+    _G.heyMyBrainListenKey = nil
+end
+if _G.heyMyBrainListenTap then
+    _G.heyMyBrainListenTap:stop()
+    _G.heyMyBrainListenTap = nil
+end
+
+local commandControlDown = false
+local commandControlUsed = false
+-- These are the modifier keys themselves. Holding them is the shortcut, not a letter.
+local modifierKey = {
+    [54] = true, [55] = true, -- command
+    [59] = true, [62] = true, -- control
+    [56] = true, [60] = true, -- shift
+    [58] = true, [61] = true, -- option
+    [57] = true, [63] = true, -- caps lock, fn
+}
+_G.heyMyBrainListenTap = hs.eventtap.new({
+    hs.eventtap.event.types.flagsChanged,
+    hs.eventtap.event.types.keyDown,
+}, function(event)
+    -- A letter while both keys are held means a different shortcut. Do not listen.
+    if event:getType() == hs.eventtap.event.types.keyDown then
+        if commandControlDown and not modifierKey[event:getKeyCode()] then
+            commandControlUsed = true
+        end
+        return false
+    end
+
+    local flags = event:getFlags()
+    local both = flags.cmd and flags.ctrl and not flags.alt and not flags.shift
+    if both then
+        if not commandControlDown then
+            commandControlDown = true
+            commandControlUsed = false
+        end
+        return false
+    end
+
+    -- Shift or Option was added. This is a different shortcut.
+    if commandControlDown and (flags.alt or flags.shift) then
+        commandControlUsed = true
+    end
+
+    -- One of Command or Control was let go. Listen only if no other key was pressed.
+    if commandControlDown and not (flags.cmd and flags.ctrl) then
+        if not commandControlUsed then startListening() end
+        commandControlDown = false
+        commandControlUsed = false
+    end
+    return false
+end)
+_G.heyMyBrainListenTap:start()
 
 openVoice()

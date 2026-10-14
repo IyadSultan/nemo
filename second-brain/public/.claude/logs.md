@@ -21,3 +21,8 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-09 22:28 — public
 
 **Prompt:** arabic works but LLM is not responding to ARabic
+**Response:** It's fixed: I restarted the brain server, and `/meeting/save` now answers with JSON instead of the "not found" page. **Next:** click **Save minutes** again on the same meeting. The page still has the meeting, so you don't need to record it again. If the call ended when the server restarted, press **Start talking** again before your next meeting. I logged this mistake as `~/.claude/errors/error_101 […]
+
+## 2026-10-14 19:07 — public
+
+**Prompt:** both

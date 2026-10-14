@@ -12,3 +12,6 @@ second-brain/desk.json.tmp
 
 # iMessage bridge binary (built by voice/imessage-bridge/build.sh)
 voice/imessage-bridge/imessage-bridge
+
+# Calendar helper binary (built by voice/calendar-attendees/build.sh)
+voice/calendar-attendees/calendar-attendees

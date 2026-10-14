@@ -277,6 +277,7 @@ function handleGeminiMessage(g, msg) {
     if (g.userBubble) {
       g.userBubble.classList.remove("partial");
       lastQuestion = g.userBubble.querySelector(".text").textContent.trim();
+      playTinyMove(questionAfterWake(lastQuestion) || lastQuestion);
       g.userBubble = null;
     }
     appendAssistantPartial(said);

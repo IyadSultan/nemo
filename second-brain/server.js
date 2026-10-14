@@ -460,8 +460,8 @@ async function indexRawMail() {
       if (entry.name.startsWith(".") || entry.name.startsWith("_")) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        // Memos live in raw/notes. They are not emails.
-        if (entry.name === "notes" && path.basename(dir) === "raw") continue;
+        // Memos live in raw/notes and minutes in raw/meetings. They are not emails.
+        if ((entry.name === "notes" || entry.name === "meetings") && path.basename(dir) === "raw") continue;
         await walk(full, root);
         continue;
       }
@@ -1646,6 +1646,57 @@ function memoFolder() {
   return path.join(root, "raw", "notes");
 }
 
+/**
+ * One short answer from the model selected on the page, without streaming.
+ * Returns "" when the model could not answer.
+ */
+async function askModelOnce(model, instruction, text, apiKey, maxTokens) {
+  let raw = "";
+  if (model.local) {
+    const upstream = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: "POST",
+      signal: AbortSignal.timeout(45000),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: model.id,
+        stream: false,
+        think: false,
+        messages: [
+          { role: "system", content: instruction },
+          { role: "user", content: text },
+        ],
+        keep_alive: "30m",
+        options: { num_ctx: 4096, num_predict: Math.round(maxTokens * 0.9) },
+      }),
+    });
+    if (!upstream.ok) return "";
+    const data = await upstream.json();
+    raw = data.message?.content || "";
+    loadedLocalId = model.id;
+  } else if (model.subscription) {
+    await askClaude(model, instruction, text, "low", (piece) => { raw += piece; }, 45000);
+  } else if (apiKey) {
+    const upstream = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      signal: AbortSignal.timeout(30000),
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: model.id,
+        input: `${instruction}\n\n${text}`,
+        max_output_tokens: maxTokens,
+      }),
+    });
+    if (!upstream.ok) return "";
+    const data = await upstream.json();
+    raw = data.output_text
+      || (data.output || []).flatMap((item) => item.content || []).map((part) => part.text || "").join("");
+  }
+  return String(raw).replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+}
+
 /** Rewrite a memo so it is clearer, without adding new facts. */
 async function clarifyMemo(model, text, apiKey) {
   const instruction = [
@@ -1657,50 +1708,8 @@ async function clarifyMemo(model, text, apiKey) {
   ].join(" ");
   const fallback = text;
   try {
-    let raw = "";
-    if (model.local) {
-      const upstream = await fetch(`${OLLAMA_URL}/api/chat`, {
-        method: "POST",
-        signal: AbortSignal.timeout(45000),
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: model.id,
-          stream: false,
-          think: false,
-          messages: [
-            { role: "system", content: instruction },
-            { role: "user", content: text },
-          ],
-          keep_alive: "30m",
-          options: { num_ctx: 4096, num_predict: 180 },
-        }),
-      });
-      if (!upstream.ok) return fallback;
-      const data = await upstream.json();
-      raw = data.message?.content || "";
-      loadedLocalId = model.id;
-    } else if (model.subscription) {
-      await askClaude(model, instruction, text, "low", (piece) => { raw += piece; }, 45000);
-    } else if (apiKey) {
-      const upstream = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        signal: AbortSignal.timeout(30000),
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: model.id,
-          input: `${instruction}\n\nMemo:\n${text}`,
-          max_output_tokens: 200,
-        }),
-      });
-      if (!upstream.ok) return fallback;
-      const data = await upstream.json();
-      raw = data.output_text
-        || (data.output || []).flatMap((item) => item.content || []).map((part) => part.text || "").join("");
-    }
-    let clear = String(raw).replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\s+/g, " ").trim();
+    const raw = await askModelOnce(model, instruction, `Memo:\n${text}`, apiKey, 200);
+    let clear = raw.replace(/\s+/g, " ").trim();
     clear = clear.replace(/^["']|["']$/g, "").trim();
     if (clear.length < 2) return fallback;
     return clear.slice(0, 2000);
@@ -2928,8 +2937,18 @@ function guideBlock() {
     .join("\n\n");
 }
 
+// What Tiny, the character on the page, says while doing a move the user asked for.
+const TINY_LINES = {
+  dancing: "Sure, watch this.",
+  hand_wave: "Hello there!",
+  coffeedrink: "Coffee break. Don't mind if I do.",
+  bobbateadrink: "Bubble tea time.",
+  celebration: "Woohoo! Let's celebrate.",
+};
+
 function voiceInstructions() {
   return [
+    "On the screen you are Tiny, a small cartoon character. When the user asks you to dance, wave, drink coffee or bubble tea, or celebrate, the screen shows Tiny doing it. Say yes in a few words. Do not say you have no body.",
     "You are the user's second brain, in a live voice call.",
     "His to-dos are all in wiki/todo.md. He may call that file to-do dot md or Todoist. Todoist is this file, not the Todoist app.",
     "wiki/index.md is the index of all wiki pages. He may call that file index dot md.",
@@ -3421,8 +3440,10 @@ app.post("/gemini-session", async (req, res) => {
 });
 
 /**
- * Remote control for the voice page. Hammerspoon's Cmd+Opt+S posts /control/stop;
- * every open voice page hears it on /control and stops the answer.
+ * Remote control for the voice page.
+ * Hammerspoon's Cmd+Opt+S posts /control/stop (stop the answer).
+ * Hammerspoon's Command and Control together posts /control/listen (start listening, like saying Hey).
+ * Every open voice page hears these on /control.
  */
 const controlClients = new Set();
 app.get("/control", (req, res) => {
@@ -3438,6 +3459,11 @@ function sendControl(event, data = {}) {
 
 app.post("/control/stop", (_req, res) => {
   for (const client of controlClients) client.write("event: stop\ndata: {}\n\n");
+  res.json({ ok: true, pages: controlClients.size });
+});
+
+app.post("/control/listen", (_req, res) => {
+  sendControl("listen");
   res.json({ ok: true, pages: controlClients.size });
 });
 
@@ -3777,6 +3803,169 @@ function meetingSummaryPrompt(notes) {
   ].join("\n");
 }
 
+/** Saved minutes go to raw/meetings, next to raw/notes. */
+function meetingFolder() {
+  return path.join(path.dirname(memoFolder()), "meetings");
+}
+
+/** The Outlook event that overlaps the meeting the most, or null. */
+function calendarMeetingAt(start, end) {
+  let events;
+  try {
+    events = loadOutlookCalendar().events;
+  } catch (err) {
+    console.error("Failed while reading the Outlook calendar for the minutes:", err?.message || err);
+    return null;
+  }
+  let best = null;
+  let bestOverlap = 0;
+  for (const event of events) {
+    if (event.allDay) continue;
+    // A meeting often starts a few minutes late or runs over.
+    const overlap = Math.min(end, event.end.getTime() + 15 * 60000) - Math.max(start, event.start.getTime() - 15 * 60000);
+    if (overlap > bestOverlap) {
+      best = event;
+      bestOverlap = overlap;
+    }
+  }
+  return best;
+}
+
+const CALENDAR_HELPER = path.join(__dirname, "..", "voice", "calendar-attendees", "calendar-attendees");
+
+/**
+ * The calendar invite that overlaps the meeting the most, with the invitees, or null.
+ * Read from macOS Calendar, which holds the Exchange account. Outlook's own file has no invitees.
+ */
+async function calendarInviteAt(start, end) {
+  if (!fsSync.existsSync(CALENDAR_HELPER)) return null;
+  try {
+    // 15 minutes either side, because a meeting often starts late or runs over.
+    const out = await Promise.race([
+      runCommand(CALENDAR_HELPER, [String(start - 15 * 60000), String(end + 15 * 60000)]),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("The calendar helper took too long.")), 8000)),
+    ]);
+    const data = JSON.parse(out);
+    if (data.error) throw new Error(`Calendar said ${data.error}. Allow it in Privacy & Security, Calendars.`);
+    let best = null;
+    let bestOverlap = 0;
+    for (const event of data.events || []) {
+      const overlap = Math.min(end, event.end + 15 * 60000) - Math.max(start, event.start - 15 * 60000);
+      if (overlap > bestOverlap) {
+        best = event;
+        bestOverlap = overlap;
+      }
+    }
+    if (!best) return null;
+    const names = [best.organizer, ...(best.attendees || [])].map((name) => String(name || "").trim()).filter(Boolean);
+    return { subject: String(best.title || "").trim(), attendees: [...new Set(names)] };
+  } catch (err) {
+    console.error("Failed while reading the calendar invite:", err?.message || err);
+    return null;
+  }
+}
+
+/** Read "TITLE:", "ATTENDEES:", and "MINUTES:" out of the model's answer. */
+function parseMinutesHeader(raw) {
+  const title = raw.match(/^\s*TITLE:\s*(.+)$/im)?.[1]?.trim() || "";
+  const people = raw.match(/^\s*ATTENDEES:\s*(.+)$/im)?.[1]?.trim() || "";
+  const minutes = raw.match(/^\s*MINUTES:\s*\n?([\s\S]*)$/im)?.[1]?.trim() || "";
+  const attendees = /^(?:none|unknown|not known|n\/a|-)\.?$/i.test(people)
+    ? []
+    : people.split(/[,;]/).map((name) => name.trim()).filter(Boolean);
+  return { title: title.replace(/^["'#\s]+|["'\s]+$/g, ""), attendees, minutes };
+}
+
+function minutesClock(date) {
+  return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** The minutes as a Markdown file: date, time, title, and attendees first. */
+function minutesMarkdown({ title, titleFrom, attendees, start, end, minutes }) {
+  const day = start.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  return [
+    `# ${title}`,
+    "",
+    `- **Date:** ${day}`,
+    `- **Time:** ${minutesClock(start)} to ${minutesClock(end)}`,
+    `- **Title:** ${titleFrom}`,
+    `- **Attendees:** ${attendees.length ? attendees.join(", ") : "Not known"}`,
+    "",
+    "## Minutes",
+    "",
+    minutes,
+    "",
+  ].join("\n");
+}
+
+/**
+ * Save the minutes of the meeting that just ended.
+ * The title and invitees come from the calendar invite at that time.
+ * Without one, the title comes from Outlook or the model, and attendees are the names said in the meeting.
+ */
+app.post("/meeting/save", async (req, res) => {
+  const notes = cleanMeetingNotes(req.body?.lines);
+  if (!notes) return res.status(400).json({ error: "There are no meeting words to save." });
+  const start = new Date(Number(req.body?.startedAt) || Date.now());
+  const end = new Date(Number(req.body?.endedAt) || Date.now());
+  let minutes = typeof req.body?.minutes === "string" ? req.body.minutes.trim() : "";
+
+  let folder = meetingFolder();
+  if (typeof req.body?.folder === "string" && req.body.folder.trim()) {
+    folder = path.resolve(req.body.folder.trim());
+    if (!fsSync.existsSync(folder) || !fsSync.statSync(folder).isDirectory()) {
+      return res.status(400).json({ error: "That folder does not exist." });
+    }
+  }
+
+  const invite = await calendarInviteAt(start.getTime(), end.getTime());
+  const event = invite?.subject ? invite : calendarMeetingAt(start.getTime(), end.getTime());
+  const model = getModel(req.body?.model) || getModel(DEFAULT_MODEL);
+  const instruction = [
+    "You are given the transcript of a meeting, written down one line at a time. Arabic and English may be mixed.",
+    event ? "" : "TITLE: write a short title for the meeting, at most eight words, from what was discussed.",
+    "ATTENDEES: list the names of people who spoke or were spoken to by name, separated by commas. Do not list people who were only mentioned. Write None if no names were said. Do not invent names.",
+    minutes
+      ? ""
+      : "MINUTES: write the minutes in Markdown with the headings ### Topics, ### Decisions, and ### Action items. Do not invent people, numbers, or decisions.",
+    "Answer with only these labels, each at the start of its own line, in this order.",
+  ].filter(Boolean).join("\n");
+  let parsed = { title: "", attendees: [], minutes: "" };
+  try {
+    parsed = parseMinutesHeader(await askModelOnce(model, instruction, `Transcript:\n${notes}`, process.env.OPENAI_API_KEY, minutes ? 200 : 1500));
+  } catch (err) {
+    console.error("Failed while naming the meeting:", err?.message || err);
+  }
+  minutes ||= parsed.minutes || "The minutes could not be written.";
+  const title = (event?.subject || parsed.title || "Meeting").slice(0, 120);
+  const titleFrom = event ? "From the calendar" : parsed.title ? "Assigned from the discussion" : "Not known";
+  // Invitees from the calendar come first. Otherwise, the names that were said.
+  const attendees = invite?.attendees?.length ? invite.attendees : parsed.attendees;
+  const text = minutesMarkdown({ title, titleFrom, attendees, start, end, minutes });
+
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "meeting";
+  const name = `${memoStamp(start)}-${slug}.md`;
+  try {
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, name), text, "utf8");
+  } catch (err) {
+    console.error("Failed while saving the minutes:", err?.message || err);
+    return res.status(500).json({ error: "Could not write the minutes file." });
+  }
+  console.log(`Saved meeting minutes ${name}`);
+  res.json({ path: path.join(folder, name), title, attendees });
+});
+
+/** Ask macOS for a folder. Returns an empty path if the user cancels. */
+app.post("/meeting/folder", async (_req, res) => {
+  try {
+    const out = await runCommand("osascript", ["-e", 'POSIX path of (choose folder with prompt "Save the meeting minutes in:")']);
+    res.json({ folder: out.trim() });
+  } catch {
+    res.json({ folder: "" });
+  }
+});
+
 const SKILLS_DIR = path.join(__dirname, "skills");
 
 /** "PRD simple" becomes the file name prd-simple. */
@@ -4014,6 +4203,9 @@ app.post("/ask", async (req, res) => {
     await streamSpokenPrompt(req, res, meetingSummaryPrompt(notes));
     return;
   }
+  // The page already started Tiny's move. Say a few words while Tiny does it.
+  const tinyLine = TINY_LINES[req.body?.tinyMove];
+  if (tinyLine) return replyNow(res, tinyLine);
   // A skill is a saved set of instructions. "Use the PRD skill" loads that file.
   const skills = await listSkills();
   const requestedId = typeof req.body?.skill === "string" ? req.body.skill : "";
