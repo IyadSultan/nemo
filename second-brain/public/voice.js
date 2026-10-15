@@ -44,6 +44,7 @@ const earsSelect = document.getElementById("earsSelect");
 const wakeSelect = document.getElementById("wakeSelect");
 const micSelect = document.getElementById("micSelect");
 const meetingBtn = document.getElementById("meetingBtn");
+const recapBtn = document.getElementById("recapBtn");
 
 let pc = null;
 let dc = null;
@@ -69,6 +70,7 @@ let meetingPartialBubble = null;
 let closeMeetingAfterClip = false;
 let linesToSummarize = null;
 let meetingSummaryBusy = false;
+let recapBusy = false;
 let savedMeeting = "";
 let meetingStartedAt = 0;
 let meetingEndedAt = 0;
@@ -137,6 +139,7 @@ function syncCallButtons() {
   stopBtn.disabled = !connected && !brainBusy;
   restartBtn.disabled = !lastQuestion;
   meetingBtn.disabled = !connected;
+  recapBtn.disabled = !meetingOn || recapBusy;
   pauseBtn.textContent = paused ? "Resume" : "Pause";
   pauseBtn.classList.toggle("is-muted", paused);
 }
@@ -1249,6 +1252,7 @@ function paintMeetingButton() {
   meetingBtn.setAttribute("aria-pressed", meetingOn ? "true" : "false");
   meetingBtn.classList.toggle("is-on", meetingOn);
   meetingBtn.textContent = meetingOn ? "Meeting on" : "Meeting";
+  recapBtn.disabled = !meetingOn || recapBusy;
 }
 
 /** One finished sentence from the meeting. Repeats and room noise are skipped. */
@@ -1522,6 +1526,38 @@ meetingBtn.addEventListener("click", () => {
   if (!connected) return;
   if (meetingOn) endMeeting();
   else beginMeeting();
+});
+
+/**
+ * Recap the meeting so far and suggest questions. Shown only, never spoken.
+ * Reads a copy of the lines, so the minutes are written exactly as before.
+ */
+recapBtn.addEventListener("click", async () => {
+  if (!meetingOn || recapBusy) return;
+  const lines = meetingLines.slice();
+  if (meetingPartial.trim()) lines.push(meetingPartial.trim());
+  const bubble = addBubble("recap", lines.length ? "Writing a recap…" : "Nothing has been written down yet.", false);
+  bubble.querySelector(".who").textContent = "Recap";
+  if (!lines.length) return;
+  recapBusy = true;
+  recapBtn.disabled = true;
+  try {
+    const response = await fetch("/meeting/recap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lines: lines.join("\n"), model: modelSelect.value }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not write the recap.");
+    bubble.querySelector(".text").textContent = data.text;
+  } catch (err) {
+    console.error("Failed while writing the meeting recap:", err);
+    bubble.querySelector(".text").textContent = err.message || "Could not write the recap.";
+  } finally {
+    recapBusy = false;
+    recapBtn.disabled = !meetingOn;
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  }
 });
 
 /** Hand the transcript to a model that hears for itself, so it can summarize and remember it. */

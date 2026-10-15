@@ -3959,6 +3959,32 @@ app.post("/meeting/save", async (req, res) => {
   res.json({ path: path.join(folder, name), title, attendees });
 });
 
+/**
+ * A recap of the meeting so far, with questions worth asking now.
+ * Shown on the screen only. It is not spoken and not added to the meeting lines.
+ */
+app.post("/meeting/recap", async (req, res) => {
+  const notes = cleanMeetingNotes(req.body?.lines);
+  if (!notes) return res.status(400).json({ error: "Nothing has been written down yet." });
+  const model = getModel(req.body?.model) || getModel(DEFAULT_MODEL);
+  const instruction = [
+    "You are given a meeting that is still going on, written down one line at a time. Arabic and English may be mixed.",
+    "Keep each name, number, and phrase in the language that was spoken. Do not translate.",
+    "Answer in Markdown with two headings.",
+    "### So far: up to six short bullets on what has been said and decided so far.",
+    "### Questions to ask: three to five critical questions the listener should raise now, such as gaps, risks, unclear owners or dates, or claims with no evidence.",
+    "Do not invent people, numbers, or decisions that are not in the lines.",
+  ].join("\n");
+  try {
+    const text = await askModelOnce(model, instruction, `Transcript so far:\n${notes}`, process.env.OPENAI_API_KEY, 800);
+    if (!text) return res.status(502).json({ error: "The model did not answer." });
+    res.json({ text });
+  } catch (err) {
+    console.error("Failed while writing the meeting recap:", err?.message || err);
+    res.status(500).json({ error: "Could not write the recap." });
+  }
+});
+
 /** Ask macOS for a folder. Returns an empty path if the user cancels. */
 app.post("/meeting/folder", async (_req, res) => {
   try {

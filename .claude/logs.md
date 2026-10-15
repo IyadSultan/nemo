@@ -511,3 +511,9 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-15 09:17 — talk_to_your_brain
 
 **Prompt:** push
+**Commit:** 7f96345 Add brain.md long-term memory with a nightly summary
+**Response:** Pushed both commits to `main` on `IyadSultan/nemo`: - `[REDACTED-DIGITS]`: meeting minutes saved as Markdown, invitee names from Calendar, and Tiny's moves. - `7f96345`: the `brain.md` memory with the nightly summary. The repo is **public**, so I checked the `.claude/logs.md` text going out first. It has your prompts and short notes on the work, but no patient or colleague names. Earlier commits a […]
+
+## 2026-10-15 10:14 — talk_to_your_brain
+
+**Prompt:** I want to add a button to meeting: recap/ask when hit, the model summarizes what was said in the meeting so far and suggest ciritical questions- shown but not TTS. this should not affect how final minutes are transcribed.

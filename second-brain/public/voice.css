@@ -775,6 +775,13 @@ body {
   border-left: 2px solid var(--danger);
 }
 
+/* A recap during the meeting. Shown only, never part of the minutes. */
+.bubble.recap {
+  align-self: stretch;
+  border-left: 2px solid var(--listen);
+}
+.bubble.recap .text { white-space: pre-wrap; }
+
 /* The written minutes, after Meeting is turned off. */
 .bubble.minutes {
   align-self: stretch;
