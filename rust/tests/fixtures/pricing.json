@@ -1,0 +1,2260 @@
+{
+ "longContextTokens": 272000,
+ "reasoning": [
+  {
+   "id": "none",
+   "label": "Off — fastest"
+  },
+  {
+   "id": "low",
+   "label": "Low"
+  },
+  {
+   "id": "medium",
+   "label": "Medium"
+  },
+  {
+   "id": "high",
+   "label": "High"
+  },
+  {
+   "id": "xhigh",
+   "label": "Extra high"
+  },
+  {
+   "id": "max",
+   "label": "Maximum"
+  }
+ ],
+ "voiceModels": [
+  {
+   "id": "gpt-realtime-2.1-mini",
+   "label": "Voice mini",
+   "blurb": "Hears you. Same model as voice control.",
+   "hears": true,
+   "inputPerMillion": 0.6,
+   "cachedInputPerMillion": 0.06,
+   "outputPerMillion": 2.4,
+   "audioInputPerMillion": 10,
+   "audioCachedInputPerMillion": 0.3,
+   "audioOutputPerMillion": 20,
+   "reasoning": [
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "id": "gpt-realtime-2.1",
+   "label": "Voice",
+   "blurb": "Hears you. Stronger and more expensive.",
+   "hears": true,
+   "inputPerMillion": 4,
+   "cachedInputPerMillion": 0.4,
+   "outputPerMillion": 24,
+   "audioInputPerMillion": 32,
+   "audioCachedInputPerMillion": 0.4,
+   "audioOutputPerMillion": 64,
+   "reasoning": [
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "id": "gemini-3.8-live",
+   "label": "Gemini Live",
+   "blurb": "Google hears and speaks. Talk over it to cut it off.",
+   "hears": true,
+   "gemini": true,
+   "inputPerMillion": 0.75,
+   "cachedInputPerMillion": 0.75,
+   "outputPerMillion": 4.5,
+   "audioInputPerMillion": 3,
+   "audioCachedInputPerMillion": 3,
+   "audioOutputPerMillion": 12,
+   "reasoning": [
+    "low"
+   ]
+  }
+ ],
+ "models": [
+  {
+   "id": "gpt-6-luna",
+   "label": "GPT-6 Luna",
+   "blurb": "Cheapest and fastest",
+   "inputPerMillion": 0.1,
+   "cachedInputPerMillion": 0.01,
+   "outputPerMillion": 0.5,
+   "reasoning": [
+    "none",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "id": "gpt-6-sol",
+   "label": "GPT-6 Sol",
+   "blurb": "Stronger, and it can still skip thinking",
+   "inputPerMillion": 2,
+   "cachedInputPerMillion": 0.2,
+   "outputPerMillion": 10,
+   "reasoning": [
+    "none",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "id": "gpt-6.1-sol",
+   "label": "GPT-6.1 Sol",
+   "blurb": "Balanced. Thinking cannot be turned off",
+   "inputPerMillion": 2,
+   "cachedInputPerMillion": 0.1,
+   "outputPerMillion": 10,
+   "reasoning": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "id": "gpt-6-astra",
+   "label": "GPT-6 Astra",
+   "blurb": "Most capable, and the most expensive",
+   "inputPerMillion": 10,
+   "cachedInputPerMillion": 1,
+   "outputPerMillion": 50,
+   "reasoning": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "id": "claude-opus",
+   "cliModel": "opus",
+   "label": "Claude Opus",
+   "blurb": "Most capable Claude. Uses your Claude subscription through Claude Code",
+   "subscription": true,
+   "inputPerMillion": 0,
+   "cachedInputPerMillion": 0,
+   "outputPerMillion": 0,
+   "reasoning": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "id": "claude-sonnet",
+   "cliModel": "sonnet",
+   "label": "Claude Sonnet",
+   "blurb": "Uses your Claude subscription through Claude Code. A few seconds slower to start",
+   "subscription": true,
+   "inputPerMillion": 0,
+   "cachedInputPerMillion": 0,
+   "outputPerMillion": 0,
+   "reasoning": [
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "id": "MichelRosselli/bonsai-27b",
+   "label": "Bonsai 27B",
+   "blurb": "Runs on this Mac, and the written answer is free",
+   "local": true,
+   "hears": false,
+   "inputPerMillion": 0,
+   "cachedInputPerMillion": 0,
+   "outputPerMillion": 0,
+   "reasoning": [
+    "none",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "id": "gpt-oss:20b",
+   "label": "GPT-OSS 20B",
+   "blurb": "Runs on this Mac, and the written answer is free",
+   "local": true,
+   "hears": false,
+   "uncapped": true,
+   "inputPerMillion": 0,
+   "cachedInputPerMillion": 0,
+   "outputPerMillion": 0,
+   "reasoning": [
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "id": "gemma4:12b-mlx",
+   "label": "Gemma 4 12B",
+   "blurb": "Runs on this Mac, and the written answer is free",
+   "local": true,
+   "hears": false,
+   "inputPerMillion": 0,
+   "cachedInputPerMillion": 0,
+   "outputPerMillion": 0,
+   "reasoning": [
+    "none",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "id": "gemma4:e4b-mlx",
+   "label": "Gemma 4 E4B",
+   "blurb": "Smaller Gemma 4. Runs on this Mac, and the written answer is free",
+   "local": true,
+   "hears": false,
+   "inputPerMillion": 0,
+   "cachedInputPerMillion": 0,
+   "outputPerMillion": 0,
+   "reasoning": [
+    "none",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "id": "gemma4:e2b-mlx",
+   "label": "Gemma 4 E2B",
+   "blurb": "Smallest Gemma 4. Runs on this Mac, and the written answer is free",
+   "local": true,
+   "hears": false,
+   "inputPerMillion": 0,
+   "cachedInputPerMillion": 0,
+   "outputPerMillion": 0,
+   "reasoning": [
+    "none",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "id": "qwen3.8:27b-mlx",
+   "label": "Qwen 3.8 27B",
+   "blurb": "Runs on this Mac, and the written answer is free",
+   "local": true,
+   "hears": false,
+   "inputPerMillion": 0,
+   "cachedInputPerMillion": 0,
+   "outputPerMillion": 0,
+   "reasoning": [
+    "none",
+    "low",
+    "medium",
+    "high"
+   ]
+  }
+ ],
+ "lookups": {
+  "getModelVoice": null,
+  "getAnyVoice": "gpt-realtime-2.1",
+  "missing": null
+ },
+ "cases": [
+  {
+   "id": "gpt-realtime-2.1-mini",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.6,
+    "cachedRate": 0.06,
+    "outputRate": 2.4,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1-mini",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.6,
+    "cachedRate": 0.06,
+    "outputRate": 2.4,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1-mini",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.6,
+    "cachedRate": 0.06,
+    "outputRate": 2.4,
+    "usd": 0.0014399999999999999
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1-mini",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 0.6,
+    "cachedRate": 0.06,
+    "outputRate": 2.4,
+    "usd": 0.00276
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1-mini",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 1.2,
+    "cachedRate": 0.12,
+    "outputRate": 3.5999999999999996,
+    "usd": 0.324
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1-mini",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.6,
+    "cachedRate": 0.06,
+    "outputRate": 2.4,
+    "usd": 0.16320240000000003
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1-mini",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.6,
+    "cachedRate": 0.06,
+    "outputRate": 2.4,
+    "usd": 0.000003
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 4,
+    "cachedRate": 0.4,
+    "outputRate": 24,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 4,
+    "cachedRate": 0.4,
+    "outputRate": 24,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 4,
+    "cachedRate": 0.4,
+    "outputRate": 24,
+    "usd": 0.012
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 4,
+    "cachedRate": 0.4,
+    "outputRate": 24,
+    "usd": 0.024800000000000003
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 8,
+    "cachedRate": 0.8,
+    "outputRate": 36,
+    "usd": 2.4000000000000004
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 4,
+    "cachedRate": 0.4,
+    "outputRate": 24,
+    "usd": 1.088024
+   }
+  },
+  {
+   "id": "gpt-realtime-2.1",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 4,
+    "cachedRate": 0.4,
+    "outputRate": 24,
+    "usd": 0.00002
+   }
+  },
+  {
+   "id": "gemini-3.8-live",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.75,
+    "cachedRate": 0.75,
+    "outputRate": 4.5,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemini-3.8-live",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.75,
+    "cachedRate": 0.75,
+    "outputRate": 4.5,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemini-3.8-live",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.75,
+    "cachedRate": 0.75,
+    "outputRate": 4.5,
+    "usd": 0.00225
+   }
+  },
+  {
+   "id": "gemini-3.8-live",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 0.75,
+    "cachedRate": 0.75,
+    "outputRate": 4.5,
+    "usd": 0.007350000000000001
+   }
+  },
+  {
+   "id": "gemini-3.8-live",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 1.5,
+    "cachedRate": 1.5,
+    "outputRate": 6.75,
+    "usd": 0.5850000000000001
+   }
+  },
+  {
+   "id": "gemini-3.8-live",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.75,
+    "cachedRate": 0.75,
+    "outputRate": 4.5,
+    "usd": 0.2040045
+   }
+  },
+  {
+   "id": "gemini-3.8-live",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.75,
+    "cachedRate": 0.75,
+    "outputRate": 4.5,
+    "usd": 0.000037500000000000003
+   }
+  },
+  {
+   "id": "gpt-6-luna",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.1,
+    "cachedRate": 0.01,
+    "outputRate": 0.5,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-6-luna",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.1,
+    "cachedRate": 0.01,
+    "outputRate": 0.5,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-6-luna",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.1,
+    "cachedRate": 0.01,
+    "outputRate": 0.5,
+    "usd": 0.00026999999999999995
+   }
+  },
+  {
+   "id": "gpt-6-luna",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 0.1,
+    "cachedRate": 0.01,
+    "outputRate": 0.5,
+    "usd": 0.00054
+   }
+  },
+  {
+   "id": "gpt-6-luna",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 0.2,
+    "cachedRate": 0.02,
+    "outputRate": 0.75,
+    "usd": 0.05700000000000001
+   }
+  },
+  {
+   "id": "gpt-6-luna",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.1,
+    "cachedRate": 0.01,
+    "outputRate": 0.5,
+    "usd": 0.027200500000000002
+   }
+  },
+  {
+   "id": "gpt-6-luna",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0.1,
+    "cachedRate": 0.01,
+    "outputRate": 0.5,
+    "usd": 5.000000000000001e-7
+   }
+  },
+  {
+   "id": "gpt-6-sol",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.2,
+    "outputRate": 10,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-6-sol",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.2,
+    "outputRate": 10,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-6-sol",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.2,
+    "outputRate": 10,
+    "usd": 0.005399999999999999
+   }
+  },
+  {
+   "id": "gpt-6-sol",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.2,
+    "outputRate": 10,
+    "usd": 0.0108
+   }
+  },
+  {
+   "id": "gpt-6-sol",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 4,
+    "cachedRate": 0.4,
+    "outputRate": 15,
+    "usd": 1.1400000000000001
+   }
+  },
+  {
+   "id": "gpt-6-sol",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.2,
+    "outputRate": 10,
+    "usd": 0.54401
+   }
+  },
+  {
+   "id": "gpt-6-sol",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.2,
+    "outputRate": 10,
+    "usd": 0.00001
+   }
+  },
+  {
+   "id": "gpt-6.1-sol",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.1,
+    "outputRate": 10,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-6.1-sol",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.1,
+    "outputRate": 10,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-6.1-sol",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.1,
+    "outputRate": 10,
+    "usd": 0.005399999999999999
+   }
+  },
+  {
+   "id": "gpt-6.1-sol",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.1,
+    "outputRate": 10,
+    "usd": 0.0104
+   }
+  },
+  {
+   "id": "gpt-6.1-sol",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 4,
+    "cachedRate": 0.2,
+    "outputRate": 15,
+    "usd": 1.12
+   }
+  },
+  {
+   "id": "gpt-6.1-sol",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.1,
+    "outputRate": 10,
+    "usd": 0.54401
+   }
+  },
+  {
+   "id": "gpt-6.1-sol",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 2,
+    "cachedRate": 0.1,
+    "outputRate": 10,
+    "usd": 0.000005
+   }
+  },
+  {
+   "id": "gpt-6-astra",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 10,
+    "cachedRate": 1,
+    "outputRate": 50,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-6-astra",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 10,
+    "cachedRate": 1,
+    "outputRate": 50,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-6-astra",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 10,
+    "cachedRate": 1,
+    "outputRate": 50,
+    "usd": 0.026999999999999996
+   }
+  },
+  {
+   "id": "gpt-6-astra",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 10,
+    "cachedRate": 1,
+    "outputRate": 50,
+    "usd": 0.054
+   }
+  },
+  {
+   "id": "gpt-6-astra",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 20,
+    "cachedRate": 2,
+    "outputRate": 75,
+    "usd": 5.7
+   }
+  },
+  {
+   "id": "gpt-6-astra",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 10,
+    "cachedRate": 1,
+    "outputRate": 50,
+    "usd": 2.72005
+   }
+  },
+  {
+   "id": "gpt-6-astra",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 10,
+    "cachedRate": 1,
+    "outputRate": 50,
+    "usd": 0.00005
+   }
+  },
+  {
+   "id": "claude-opus",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-opus",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-opus",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-opus",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-opus",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-opus",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-opus",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-sonnet",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-sonnet",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-sonnet",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-sonnet",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-sonnet",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-sonnet",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "claude-sonnet",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "MichelRosselli/bonsai-27b",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "MichelRosselli/bonsai-27b",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "MichelRosselli/bonsai-27b",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "MichelRosselli/bonsai-27b",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "MichelRosselli/bonsai-27b",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "MichelRosselli/bonsai-27b",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "MichelRosselli/bonsai-27b",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-oss:20b",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-oss:20b",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-oss:20b",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-oss:20b",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-oss:20b",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-oss:20b",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gpt-oss:20b",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:12b-mlx",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:12b-mlx",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:12b-mlx",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:12b-mlx",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:12b-mlx",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:12b-mlx",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:12b-mlx",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e4b-mlx",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e4b-mlx",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e4b-mlx",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e4b-mlx",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e4b-mlx",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e4b-mlx",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e4b-mlx",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e2b-mlx",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e2b-mlx",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e2b-mlx",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e2b-mlx",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e2b-mlx",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e2b-mlx",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "gemma4:e2b-mlx",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "qwen3.8:27b-mlx",
+   "usage": null,
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "qwen3.8:27b-mlx",
+   "usage": {},
+   "result": {
+    "inputTokens": 0,
+    "cachedTokens": 0,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "qwen3.8:27b-mlx",
+   "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300
+   },
+   "result": {
+    "inputTokens": 1200,
+    "cachedTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "qwen3.8:27b-mlx",
+   "usage": {
+    "input_tokens": 5000,
+    "input_tokens_details": {
+     "cached_tokens": 4000
+    },
+    "output_tokens": 800,
+    "output_tokens_details": {
+     "reasoning_tokens": 500
+    }
+   },
+   "result": {
+    "inputTokens": 5000,
+    "cachedTokens": 4000,
+    "outputTokens": 800,
+    "reasoningTokens": 500,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "qwen3.8:27b-mlx",
+   "usage": {
+    "input_tokens": 300000,
+    "input_tokens_details": {
+     "cached_tokens": 100000
+    },
+    "output_tokens": 20000
+   },
+   "result": {
+    "inputTokens": 300000,
+    "cachedTokens": 100000,
+    "outputTokens": 20000,
+    "reasoningTokens": 0,
+    "longContext": true,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "qwen3.8:27b-mlx",
+   "usage": {
+    "input_tokens": 272000,
+    "output_tokens": 1
+   },
+   "result": {
+    "inputTokens": 272000,
+    "cachedTokens": 0,
+    "outputTokens": 1,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  },
+  {
+   "id": "qwen3.8:27b-mlx",
+   "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {
+     "cached_tokens": 50
+    },
+    "output_tokens": 0
+   },
+   "result": {
+    "inputTokens": 10,
+    "cachedTokens": 50,
+    "outputTokens": 0,
+    "reasoningTokens": 0,
+    "longContext": false,
+    "inputRate": 0,
+    "cachedRate": 0,
+    "outputRate": 0,
+    "usd": 0
+   }
+  }
+ ]
+}
