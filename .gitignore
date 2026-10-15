@@ -15,3 +15,6 @@ voice/imessage-bridge/imessage-bridge
 
 # Calendar helper binary (built by voice/calendar-attendees/build.sh)
 voice/calendar-attendees/calendar-attendees
+
+# Daily voice-call log for brain.md (second-brain/brain.js)
+second-brain/daylog/

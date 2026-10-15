@@ -31,6 +31,7 @@ import { createSemanticIndex } from "./embed.js";
 import { judgeSpeech, warmJudge } from "./jev.js";
 import { cleanMedical, warmMedgem } from "./medgem.js";
 import { learningJob, runLearningJob, learningsBlock, closestIndex, siteShortcut } from "./learnings.js";
+import { appendDayLog, brainBlock, dayKey, summarizeDay } from "./brain.js";
 import { loadDocs } from "./docs.js";
 import { openFileJob, runOpenFile, findOnMacJob, runFindOnMac } from "./openfile.js";
 import { emailSearchJob, runEmailSearch } from "./emailsearch.js";
@@ -342,6 +343,7 @@ function buildPrompt(question, hits, pages = [], history = [], memory = "", meet
     // here_and_now already ran. The model must copy these words, not invent a clock time.
     `Here and now: ${hereAndNow()}`,
     learningsBlock(),
+    brainBlock(),
     memoryBlock,
     meetingBlock,
     "Earlier in this conversation:",
@@ -1650,12 +1652,12 @@ function memoFolder() {
  * One short answer from the model selected on the page, without streaming.
  * Returns "" when the model could not answer.
  */
-async function askModelOnce(model, instruction, text, apiKey, maxTokens) {
+async function askModelOnce(model, instruction, text, apiKey, maxTokens, timeoutMs = 45000) {
   let raw = "";
   if (model.local) {
     const upstream = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: "POST",
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(timeoutMs),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: model.id,
@@ -1674,7 +1676,7 @@ async function askModelOnce(model, instruction, text, apiKey, maxTokens) {
     raw = data.message?.content || "";
     loadedLocalId = model.id;
   } else if (model.subscription) {
-    await askClaude(model, instruction, text, "low", (piece) => { raw += piece; }, 45000);
+    await askClaude(model, instruction, text, "low", (piece) => { raw += piece; }, timeoutMs);
   } else if (apiKey) {
     const upstream = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -2969,6 +2971,7 @@ function voiceInstructions() {
     "Follow the things the user asked you to always keep in mind, listed below.",
     "",
     learningsBlock(),
+    brainBlock(),
     guideBlock(),
   ].join("\n");
 }
@@ -4633,6 +4636,54 @@ app.post("/briefing/send", async (_req, res) => {
     res.status(500).json({ error: "Could not send the briefing." });
   }
 });
+
+/** Keep one voice question and answer for tonight's brain.md summary. */
+app.post("/daylog", (req, res) => {
+  appendDayLog(req.body?.question, req.body?.answer);
+  res.json({ ok: true });
+});
+
+/** Summarize one day (default today) into ~/.claude/brain.md with the default model. */
+async function summarizeBrainDay(day) {
+  const model = getModel(DEFAULT_MODEL);
+  const folders = { meetingDir: meetingFolder(), notesDir: memoFolder() };
+  const result = await summarizeDay(day, folders, (instruction, text) =>
+    askModelOnce(model, instruction, text, process.env.OPENAI_API_KEY, 2000, 240000));
+  console.log(`brain.md for ${day}: ${result}`);
+  return result;
+}
+
+app.post("/brain/summarize", async (req, res) => {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.day || "") ? req.body.day : dayKey();
+  try {
+    res.json({ day, result: await summarizeBrainDay(day) });
+  } catch (err) {
+    console.error("Failed while writing brain.md:", err?.message || err);
+    res.status(500).json({ error: err?.message || "Could not write brain.md." });
+  }
+});
+
+// Each night, write the day into brain.md. If the Mac was off, catch up on yesterday at start.
+const BRAIN_SUMMARY_AT = /^\d{1,2}:\d{2}$/.test(process.env.BRAIN_SUMMARY_AT || "") ? process.env.BRAIN_SUMMARY_AT : "23:30";
+// Days already tried since this server started, so a day is never written twice.
+const brainTried = new Set();
+function runBrainSummary(day) {
+  if (brainTried.has(day)) return;
+  brainTried.add(day);
+  summarizeBrainDay(day).catch((err) => console.error("Failed while writing brain.md:", err?.message || err));
+}
+setInterval(() => {
+  const now = new Date();
+  const [hour, minute] = BRAIN_SUMMARY_AT.split(":").map(Number);
+  if (now.getHours() * 60 + now.getMinutes() < hour * 60 + minute) return;
+  runBrainSummary(dayKey(now));
+}, 60_000);
+setTimeout(() => {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  runBrainSummary(dayKey(yesterday));
+}, 60_000);
+console.log(`brain.md summary set for ${BRAIN_SUMMARY_AT} each night.`);
 
 const BRIEFING_AT = (process.env.BRIEFING_AT || "").trim();
 if (/^\d{1,2}:\d{2}$/.test(BRIEFING_AT)) {

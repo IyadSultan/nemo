@@ -285,6 +285,7 @@ function handleGeminiMessage(g, msg) {
 
   if (content.turnComplete) {
     g.silenced = false;
+    if (assistantPartialEl) logDay(questionAfterWake(lastQuestion) || lastQuestion, assistantPartialEl.querySelector(".text").textContent);
     assistantPartialEl?.classList.remove("partial");
     assistantPartialEl = null;
   }

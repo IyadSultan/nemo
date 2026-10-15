@@ -387,9 +387,20 @@ let compressAbort = null;
 let compressGen = 0;
 let localStop = false;
 
+/** Keep a question and its answer for tonight's brain.md summary. */
+function logDay(question, answer) {
+  if (!String(question || "").trim() || !String(answer || "").trim()) return;
+  fetch("/daylog", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, answer }),
+  }).catch(() => {});
+}
+
 function rememberTurn(question, answer) {
   const asked = String(question || "").trim();
   if (!asked) return;
+  logDay(asked, answer);
   chatTurns.push({
     question: asked,
     answer: String(answer || "").trim() || "(The answer was stopped.)",
@@ -2468,6 +2479,7 @@ function handleServerEvent(event) {
     }
     finalizeUser(question);
     if (selectedModel()?.hears) {
+      lastQuestion = question;
       playTinyMove(question);
       sendEvent({ type: "response.create" });
     }
@@ -2495,9 +2507,11 @@ function handleServerEvent(event) {
     if (assistantPartialEl) {
       assistantPartialEl.classList.remove("partial");
       if (event.transcript) assistantPartialEl.querySelector(".text").textContent = event.transcript;
+      logDay(lastQuestion, assistantPartialEl.querySelector(".text").textContent);
       assistantPartialEl = null;
     } else if (event.transcript) {
       addBubble("assistant", event.transcript, false);
+      logDay(lastQuestion, event.transcript);
     }
   }
 }

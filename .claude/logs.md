@@ -499,3 +499,15 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-15 00:24 — talk_to_your_brain
 
 **Prompt:** commit
+**Commit:** [REDACTED-DIGITS] Save meeting minutes as Markdown, read invitees from Calendar, Tiny moves
+**Response:** Now the wiki entry.
+
+## 2026-10-15 00:28 — talk_to_your_brain
+
+**Prompt:** I need to create a folder in USER/.claude/brain.md this file keeps by memories. Every night the agent sumarizes what it learned on that day. Agent can answer from brain.md whenever needed
+- 2026-10-15: Added ~/.claude/brain.md long-term memory (second-brain/brain.js). Voice turns logged to second-brain/daylog/; nightly 23:30 (BRAIN_SUMMARY_AT) summary of calls + raw/meetings + raw/notes + dated orchestration wiki entries via default model; catch-up for yesterday 1 min after start. Newest ~6000 chars go into every prompt. Read .claude/logs.md deliberately NOT used as a source (§11). First section (2026-10-14) written and answered from successfully. Not committed.
+**Response:** `brain.md` was written on the real path. Checking that the voice brain answers from it.
+
+## 2026-10-15 09:17 — talk_to_your_brain
+
+**Prompt:** push
