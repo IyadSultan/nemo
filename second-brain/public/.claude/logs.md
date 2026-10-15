@@ -26,3 +26,4 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-14 19:07 — public
 
 **Prompt:** both
+**Response:** Both handlers are synchronous and correct. I'm checking whether the page's main thread is blocked while it's listening, which would make clicks seem lost.

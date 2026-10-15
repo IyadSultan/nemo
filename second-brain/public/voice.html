@@ -79,24 +79,44 @@
           </span>
         </form>
 
-        <button
-          type="button"
-          class="ghost-btn meeting-knob"
-          id="meetingBtn"
-          disabled
-          aria-pressed="false"
-          title="On: write down the meeting and stay quiet. Off: summarize it, then answer questions about it."
-        >
-          Meeting
-        </button>
+        <div class="mode-row">
+          <button
+            type="button"
+            class="ghost-btn meeting-knob"
+            id="meetingBtn"
+            disabled
+            aria-pressed="false"
+            title="On: write down the meeting and stay quiet. Off: summarize it, then answer questions about it."
+          >
+            Meeting
+          </button>
+          <button
+            type="button"
+            class="ghost-btn meeting-knob lecture-knob"
+            id="lectureBtn"
+            disabled
+            aria-pressed="false"
+            title="On: write down the talk and stay quiet. Off: ask who presented, suggest a title, then summarize the talk."
+          >
+            Lecture
+          </button>
+        </div>
         <button
           type="button"
           class="ghost-btn meeting-knob"
           id="recapBtn"
           disabled
-          title="Summarize the meeting so far and suggest questions. Shown only, not spoken."
+          title="Summarize what has been said so far and suggest questions. Shown only, not spoken."
         >
           Recap / Ask
+        </button>
+        <button
+          type="button"
+          class="ghost-btn meeting-knob"
+          id="photoBtn"
+          title="Take a photo with your iPhone, or this Mac if the phone is not nearby, and add it here."
+        >
+          Photo
         </button>
 
         <section class="skills" aria-label="Skills">
@@ -181,7 +201,16 @@
       <section class="panel transcript-panel" aria-label="Live transcript">
         <section class="desk" id="desk" hidden>
           <div class="transcript-head">
-            <h2>Work</h2>
+            <h2>Work <span class="desk-count" id="deskCount"></span></h2>
+            <button
+              type="button"
+              class="ghost-btn small"
+              id="deskToggle"
+              aria-expanded="true"
+              aria-controls="deskCards"
+            >
+              Collapse
+            </button>
           </div>
           <div class="desk-cards" id="deskCards"></div>
         </section>
@@ -190,13 +219,30 @@
           <button type="button" class="ghost-btn small" id="clearBtn">Clear</button>
         </div>
         <div class="transcript" id="transcript" role="log" aria-live="polite">
-          <p class="empty">Press Start talking and say Hey, or press Command and Control together. You can also type a question below the orb. Turn Meeting on to write down a conversation without answering.</p>
+          <p class="empty">Press Start talking and say Hey, or press Command and Control together. You can also type a question below the orb. Turn Meeting on to write down a conversation, or Lecture to write down a talk, without answering.</p>
         </div>
         <p class="breakdown" id="breakdown">These totals add up for the whole call, from Start talking until you end it.</p>
       </section>
     </main>
 
     <audio id="remoteAudio" autoplay playsinline></audio>
+
+    <div class="photo-sheet" id="photoSheet" hidden>
+      <div class="photo-card" role="dialog" aria-labelledby="photoTitle">
+        <p class="photo-sheet-title" id="photoTitle">Take a photo</p>
+        <p class="photo-hint" id="photoHint">Your iPhone is used when it is unlocked and nearby. Otherwise this Mac’s camera is used.</p>
+        <video id="photoVideo" autoplay playsinline muted></video>
+        <label class="field">
+          <span>Camera</span>
+          <select id="cameraSelect" aria-label="Camera"></select>
+        </label>
+        <div class="photo-actions">
+          <button type="button" class="ghost-btn" id="shutterBtn">Take photo</button>
+          <button type="button" class="ghost-btn" id="photoCancelBtn">Cancel</button>
+        </div>
+        <p class="photo-error" id="photoError" hidden></p>
+      </div>
+    </div>
     <script src="/vendor/rive/rive.js"></script>
     <script src="/voice.js"></script>
     <script src="/gemini.js"></script>

@@ -123,7 +123,7 @@ const STOP_WORDS = new Set([
 ]);
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "15mb" }));
 app.use(express.text({ type: ["application/sdp", "text/plain"], limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 // Rive runtime for the Tiny mascot (served from node_modules, no CDN).
@@ -278,7 +278,7 @@ function excerpt(text, terms, maxLen = 900) {
   return slice;
 }
 
-function buildPrompt(question, hits, pages = [], history = [], memory = "", meetingNotes = "") {
+function buildPrompt(question, hits, pages = [], history = [], memory = "", meetingNotes = "", notesKind = "") {
   const blocks = hits.map((hit) => {
     const { note, terms } = hit;
     return [
@@ -331,12 +331,19 @@ function buildPrompt(question, hits, pages = [], history = [], memory = "", meet
   const memoryBlock = memory
     ? `Compressed memory of older turns:\n${memory}`
     : "";
+  const talk = notesKind === "lecture";
   const meetingBlock = meetingNotes
-    ? [
-        "Meeting written down in this call, in the order it was heard:",
-        meetingNotes,
-        "If the user asks about that meeting, answer from those lines. Do not say the meeting is missing from the notes. Do not invent people, numbers, or decisions that are not written there. Do not turn a question about this meeting into a new calendar event.",
-      ].join("\n")
+    ? talk
+      ? [
+          "A talk written down in this call, in the order it was heard:",
+          meetingNotes,
+          "If the user asks about that talk or lecture, answer from those lines. Do not say the talk is missing from the notes. Do not invent people, numbers, or claims that are not written there.",
+        ].join("\n")
+      : [
+          "Meeting written down in this call, in the order it was heard:",
+          meetingNotes,
+          "If the user asks about that meeting, answer from those lines. Do not say the meeting is missing from the notes. Do not invent people, numbers, or decisions that are not written there. Do not turn a question about this meeting into a new calendar event.",
+        ].join("\n")
     : "";
 
   return [
@@ -462,8 +469,8 @@ async function indexRawMail() {
       if (entry.name.startsWith(".") || entry.name.startsWith("_")) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        // Memos live in raw/notes and minutes in raw/meetings. They are not emails.
-        if ((entry.name === "notes" || entry.name === "meetings") && path.basename(dir) === "raw") continue;
+        // Memos, minutes, and lecture notes live beside the mail. They are not emails.
+        if ((entry.name === "notes" || entry.name === "meetings" || entry.name === "lectures") && path.basename(dir) === "raw") continue;
         await walk(full, root);
         continue;
       }
@@ -2355,7 +2362,7 @@ const SPOKEN_STYLE = [
  *   event: response.output_text.delta
  *   data: {"delta":"Hello"}
  */
-async function streamAnswer(apiKey, prompt, res, model, reasoning, spoken) {
+async function streamAnswer(apiKey, prompt, res, model, reasoning, spoken, photo = "") {
   let upstream;
   try {
     upstream = await fetch("https://api.openai.com/v1/responses", {
@@ -2368,7 +2375,15 @@ async function streamAnswer(apiKey, prompt, res, model, reasoning, spoken) {
         model: model.id,
         reasoning: { effort: reasoning },
         instructions: [INSTRUCTIONS, spoken ? SPOKEN_STYLE : "", guideBlock()].filter(Boolean).join("\n\n"),
-        input: prompt,
+        input: photo
+          ? [{
+              role: "user",
+              content: [
+                { type: "input_text", text: prompt },
+                { type: "input_image", image_url: photo },
+              ],
+            }]
+          : prompt,
         max_output_tokens: OUTPUT_CAP[reasoning] || OUTPUT_CAP.medium,
         stream: true,
       }),
@@ -2663,6 +2678,92 @@ function syncSuggestions() {
   } catch (err) {
     console.error("Failed while building suggestions:", err?.message || err);
   }
+  // New emails, and drafts that have no summary yet, get a short Haiku note.
+  queueWorkSummaries();
+}
+
+// Haiku only writes the one-line note on a work card. It does not answer questions.
+const HAIKU_MODEL = { cliModel: "haiku" };
+let workSummaryQueued = false;
+let workSummaryRunning = false;
+
+/** Ask again after the current batch, so a draft saved mid-summary is not skipped. */
+function queueWorkSummaries() {
+  workSummaryQueued = true;
+  if (workSummaryRunning) return;
+  workSummaryRunning = true;
+  fillWorkSummaries()
+    .catch((err) => console.error("Failed while summarizing work cards:", err?.message || err))
+    .finally(() => {
+      workSummaryRunning = false;
+      if (workSummaryQueued) queueWorkSummaries();
+    });
+}
+
+/** The saved email as plain text, with its subject, for the summary. */
+async function suggestionText(key) {
+  const file = rawMail.find((entry) => entry.rel === key);
+  if (!file) return "";
+  // OneDrive sometimes answers "try again" while the app is still starting.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const raw = await fs.readFile(file.full, "utf8");
+      const body = emailLines(raw).slice(0, 3500);
+      const subject = speakTitle(file.title);
+      return [subject ? `Subject: ${subject}` : "", body].filter(Boolean).join("\n\n");
+    } catch (err) {
+      const busy = /unknown system error -11|EAGAIN/i.test(err?.message || "");
+      if (!busy || attempt === 3) {
+        console.error("Failed while reading an email to summarize:", err?.message || err);
+        return "";
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+    }
+  }
+  return "";
+}
+
+/**
+ * One or two plain sentences about a message.
+ * A very short message is already the summary, so Haiku is not called.
+ */
+async function summarizeWithHaiku(text, about) {
+  const source = String(text || "").replace(/\s+/g, " ").trim().slice(0, 3500);
+  if (!source) return "";
+  // A few words are already clear. Anything longer is rewritten by Haiku.
+  if (source.length < 80) return source;
+  const system = about === "draft"
+    ? "Summarize this new email in one short sentence. Say what it is about. Use plain words. Do not add a greeting or a subject line."
+    : "Summarize the message this person is about to reply to. Use one or two short sentences. Say who it is from, when the message says, and what they want. Use plain words. Do not write the reply.";
+  let out = "";
+  await askClaude(HAIKU_MODEL, system, source, "", (chunk) => { out += chunk; }, 40000);
+  return out.replace(/\s+/g, " ").trim().slice(0, 420);
+}
+
+/** Fill every work card that is still missing its short note. */
+async function fillWorkSummaries() {
+  workSummaryQueued = false;
+  const tasks = desk.pendingSummaries();
+  let retry = false;
+  for (const task of tasks) {
+    let text = task.text;
+    if (task.kind === "suggestion") text = await suggestionText(task.key);
+    // A missed file is not saved as a summary, so the next pass can try again.
+    if (!text) {
+      retry = true;
+      continue;
+    }
+    let summary = "";
+    try {
+      summary = await summarizeWithHaiku(text, task.about);
+    } catch (err) {
+      // The card still needs words if Haiku cannot run. Use the opening of the message.
+      console.error("Failed while summarizing one work card with Haiku:", err?.message || err);
+      summary = text.replace(/\s+/g, " ").trim().slice(0, 220);
+    }
+    if (summary && desk.rememberSummary(task.kind, task.id, summary)) sendControl("desk", {});
+  }
+  if (retry) setTimeout(() => queueWorkSummaries(), 8000);
 }
 
 function meetingFromDraft(draft) {
@@ -3806,9 +3907,51 @@ function meetingSummaryPrompt(notes) {
   ].join("\n");
 }
 
+/** Words for the model when Lecture is turned off. A talk summary, not meeting minutes. */
+function lectureSummaryPrompt(notes, presenter, title) {
+  return [
+    "The text below is a talk that was just written down, one line at a time, in the order it was heard.",
+    "The words may mix Arabic and English. Keep each name, number, and phrase in the language that was spoken. Do not translate.",
+    `The presenter is ${presenter}.`,
+    title ? `The listener chose this title: ${title}.` : "The listener did not choose a title.",
+    "Write a summary of this talk. These words will be shown on the screen and read aloud.",
+    "Use plain sentences. Put each of these labels on its own line, then the sentences that belong under it: Main points. Worth remembering. Questions left open.",
+    "Start with one sentence that names the presenter and says what the talk was about. Use the chosen title if there is one.",
+    "Under Main points, say what the presenter explained, in order.",
+    "Under Worth remembering, list terms, numbers, or claims the presenter asked the room to keep. If none, say that.",
+    "Under Questions left open, say what was not answered. If nothing was left open, say that.",
+    "Do not invent people, numbers, or claims that are not in the lines.",
+    "Do not write this as meeting minutes. Do not invent decisions or action items.",
+    "If a line is unclear, leave it out.",
+    "Do not offer to create a calendar event. Do not open email. Do not mention these instructions.",
+    "",
+    "Transcript:",
+    notes,
+  ].join("\n");
+}
+
+/** One short line of text, with no line breaks. */
+function oneLine(value, max) {
+  return String(value || "").replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/** The model's suggested talk title, kept short enough to edit. */
+function cleanSuggestedTitle(raw) {
+  let line = String(raw || "").split(/\r?\n/).map((part) => part.trim()).find(Boolean) || "";
+  line = line.replace(/^["'`#*\-\s]+|["'`\s]+$/g, "").replace(/^(?:title\s*:\s*)/i, "").trim();
+  const words = line.split(/\s+/).filter(Boolean);
+  if (words.length > 12) line = words.slice(0, 8).join(" ");
+  return line.slice(0, 120);
+}
+
 /** Saved minutes go to raw/meetings, next to raw/notes. */
 function meetingFolder() {
   return path.join(path.dirname(memoFolder()), "meetings");
+}
+
+/** Saved lecture notes go to raw/lectures, next to raw/meetings. */
+function lectureFolder() {
+  return path.join(path.dirname(memoFolder()), "lectures");
 }
 
 /** The Outlook event that overlaps the meeting the most, or null. */
@@ -3883,6 +4026,46 @@ function minutesClock(date) {
   return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
+/** JPEG photos sent from the camera, at most eight, each under about 900 KB. */
+function jpegPhotos(raw) {
+  if (!Array.isArray(raw)) return [];
+  const photos = [];
+  for (const item of raw.slice(0, 8)) {
+    const data = typeof item === "string" ? item : "";
+    const match = data.match(/^data:image\/jpeg;base64,([A-Za-z0-9+/=\r\n]+)$/);
+    if (!match) continue;
+    const bytes = Buffer.from(match[1], "base64");
+    if (bytes.length < 80 || bytes.length > 900_000) continue;
+    if (bytes[0] !== 0xff || bytes[1] !== 0xd8) continue;
+    photos.push(bytes);
+  }
+  return photos;
+}
+
+/** One JPEG from a question, or "" when it is missing or not a real JPEG. */
+function photoDataUrl(raw) {
+  const photos = jpegPhotos([raw]);
+  if (!photos.length) return "";
+  const match = String(raw).match(/^data:image\/jpeg;base64,[A-Za-z0-9+/=\r\n]+$/);
+  return match ? match[0] : "";
+}
+
+/**
+ * Save camera photos beside the notes and add a Photos section.
+ * `stem` is the notes file name without .md, so the pictures sort next to it.
+ */
+async function withPhotos(text, folder, stem, raw) {
+  const photos = jpegPhotos(raw);
+  if (!photos.length) return { text, count: 0 };
+  const lines = ["## Photos", ""];
+  for (let i = 0; i < photos.length; i += 1) {
+    const file = `${stem}-${i + 1}.jpg`;
+    await fs.writeFile(path.join(folder, file), photos[i]);
+    lines.push(`![Photo ${i + 1}](${file})`, "");
+  }
+  return { text: `${String(text).trimEnd()}\n\n${lines.join("\n")}`, count: photos.length };
+}
+
 /** The minutes as a Markdown file: date, time, title, and attendees first. */
 function minutesMarkdown({ title, titleFrom, attendees, start, end, minutes }) {
   const day = start.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -3948,15 +4131,20 @@ app.post("/meeting/save", async (req, res) => {
 
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "meeting";
   const name = `${memoStamp(start)}-${slug}.md`;
+  let savedText = text;
+  let photoCount = 0;
   try {
     await fs.mkdir(folder, { recursive: true });
-    await fs.writeFile(path.join(folder, name), text, "utf8");
+    const packed = await withPhotos(text, folder, name.replace(/\.md$/i, ""), req.body?.photos);
+    savedText = packed.text;
+    photoCount = packed.count;
+    await fs.writeFile(path.join(folder, name), savedText, "utf8");
   } catch (err) {
     console.error("Failed while saving the minutes:", err?.message || err);
     return res.status(500).json({ error: "Could not write the minutes file." });
   }
   console.log(`Saved meeting minutes ${name}`);
-  res.json({ path: path.join(folder, name), title, attendees });
+  res.json({ path: path.join(folder, name), title, attendees, photos: photoCount });
 });
 
 /**
@@ -3967,14 +4155,25 @@ app.post("/meeting/recap", async (req, res) => {
   const notes = cleanMeetingNotes(req.body?.lines);
   if (!notes) return res.status(400).json({ error: "Nothing has been written down yet." });
   const model = getModel(req.body?.model) || getModel(DEFAULT_MODEL);
-  const instruction = [
-    "You are given a meeting that is still going on, written down one line at a time. Arabic and English may be mixed.",
-    "Keep each name, number, and phrase in the language that was spoken. Do not translate.",
-    "Answer in Markdown with two headings.",
-    "### So far: up to six short bullets on what has been said and decided so far.",
-    "### Questions to ask: three to five critical questions the listener should raise now, such as gaps, risks, unclear owners or dates, or claims with no evidence.",
-    "Do not invent people, numbers, or decisions that are not in the lines.",
-  ].join("\n");
+  const lecture = req.body?.kind === "lecture";
+  const instruction = lecture
+    ? [
+        "You are given a talk that is still going on, written down one line at a time. Arabic and English may be mixed.",
+        "Keep each name, number, and phrase in the language that was spoken. Do not translate.",
+        "Answer in Markdown with two headings.",
+        "### So far: up to six short bullets on what the presenter has said.",
+        "### Questions to ask: three to five questions the listener could ask the presenter now, such as unclear claims, missing evidence, or a point that was skipped.",
+        "Do not invent people, numbers, or claims that are not in the lines.",
+        "Do not write this as meeting minutes.",
+      ].join("\n")
+    : [
+        "You are given a meeting that is still going on, written down one line at a time. Arabic and English may be mixed.",
+        "Keep each name, number, and phrase in the language that was spoken. Do not translate.",
+        "Answer in Markdown with two headings.",
+        "### So far: up to six short bullets on what has been said and decided so far.",
+        "### Questions to ask: three to five critical questions the listener should raise now, such as gaps, risks, unclear owners or dates, or claims with no evidence.",
+        "Do not invent people, numbers, or decisions that are not in the lines.",
+      ].join("\n");
   try {
     const text = await askModelOnce(model, instruction, `Transcript so far:\n${notes}`, process.env.OPENAI_API_KEY, 800);
     if (!text) return res.status(502).json({ error: "The model did not answer." });
@@ -3985,10 +4184,106 @@ app.post("/meeting/recap", async (req, res) => {
   }
 });
 
-/** Ask macOS for a folder. Returns an empty path if the user cancels. */
-app.post("/meeting/folder", async (_req, res) => {
+/**
+ * Suggest a short title for a talk the listener can edit.
+ * The title comes only from what was said.
+ */
+app.post("/lecture/title", async (req, res) => {
+  const notes = cleanMeetingNotes(req.body?.lines);
+  if (!notes) return res.status(400).json({ error: "Nothing has been written down yet." });
+  const model = getModel(req.body?.model) || getModel(DEFAULT_MODEL);
+  const instruction = [
+    "Suggest one short title for this talk, at most eight words.",
+    "Use only what was said. Do not invent a topic.",
+    "Reply with the title only. No quotes, no label, no period at the end.",
+  ].join(" ");
   try {
-    const out = await runCommand("osascript", ["-e", 'POSIX path of (choose folder with prompt "Save the meeting minutes in:")']);
+    const title = cleanSuggestedTitle(await askModelOnce(model, instruction, `Transcript:\n${notes}`, process.env.OPENAI_API_KEY, 40));
+    if (!title) return res.status(502).json({ error: "No title was suggested." });
+    res.json({ title });
+  } catch (err) {
+    console.error("Failed while suggesting a lecture title:", err?.message || err);
+    res.status(500).json({ error: "Could not suggest a title." });
+  }
+});
+
+/** The lecture notes as a Markdown file: date, time, presenter, then the talk summary. */
+function lectureMarkdown({ title, presenter, start, end, summary }) {
+  const day = start.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  return [
+    `# ${title}`,
+    "",
+    `- **Date:** ${day}`,
+    `- **Time:** ${minutesClock(start)} to ${minutesClock(end)}`,
+    `- **Presenter:** ${presenter || "Not given"}`,
+    "",
+    "## Talk",
+    "",
+    summary,
+    "",
+  ].join("\n");
+}
+
+/**
+ * Save the talk that just ended.
+ * The title and presenter are the ones the listener typed. They are not taken from the calendar.
+ */
+app.post("/lecture/save", async (req, res) => {
+  const notes = cleanMeetingNotes(req.body?.lines);
+  if (!notes) return res.status(400).json({ error: "There are no lecture words to save." });
+  const start = new Date(Number(req.body?.startedAt) || Date.now());
+  const end = new Date(Number(req.body?.endedAt) || Date.now());
+  const presenter = oneLine(req.body?.presenter, 80);
+  const title = oneLine(req.body?.title, 120) || "Lecture";
+  let summary = typeof req.body?.minutes === "string" ? req.body.minutes.trim() : "";
+
+  let folder = lectureFolder();
+  if (typeof req.body?.folder === "string" && req.body.folder.trim()) {
+    folder = path.resolve(req.body.folder.trim());
+    if (!fsSync.existsSync(folder) || !fsSync.statSync(folder).isDirectory()) {
+      return res.status(400).json({ error: "That folder does not exist." });
+    }
+  }
+
+  if (!summary) {
+    const model = getModel(req.body?.model) || getModel(DEFAULT_MODEL);
+    try {
+      summary = await askModelOnce(
+        model,
+        "Write a short summary of this talk in plain sentences. Do not invent facts.",
+        `Presenter: ${presenter || "Not given"}\nTitle: ${title}\n\nTranscript:\n${notes}`,
+        process.env.OPENAI_API_KEY,
+        800,
+      );
+    } catch (err) {
+      console.error("Failed while writing the lecture notes:", err?.message || err);
+    }
+  }
+  summary ||= "The talk summary could not be written.";
+  const text = lectureMarkdown({ title, presenter, start, end, summary });
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "lecture";
+  const name = `${memoStamp(start)}-${slug}.md`;
+  let photoCount = 0;
+  try {
+    await fs.mkdir(folder, { recursive: true });
+    const packed = await withPhotos(text, folder, name.replace(/\.md$/i, ""), req.body?.photos);
+    photoCount = packed.count;
+    await fs.writeFile(path.join(folder, name), packed.text, "utf8");
+  } catch (err) {
+    console.error("Failed while saving the lecture:", err?.message || err);
+    return res.status(500).json({ error: "Could not write the lecture file." });
+  }
+  console.log(`Saved lecture notes ${name}`);
+  res.json({ path: path.join(folder, name), title, presenter, photos: photoCount });
+});
+
+/** Ask macOS for a folder. Returns an empty path if the user cancels. */
+app.post("/meeting/folder", async (req, res) => {
+  const prompt = req.body?.kind === "lecture"
+    ? "Save the lecture notes in:"
+    : "Save the meeting minutes in:";
+  try {
+    const out = await runCommand("osascript", ["-e", `POSIX path of (choose folder with prompt ${JSON.stringify(prompt)})`]);
     res.json({ folder: out.trim() });
   } catch {
     res.json({ folder: "" });
@@ -4100,7 +4395,7 @@ function looksLikeOwnJob(question) {
 }
 
 /** The words the model follows when a skill is on. The voice reads only the part before SKILL_BODY. */
-function skillInstructions(skill, question, history, memory, meetingNotes) {
+function skillInstructions(skill, question, history, memory, meetingNotes, notesKind = "") {
   const earlier = history.length
     ? history.map((turn) => `User: ${turn.question}\nAssistant: ${turn.answer}`).join("\n\n")
     : "";
@@ -4114,7 +4409,9 @@ function skillInstructions(skill, question, history, memory, meetingNotes) {
     "Keep Arabic and English as the user said them.",
     "",
     skill.body,
-    meetingNotes ? `Meeting that was just written down:\n${meetingNotes}` : "",
+    meetingNotes
+      ? `${notesKind === "lecture" ? "Talk" : "Meeting"} that was just written down:\n${meetingNotes}`
+      : "",
     memory ? `What you remember:\n${memory}` : "",
     earlier ? `Earlier in this conversation:\n${earlier}` : "",
     "",
@@ -4225,7 +4522,15 @@ app.post("/ask", async (req, res) => {
   if (!question) {
     return res.status(400).json({ error: "Type or say a question first." });
   }
-  // A meeting summary must not open the calendar or search the wiki.
+  // A meeting or lecture summary must not open the calendar or search the wiki.
+  if (req.body?.summarizeLecture === true) {
+    const notes = cleanMeetingNotes(req.body?.meetingNotes);
+    if (!notes) return replyNow(res, "The lecture was quiet. I did not catch any words.");
+    const presenter = oneLine(req.body?.presenter, 80) || "the presenter";
+    const title = oneLine(req.body?.title, 120);
+    await streamSpokenPrompt(req, res, lectureSummaryPrompt(notes, presenter, title));
+    return;
+  }
   if (req.body?.summarizeMeeting === true) {
     const notes = cleanMeetingNotes(req.body?.meetingNotes);
     if (!notes) return replyNow(res, "The meeting was quiet. I did not catch any words.");
@@ -4259,6 +4564,7 @@ app.post("/ask", async (req, res) => {
       cleanHistory(req.body?.history),
       cleanMemory(req.body?.memory),
       notes,
+      req.body?.notesKind === "lecture" ? "lecture" : "",
     );
     await streamSpokenPrompt(req, res, prompt, {
       type: "skill",
@@ -4428,12 +4734,19 @@ app.post("/ask", async (req, res) => {
       writeEvent(res, { type: "done" });
       return res.end();
     }
-    const prompt = buildPrompt(question, hits, pages, history, cleanMemory(req.body?.memory), recordedMeeting);
+    const notesKind = req.body?.notesKind === "lecture" ? "lecture" : "";
+    let prompt = buildPrompt(question, hits, pages, history, cleanMemory(req.body?.memory), recordedMeeting, notesKind);
+    const photo = photoDataUrl(req.body?.photo);
+    if (photo && (model.local || model.subscription)) {
+      prompt += "\n\nThe user attached a photo. You cannot see pictures. If they ask what the photo shows, say you cannot see it. Do not invent what is in it.";
+    } else if (photo) {
+      prompt += "\n\nA photo is attached. If the question is about that photo, answer only from what is visible in it. Do not invent words or numbers that are not in the photo.";
+    }
     const spoken = req.body?.spoken === true;
     const longSpoken = hits.emailJob === "read" || hits.emailJob === "reply" || hits.emailJob === "send" || hits.emailJob === "list" || hits.emailJob === "review" || hits.memoJob === "recent" || hits.memoJob === "all" || hits.memoJob === "find";
     if (model.local) await streamLocalAnswer(prompt, res, model, reasoning, spoken, longSpoken);
     else if (model.subscription) await streamClaudeAnswer(prompt, res, model, reasoning, spoken);
-    else await streamAnswer(apiKey, prompt, res, model, reasoning, spoken);
+    else await streamAnswer(apiKey, prompt, res, model, reasoning, spoken, photo);
     writeEvent(res, { type: "done" });
     res.end();
   } catch (err) {
@@ -4526,6 +4839,7 @@ app.post("/desk/draft", (req, res) => {
     });
     if (!job) return res.status(400).json({ error: "There is no draft to save." });
     sendControl("desk", {});
+    queueWorkSummaries();
     res.json({ ok: true, id: job.id });
   } catch (err) {
     console.error("Failed while saving an email draft:", err?.message || err);
@@ -4672,7 +4986,7 @@ app.post("/daylog", (req, res) => {
 /** Summarize one day (default today) into ~/.claude/brain.md with the default model. */
 async function summarizeBrainDay(day) {
   const model = getModel(DEFAULT_MODEL);
-  const folders = { meetingDir: meetingFolder(), notesDir: memoFolder() };
+  const folders = { meetingDir: meetingFolder(), notesDir: memoFolder(), lectureDir: lectureFolder() };
   const result = await summarizeDay(day, folders, (instruction, text) =>
     askModelOnce(model, instruction, text, process.env.OPENAI_API_KEY, 2000, 240000));
   console.log(`brain.md for ${day}: ${result}`);

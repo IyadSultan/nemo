@@ -230,12 +230,13 @@ function addGeminiUsage(usage) {
 function handleGeminiMessage(g, msg) {
   if (gemini !== g) return;
   if (msg.usageMetadata) addGeminiUsage(msg.usageMetadata);
-  // Meeting mode keeps the words and drops Gemini's reply, so the room stays quiet.
-  if (meetingOn) {
+  // Meeting and lecture keep the words and drop Gemini's reply, so the room stays quiet.
+  // The lecture form also stays quiet, but those words are not added to the talk.
+  if (meetingOn || lectureFormOpen) {
     const heardNow = msg.serverContent?.inputTranscription?.text;
-    if (heardNow) addMeetingPiece(heardNow);
+    if (meetingOn && heardNow) addMeetingPiece(heardNow);
     if (msg.serverContent?.modelTurn || msg.serverContent?.outputTranscription) stopGeminiAudio(g);
-    if (msg.serverContent?.turnComplete) finishMeetingLine();
+    if (meetingOn && msg.serverContent?.turnComplete) finishMeetingLine();
     return;
   }
   if (msg.toolCall?.functionCalls?.length) answerGeminiTools(g, msg.toolCall.functionCalls);

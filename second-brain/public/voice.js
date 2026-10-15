@@ -23,6 +23,10 @@ const typeInput = document.getElementById("typeInput");
 const transcriptEl = document.getElementById("transcript");
 const deskEl = document.getElementById("desk");
 const deskCards = document.getElementById("deskCards");
+const deskToggle = document.getElementById("deskToggle");
+const deskCount = document.getElementById("deskCount");
+// "closed" keeps the work list folded after a reload. Anything else leaves it open.
+let deskOpen = localStorage.getItem("deskOpen") !== "closed";
 const remoteAudio = document.getElementById("remoteAudio");
 const folderList = document.getElementById("folderList");
 const skillList = document.getElementById("skillList");
@@ -44,7 +48,16 @@ const earsSelect = document.getElementById("earsSelect");
 const wakeSelect = document.getElementById("wakeSelect");
 const micSelect = document.getElementById("micSelect");
 const meetingBtn = document.getElementById("meetingBtn");
+const lectureBtn = document.getElementById("lectureBtn");
 const recapBtn = document.getElementById("recapBtn");
+const photoBtn = document.getElementById("photoBtn");
+const photoSheet = document.getElementById("photoSheet");
+const photoVideo = document.getElementById("photoVideo");
+const cameraSelect = document.getElementById("cameraSelect");
+const shutterBtn = document.getElementById("shutterBtn");
+const photoCancelBtn = document.getElementById("photoCancelBtn");
+const photoError = document.getElementById("photoError");
+const photoHint = document.getElementById("photoHint");
 
 let pc = null;
 let dc = null;
@@ -62,9 +75,32 @@ let cancelAnswer = false;
 let currentAnswerBubble = null;
 let listenEpoch = 0;
 let activeReader = null;
-// Meeting mode: write down every sentence and do not answer until it is turned off.
+// Meeting or lecture: write down every sentence and do not answer until it is turned off.
 let meetingOn = false;
+// "meeting" or "lecture" while that button is on, and until its summary is finished.
+let captureKind = "";
+// True while the presenter and title form is on screen, so speech is not answered.
+let lectureFormOpen = false;
+// Resolves that form if the call ends before the listener submits it.
+let settleLectureForm = null;
+// "lecture" after a talk is kept, so later questions treat those words as a talk.
+let savedNotesKind = "";
 let meetingLines = [];
+// JPEG photos taken while Meeting or Lecture is on. Saved with those notes.
+let capturePhotos = [];
+// Copied when Meeting or Lecture turns off, so a new recording does not erase them.
+let photosToSave = [];
+// The newest photo from a normal talk, sent with the next question about it.
+let latestShot = "";
+let latestShotAt = 0;
+let latestShotSent = false;
+// True while the camera window is open, so a second press does not open two cameras.
+let photoBusy = false;
+let photoStream = null;
+// Bumped when the camera window closes, so a late iPhone search does not reopen it.
+let photoEpoch = 0;
+// True after the user picks a camera themselves, so a late iPhone does not override that pick.
+let photoPickedByUser = false;
 let meetingPartial = "";
 let meetingPartialBubble = null;
 let closeMeetingAfterClip = false;
@@ -138,8 +174,7 @@ function syncCallButtons() {
   // Stop also cancels an answer that was typed before the call started.
   stopBtn.disabled = !connected && !brainBusy;
   restartBtn.disabled = !lastQuestion;
-  meetingBtn.disabled = !connected;
-  recapBtn.disabled = !meetingOn || recapBusy;
+  paintMeetingButton();
   pauseBtn.textContent = paused ? "Resume" : "Pause";
   pauseBtn.classList.toggle("is-muted", paused);
 }
@@ -174,8 +209,11 @@ function listenForNewQuestion() {
   queuedQuestion = "";
   if (connected) {
     if (meetingOn) {
-      setStatus("Meeting. I'm writing down every word and staying quiet.");
-      setCapsuleState(muted ? "muted" : "meeting");
+      setStatus(quietCaptureStatus());
+      setCapsuleState(muted ? "muted" : captureRole());
+    } else if (lectureFormOpen) {
+      setStatus("Type the presenter's name and edit the title, then press Write summary.");
+      setCapsuleState(muted ? "muted" : "listening");
     } else {
       setStatus(medicalListening() ? "Stopped. Keep talking. Only a real question goes to the brain." : "Say Hey, or press Command and Control together, then your new question.");
       setCapsuleState(muted ? "muted" : "listening");
@@ -241,7 +279,11 @@ function wakeFromKeyboard() {
   if (lastKeyboardWake && now - lastKeyboardWake < 800) return;
   lastKeyboardWake = now;
   if (meetingOn) {
-    setStatus("Meeting is on. I'm still only writing the words down.");
+    setStatus(`${captureName()} is on. I'm still only writing the words down.`);
+    return;
+  }
+  if (lectureFormOpen) {
+    setStatus("Type the presenter's name and edit the title, then press Write summary.");
     return;
   }
   if (!connected) {
@@ -301,10 +343,15 @@ async function askTyped(raw) {
     return;
   }
   typeInput.value = "";
+  if (lectureFormOpen) {
+    setStatus("Type the presenter's name and edit the title, then press Write summary.");
+    return;
+  }
   if (meetingOn) {
     addMeetingLine(question);
-    setStatus("Added to the meeting. I'm still only listening.");
-    setCapsuleState("meeting");
+    const where = captureKind === "lecture" ? "lecture" : "meeting";
+    setStatus(`Added to the ${where}. I'm still only listening.`);
+    setCapsuleState(captureRole());
     return;
   }
   questionEndedAt = performance.now();
@@ -362,8 +409,8 @@ muteBtn.addEventListener("click", () => {
   muteBtn.classList.toggle("is-muted", muted);
   if (connected) {
     if (meetingOn && !muted) {
-      setStatus("Meeting. I'm writing down every word and staying quiet.");
-      setCapsuleState("meeting");
+      setStatus(quietCaptureStatus());
+      setCapsuleState(captureRole());
     } else {
       setStatus(muted ? "Mic muted" : "Listening…");
       setCapsuleState(muted ? "idle" : "listening");
@@ -372,13 +419,16 @@ muteBtn.addEventListener("click", () => {
 });
 
 clearBtn.addEventListener("click", () => {
-  transcriptEl.innerHTML = '<p class="empty">Press Start talking and say Hey, or press Command and Control together. You can also type a question below the orb. Turn Meeting on to write down a conversation without answering.</p>';
+  transcriptEl.innerHTML = '<p class="empty">Press Start talking and say Hey, or press Command and Control together. You can also type a question below the orb. Turn Meeting on to write down a conversation, or Lecture to write down a talk, without answering.</p>';
   assistantPartialEl = null;
   userPartialEl = null;
   chatTurns = [];
   chatMemory = "";
   savedMeeting = "";
+  savedNotesKind = "";
   meetingLines = [];
+  latestShot = "";
+  latestShotSent = false;
   compressAbort?.abort();
   forgetSavedChat();
 });
@@ -1242,17 +1292,49 @@ function watchWhileAnswering(stream) {
 }
 
 const MEETING_STATUS = "Meeting. I am writing the words as they are said, in Arabic or English.";
+
+/** "Lecture" or "Meeting", for the words on screen. */
+function captureName() {
+  return captureKind === "lecture" ? "Lecture" : "Meeting";
+}
+
+/** The bubble and orb name for the mode that is on. */
+function captureRole() {
+  return captureKind === "lecture" ? "lecture" : "meeting";
+}
+
+/** The line under the orb while words are only being written down. */
+function quietCaptureStatus() {
+  return `${captureName()}. I'm writing down every word and staying quiet.`;
+}
+
+/** Close the presenter form if the call ends before it is submitted. */
+function closeLectureForm(value) {
+  const settle = settleLectureForm;
+  settleLectureForm = null;
+  if (settle) settle(value);
+}
 // How often a meeting line is sent to the listener while people are still talking.
 const MEETING_SLICE_MS = 2000;
 // Start a new line after this long so the words on screen stay close to the voices.
 const MEETING_LINE_MS = 18000;
 
-/** Show the Meeting button as on or off. */
+/** Show Meeting, Lecture, and Recap / Ask as on, off, or unavailable. */
 function paintMeetingButton() {
-  meetingBtn.setAttribute("aria-pressed", meetingOn ? "true" : "false");
-  meetingBtn.classList.toggle("is-on", meetingOn);
-  meetingBtn.textContent = meetingOn ? "Meeting on" : "Meeting";
+  const lecture = meetingOn && captureKind === "lecture";
+  const meeting = meetingOn && captureKind !== "lecture";
+  meetingBtn.disabled = !connected || meetingSummaryBusy || lecture;
+  lectureBtn.disabled = !connected || meetingSummaryBusy || meeting;
+  meetingBtn.setAttribute("aria-pressed", meeting ? "true" : "false");
+  lectureBtn.setAttribute("aria-pressed", lecture ? "true" : "false");
+  meetingBtn.classList.toggle("is-on", meeting);
+  lectureBtn.classList.toggle("is-on", lecture);
+  meetingBtn.textContent = meeting ? "Meeting on" : "Meeting";
+  lectureBtn.textContent = lecture ? "Lecture on" : "Lecture";
   recapBtn.disabled = !meetingOn || recapBusy;
+  recapBtn.title = lecture
+    ? "Summarize the talk so far and suggest questions. Shown only, not spoken."
+    : "Summarize the meeting so far and suggest questions. Shown only, not spoken.";
 }
 
 /** One finished sentence from the meeting. Repeats and room noise are skipped. */
@@ -1261,8 +1343,8 @@ function addMeetingLine(text) {
   if (!line || looksLikeSilence(line)) return;
   if (meetingLines.at(-1) === line) return;
   meetingLines.push(line);
-  const bubble = addBubble("meeting", line, false);
-  bubble.querySelector(".who").textContent = "Meeting";
+  const bubble = addBubble(captureRole(), line, false);
+  bubble.querySelector(".who").textContent = captureName();
 }
 
 /** Gemini sends a meeting one piece at a time. Keep them in one line until the turn ends. */
@@ -1271,8 +1353,8 @@ function addMeetingPiece(piece) {
   if (!bit.trim()) return;
   meetingPartial += bit;
   if (!meetingPartialBubble) {
-    meetingPartialBubble = addBubble("meeting", "", true);
-    meetingPartialBubble.querySelector(".who").textContent = "Meeting";
+    meetingPartialBubble = addBubble(captureRole(), "", true);
+    meetingPartialBubble.querySelector(".who").textContent = captureName();
   }
   meetingPartialBubble.querySelector(".text").textContent = meetingPartial.trim();
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
@@ -1292,8 +1374,10 @@ function finishMeetingLine() {
 }
 
 function showMeetingStatus() {
-  setStatus(MEETING_STATUS);
-  setCapsuleState(muted ? "muted" : "meeting");
+  setStatus(captureKind === "lecture"
+    ? "Lecture. I am writing the words as they are said, in Arabic or English."
+    : MEETING_STATUS);
+  setCapsuleState(muted ? "muted" : captureRole());
 }
 
 /** Replace the live meeting line with the words heard so far. */
@@ -1302,8 +1386,8 @@ function showMeetingDraft(text) {
   if (!line || looksLikeSilence(line)) return;
   meetingPartial = line;
   if (!meetingPartialBubble) {
-    meetingPartialBubble = addBubble("meeting", line, true);
-    meetingPartialBubble.querySelector(".who").textContent = "Meeting";
+    meetingPartialBubble = addBubble(captureRole(), line, true);
+    meetingPartialBubble.querySelector(".who").textContent = captureName();
   } else {
     meetingPartialBubble.querySelector(".text").textContent = line;
   }
@@ -1324,8 +1408,8 @@ function freezeMeetingDraft(text, into) {
     bubble.classList.remove("partial");
     bubble.querySelector(".text").textContent = line;
   } else {
-    const created = addBubble("meeting", line, false);
-    created.querySelector(".who").textContent = "Meeting";
+    const created = addBubble(captureRole(), line, false);
+    created.querySelector(".who").textContent = captureName();
   }
   const list = into || meetingLines;
   if (list.at(-1) !== line) list.push(line);
@@ -1465,17 +1549,19 @@ function captureMeetingLine(stream) {
 }
 
 /**
- * Turn Meeting on in the middle of a call.
+ * Turn Meeting or Lecture on in the middle of a call.
  * Any answer that is playing stops. From here, speech is only written down.
  */
-function beginMeeting() {
-  if (!connected) return;
+function beginMeeting(kind = "meeting") {
+  if (!connected || meetingOn || lectureFormOpen) return;
+  captureKind = kind === "lecture" ? "lecture" : "meeting";
   closeMeetingAfterClip = false;
   linesToSummarize = null;
   meetingSummaryBusy = false;
   meetingOn = true;
   meetingStartedAt = Date.now();
   meetingLines = [];
+  capturePhotos = [];
   meetingPartial = "";
   if (meetingPartialBubble) {
     meetingPartialBubble.remove();
@@ -1491,8 +1577,9 @@ function beginMeeting() {
     try { activeReader?.cancel(); } catch { /* the answer already finished */ }
     queuedQuestion = "";
   }
-  const bubble = addBubble("meeting", "Listening. Arabic and English are written as they are said. I will stay quiet until you turn Meeting off.", false);
-  bubble.querySelector(".who").textContent = "Meeting";
+  const offWord = captureName();
+  const bubble = addBubble(captureRole(), `Listening. Arabic and English are written as they are said. I will stay quiet until you turn ${offWord} off.`, false);
+  bubble.querySelector(".who").textContent = offWord;
   // Load the listener that can write both languages before the first words arrive.
   fetch("/transcribe/warm", { method: "POST" }).catch(() => {});
   showMeetingStatus();
@@ -1512,9 +1599,11 @@ function endMeeting() {
   // Keep these lines even if a new recording is still finishing.
   linesToSummarize = meetingLines.slice();
   meetingLines = [];
+  photosToSave = capturePhotos.slice();
+  capturePhotos = [];
   closeMeetingAfterClip = true;
   stopSpeaking();
-  setStatus("Meeting off. Writing the minutes…");
+  setStatus(captureKind === "lecture" ? "Lecture off. Add the presenter and a title." : "Meeting off. Writing the minutes…");
   setCapsuleState("thinking");
   if (recordingClip) listenEpoch += 1;
   if (localEars) return;
@@ -1523,9 +1612,15 @@ function endMeeting() {
 }
 
 meetingBtn.addEventListener("click", () => {
-  if (!connected) return;
-  if (meetingOn) endMeeting();
-  else beginMeeting();
+  if (!connected || meetingSummaryBusy || lectureFormOpen) return;
+  if (meetingOn && captureKind !== "lecture") endMeeting();
+  else if (!meetingOn) beginMeeting("meeting");
+});
+
+lectureBtn.addEventListener("click", () => {
+  if (!connected || meetingSummaryBusy || lectureFormOpen) return;
+  if (meetingOn && captureKind === "lecture") endMeeting();
+  else if (!meetingOn) beginMeeting("lecture");
 });
 
 /**
@@ -1545,7 +1640,11 @@ recapBtn.addEventListener("click", async () => {
     const response = await fetch("/meeting/recap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lines: lines.join("\n"), model: modelSelect.value }),
+      body: JSON.stringify({
+        lines: lines.join("\n"),
+        model: modelSelect.value,
+        kind: captureKind === "lecture" ? "lecture" : "meeting",
+      }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Could not write the recap.");
@@ -1558,6 +1657,323 @@ recapBtn.addEventListener("click", async () => {
     recapBtn.disabled = !meetingOn;
     transcriptEl.scrollTop = transcriptEl.scrollHeight;
   }
+});
+
+/** The photo to send with this question, or "" when the question is not about a picture. */
+function photoForQuestion(question) {
+  if (!latestShot) return "";
+  const aboutPicture = /\b(photo|picture|image|slide|slides|screen|whiteboard|chart|figure|diagram)\b/i.test(question);
+  const firstAsk = !latestShotSent && Date.now() - latestShotAt < 3 * 60 * 1000;
+  if (!aboutPicture && !firstAsk) return "";
+  latestShotSent = true;
+  return latestShot;
+}
+
+/** Words for a camera that would not open. */
+function cameraError(err) {
+  const msg = `${err?.name || ""} ${err?.message || err || ""}`;
+  if (/Permission|NotAllowed/i.test(msg)) return "Camera permission was denied. Allow the camera for this window, then press Photo again.";
+  if (/NotFound|not found|DevicesNotFound/i.test(msg)) return "No camera was found. Unlock your iPhone, keep it nearby, then press Photo again.";
+  return "The camera did not open. Unlock your iPhone and keep it nearby, then try again.";
+}
+
+/** Turn the camera light off and hide the preview. */
+function stopPhotoCamera() {
+  photoStream?.getTracks().forEach((track) => track.stop());
+  photoStream = null;
+  if (photoVideo) photoVideo.srcObject = null;
+}
+
+/** Cameras the browser can open. Skip Chrome's "default" copy of the Mac camera. */
+function listCameras(devices) {
+  return devices.filter((device) => (
+    device.kind === "videoinput"
+    && device.deviceId
+    && device.deviceId !== "default"
+    && device.deviceId !== "communications"
+  ));
+}
+
+/**
+ * The iPhone camera, when the phone is unlocked and nearby.
+ * The name may be "iPhone Camera", or it may only share a group with the iPhone microphone.
+ */
+function phoneCamera(devices) {
+  const cameras = listCameras(devices);
+  const main = cameras.find((camera) => (
+    /iphone|continuity/i.test(camera.label || "") && !/desk view/i.test(camera.label || "")
+  ));
+  if (main) return main;
+  const phoneGroups = new Set(
+    devices
+      .filter((device) => device.kind === "audioinput" && /iphone/i.test(device.label || ""))
+      .map((device) => device.groupId)
+      .filter(Boolean),
+  );
+  const byGroup = cameras.find((camera) => camera.groupId && phoneGroups.has(camera.groupId) && !/desk view/i.test(camera.label || ""));
+  if (byGroup) return byGroup;
+  return cameras.find((camera) => /desk view/i.test(camera.label || "")) || null;
+}
+
+/** Ask for camera permission, then release it so the iPhone camera can appear. */
+async function allowCameraNames() {
+  const first = await navigator.mediaDevices.enumerateDevices();
+  if (first.some((device) => device.kind === "videoinput" && device.label)) return first;
+  const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  probe.getTracks().forEach((track) => track.stop());
+  await sleep(500);
+  return navigator.mediaDevices.enumerateDevices();
+}
+
+/** Put every camera in the menu. The iPhone is first. Returns that camera, or null. */
+function fillCameraMenu(devices) {
+  const cameras = listCameras(devices);
+  const phone = phoneCamera(devices);
+  const ordered = phone ? [phone, ...cameras.filter((camera) => camera.deviceId !== phone.deviceId)] : cameras;
+  // Filling the menu can fire a change for the Mac camera. Ignore that.
+  cameraSelect.dataset.quiet = "1";
+  cameraSelect.replaceChildren();
+  for (const camera of ordered) {
+    const option = document.createElement("option");
+    option.value = camera.deviceId;
+    const isPhone = phone && camera.deviceId === phone.deviceId;
+    option.textContent = isPhone ? `iPhone (${camera.label || "Camera"})` : (camera.label || "This Mac");
+    cameraSelect.append(option);
+  }
+  if (phone) cameraSelect.value = phone.deviceId;
+  requestAnimationFrame(() => { cameraSelect.dataset.quiet = ""; });
+  return phone;
+}
+
+/** Open one camera. An empty id uses whichever camera the Mac offers first. */
+async function openPhotoCamera(deviceId) {
+  stopPhotoCamera();
+  const video = deviceId ? { deviceId: { exact: deviceId } } : true;
+  try {
+    photoStream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+  } catch (err) {
+    const msg = `${err?.name || ""} ${err?.message || ""}`;
+    if (!deviceId || !/Overconstrained|NotFound|not found/i.test(msg)) throw err;
+    photoStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { ideal: deviceId } },
+      audio: false,
+    });
+  }
+  photoVideo.srcObject = photoStream;
+  await photoVideo.play();
+}
+
+/** A smaller JPEG of the current camera picture. */
+function shotFromVideo(video) {
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+  if (!width || !height) return "";
+  const scale = Math.min(1, 1280 / Math.max(width, height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const pen = canvas.getContext("2d");
+  if (!pen) return "";
+  pen.drawImage(video, 0, 0, canvas.width, canvas.height);
+  let quality = 0.72;
+  let data = canvas.toDataURL("image/jpeg", quality);
+  while (data.length > 1_200_000 && quality > 0.4) {
+    quality -= 0.12;
+    data = canvas.toDataURL("image/jpeg", quality);
+  }
+  return data.startsWith("data:image/jpeg") ? data : "";
+}
+
+/** Show the picture in the transcript. */
+function addPhotoBubble(dataUrl, where) {
+  clearEmptyHint();
+  const bubble = document.createElement("article");
+  bubble.className = `bubble photo ${where}`;
+  const who = document.createElement("div");
+  who.className = "who";
+  who.textContent = where === "lecture" ? "Lecture" : where === "meeting" ? "Meeting" : "Photo";
+  const img = document.createElement("img");
+  img.className = "shot";
+  img.alt = where === "lecture" ? "Photo added to the lecture" : where === "meeting" ? "Photo added to the meeting" : "Photo added to the talk";
+  img.src = dataUrl;
+  bubble.append(who, img);
+  transcriptEl.appendChild(bubble);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+/** Keep this picture with the meeting, the lecture, or the next question. */
+function keepPhoto(dataUrl) {
+  if (meetingOn) {
+    if (capturePhotos.length >= 8) {
+      setStatus("This already has 8 photos. Turn it off to save them before taking more.");
+      return;
+    }
+    capturePhotos.push(dataUrl);
+    meetingLines.push(`A photo was taken (${capturePhotos.length}).`);
+    const where = captureKind === "lecture" ? "lecture" : "meeting";
+    addPhotoBubble(dataUrl, where);
+    setStatus(where === "lecture"
+      ? "Photo added to the lecture. It will be saved with the talk."
+      : "Photo added to the meeting. It will be saved with the minutes.");
+    return;
+  }
+  latestShot = dataUrl;
+  latestShotAt = Date.now();
+  latestShotSent = false;
+  addPhotoBubble(dataUrl, "talk");
+  setStatus("Photo added. Ask what it shows.");
+}
+
+/** Close the camera window without keeping a picture. */
+function closePhotoSheet() {
+  photoEpoch += 1;
+  photoSheet.hidden = true;
+  photoBusy = false;
+  stopPhotoCamera();
+  if (photoHint) photoHint.textContent = "Your iPhone is used when it is unlocked and nearby. Otherwise this Mac’s camera is used.";
+}
+
+/** The camera that is showing now. */
+function currentCameraId() {
+  return photoStream?.getVideoTracks()?.[0]?.getSettings()?.deviceId || "";
+}
+
+/**
+ * Look for the iPhone camera without holding the Mac camera open.
+ * The phone often appears a moment after the Mac camera is released.
+ */
+async function findPhoneCamera(epoch) {
+  let devices = await allowCameraNames();
+  if (epoch !== photoEpoch) return null;
+  let phone = fillCameraMenu(devices);
+  if (phone) return phone;
+  if (photoHint) photoHint.textContent = "Looking for your iPhone… unlock it and keep it nearby.";
+  const deadline = Date.now() + 6000;
+  while (Date.now() < deadline && epoch === photoEpoch && !photoSheet.hidden) {
+    await sleep(400);
+    devices = await navigator.mediaDevices.enumerateDevices();
+    phone = fillCameraMenu(devices);
+    if (phone) return phone;
+  }
+  return null;
+}
+
+/** Switch the open preview to the iPhone when it connects. */
+async function usePhoneIfPresent(epoch) {
+  if (photoPickedByUser || epoch !== photoEpoch || photoSheet.hidden) return;
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const phone = fillCameraMenu(devices);
+  if (!phone || epoch !== photoEpoch || photoSheet.hidden) return;
+  if (currentCameraId() === phone.deviceId) {
+    cameraSelect.value = phone.deviceId;
+    if (photoHint) photoHint.textContent = "Using your iPhone camera.";
+    return;
+  }
+  await openPhotoCamera(phone.deviceId);
+  if (epoch !== photoEpoch) {
+    stopPhotoCamera();
+    return;
+  }
+  cameraSelect.dataset.quiet = "1";
+  cameraSelect.value = phone.deviceId;
+  requestAnimationFrame(() => { cameraSelect.dataset.quiet = ""; });
+  if (photoHint) photoHint.textContent = "Using your iPhone camera.";
+  photoError.hidden = true;
+  shutterBtn.disabled = false;
+}
+
+/** Open the camera, preferring the iPhone when it is nearby. */
+async function startPhotoSheet() {
+  if (photoBusy) return;
+  photoBusy = true;
+  photoPickedByUser = false;
+  const epoch = photoEpoch;
+  photoError.hidden = true;
+  photoError.textContent = "";
+  photoSheet.hidden = false;
+  shutterBtn.disabled = true;
+  cameraSelect.replaceChildren();
+  if (photoHint) photoHint.textContent = "Looking for your iPhone… unlock it and keep it nearby.";
+  try {
+    const phone = await findPhoneCamera(epoch);
+    if (epoch !== photoEpoch) return;
+    if (phone) {
+      await openPhotoCamera(phone.deviceId);
+      if (epoch !== photoEpoch) {
+        stopPhotoCamera();
+        return;
+      }
+      cameraSelect.dataset.quiet = "1";
+      cameraSelect.value = phone.deviceId;
+      requestAnimationFrame(() => { cameraSelect.dataset.quiet = ""; });
+      if (photoHint) photoHint.textContent = "Using your iPhone camera.";
+    } else {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      fillCameraMenu(devices);
+      const mac = listCameras(devices)[0];
+      if (!mac) throw new Error("NotFoundError: No camera was found");
+      await openPhotoCamera(mac.deviceId);
+      if (epoch !== photoEpoch) {
+        stopPhotoCamera();
+        return;
+      }
+      cameraSelect.dataset.quiet = "1";
+      cameraSelect.value = mac.deviceId;
+      requestAnimationFrame(() => { cameraSelect.dataset.quiet = ""; });
+      if (photoHint) photoHint.textContent = "The iPhone camera is not connected, so this is the Mac camera. Unlock the phone, keep it nearby, and it will switch over.";
+    }
+    shutterBtn.disabled = false;
+  } catch (err) {
+    if (epoch !== photoEpoch) return;
+    console.error("Failed while opening the camera:", err);
+    photoError.hidden = false;
+    photoError.textContent = cameraError(err);
+    stopPhotoCamera();
+  }
+}
+
+navigator.mediaDevices?.addEventListener("devicechange", () => {
+  if (photoSheet.hidden || !photoBusy) return;
+  usePhoneIfPresent(photoEpoch).catch((err) => {
+    console.error("Failed while switching to the iPhone camera:", err);
+  });
+});
+
+photoBtn.addEventListener("click", () => {
+  startPhotoSheet();
+});
+
+photoCancelBtn.addEventListener("click", closePhotoSheet);
+
+photoSheet.addEventListener("click", (event) => {
+  if (event.target === photoSheet) closePhotoSheet();
+});
+
+cameraSelect.addEventListener("change", async () => {
+  if (cameraSelect.dataset.quiet === "1" || !cameraSelect.value || photoSheet.hidden) return;
+  photoPickedByUser = true;
+  shutterBtn.disabled = true;
+  try {
+    await openPhotoCamera(cameraSelect.value);
+    photoError.hidden = true;
+  } catch (err) {
+    console.error("Failed while switching cameras:", err);
+    photoError.hidden = false;
+    photoError.textContent = cameraError(err);
+  } finally {
+    shutterBtn.disabled = !photoStream;
+  }
+});
+
+shutterBtn.addEventListener("click", () => {
+  const dataUrl = shotFromVideo(photoVideo);
+  if (!dataUrl) {
+    photoError.hidden = false;
+    photoError.textContent = "The camera has no picture yet. Wait a moment, then try again.";
+    return;
+  }
+  keepPhoto(dataUrl);
+  closePhotoSheet();
 });
 
 /** Hand the transcript to a model that hears for itself, so it can summarize and remember it. */
@@ -1594,45 +2010,54 @@ function summarizeWithLiveModel() {
   return false;
 }
 
-/** Save the minutes as a Markdown file. With pick, macOS asks for the folder first. */
+/** Save the minutes or lecture notes as a Markdown file. With pick, macOS asks for the folder first. */
 async function saveMinutes(meeting, pick, row) {
   const buttons = row.querySelectorAll("button");
   const status = row.querySelector(".minutes-saved");
+  const lecture = meeting.kind === "lecture";
   let folder = "";
   buttons.forEach((button) => { button.disabled = true; });
   try {
     if (pick) {
-      const chosen = await fetch("/meeting/folder", { method: "POST" }).then((r) => r.json());
+      const chosen = await fetch("/meeting/folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: lecture ? "lecture" : "meeting" }),
+      }).then((r) => r.json());
       folder = chosen.folder || "";
       if (!folder) return;
     }
     status.textContent = "Saving…";
-    const response = await fetch("/meeting/save", {
+    const response = await fetch(lecture ? "/lecture/save" : "/meeting/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...meeting, folder, model: modelSelect.value }),
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Could not save the minutes.");
-    status.textContent = `Saved: ${data.path}`;
+    if (!response.ok) throw new Error(data.error || (lecture ? "Could not save the lecture." : "Could not save the minutes."));
+    const shots = Number(data.photos) || 0;
+    status.textContent = shots
+      ? `Saved: ${data.path} (${shots === 1 ? "1 photo" : `${shots} photos`})`
+      : `Saved: ${data.path}`;
     flashSaved();
   } catch (err) {
-    console.error("Failed while saving the minutes:", err);
-    status.textContent = err.message || "Could not save the minutes.";
+    console.error(lecture ? "Failed while saving the lecture:" : "Failed while saving the minutes:", err);
+    status.textContent = err.message || (lecture ? "Could not save the lecture." : "Could not save the minutes.");
   } finally {
     buttons.forEach((button) => { button.disabled = false; });
   }
 }
 
-/** Two buttons under the meeting: save to raw/meetings, or pick another folder. */
+/** Two buttons under the notes: save to the usual folder, or pick another folder. */
 function attachMinutesButtons(bubble, meeting) {
+  const lecture = meeting.kind === "lecture";
   const row = document.createElement("div");
   row.className = "minutes-actions";
   const save = document.createElement("button");
   save.type = "button";
   save.className = "ghost-btn small";
-  save.textContent = "Save minutes";
-  save.title = "Save as a Markdown file in raw/meetings";
+  save.textContent = lecture ? "Save lecture" : "Save minutes";
+  save.title = lecture ? "Save as a Markdown file in raw/lectures" : "Save as a Markdown file in raw/meetings";
   const elsewhere = document.createElement("button");
   elsewhere.type = "button";
   elsewhere.className = "ghost-btn small";
@@ -1647,22 +2072,192 @@ function attachMinutesButtons(bubble, meeting) {
   meetingSaveRow = row;
 }
 
+/**
+ * Ask who presented, suggest a title, and let the listener edit it.
+ * Resolves with { presenter, title }, or null if they skip or the call ends.
+ */
+function askLectureDetails(notes) {
+  const bubble = addBubble("lecture", "Who gave this talk? I will suggest a title you can change.", false);
+  const form = document.createElement("form");
+  form.className = "lecture-form";
+
+  const presenterLabel = document.createElement("label");
+  presenterLabel.append("Presenter");
+  const presenterInput = document.createElement("input");
+  presenterInput.type = "text";
+  presenterInput.maxLength = 80;
+  presenterInput.placeholder = "Name of the person speaking";
+  presenterInput.autocomplete = "name";
+  presenterLabel.append(presenterInput);
+
+  const titleLabel = document.createElement("label");
+  titleLabel.append("Title");
+  const titleInput = document.createElement("input");
+  titleInput.type = "text";
+  titleInput.maxLength = 120;
+  titleInput.placeholder = "Suggesting a title…";
+  titleLabel.append(titleInput);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "minutes-actions";
+  const write = document.createElement("button");
+  write.type = "submit";
+  write.className = "ghost-btn small";
+  write.textContent = "Write summary";
+  const skip = document.createElement("button");
+  skip.type = "button";
+  skip.className = "ghost-btn small";
+  skip.textContent = "Not now";
+  actions.append(write, skip);
+  form.append(presenterLabel, titleLabel, error, actions);
+  bubble.append(form);
+  presenterInput.focus();
+
+  // A title the listener already typed is kept when the suggestion arrives.
+  let titleEdited = false;
+  titleInput.addEventListener("input", () => { titleEdited = true; });
+  fetch("/lecture/title", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lines: notes, model: modelSelect.value }),
+  })
+    .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok || titleEdited || !data.title) {
+        if (!titleInput.value) titleInput.placeholder = "Type a title";
+        return;
+      }
+      titleInput.value = data.title;
+    })
+    .catch((err) => {
+      console.error("Failed while suggesting a lecture title:", err);
+      if (!titleInput.value) titleInput.placeholder = "Type a title";
+    });
+
+  return new Promise((resolve) => {
+    settleLectureForm = (value) => {
+      write.disabled = true;
+      skip.disabled = true;
+      presenterInput.disabled = true;
+      titleInput.disabled = true;
+      resolve(value);
+    };
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const presenter = presenterInput.value.trim();
+      const title = titleInput.value.trim();
+      if (!presenter) {
+        error.hidden = false;
+        error.textContent = "Type the presenter's name.";
+        presenterInput.focus();
+        return;
+      }
+      error.hidden = true;
+      closeLectureForm({ presenter, title });
+    });
+    skip.addEventListener("click", () => closeLectureForm(null));
+  });
+}
+
+/** Write the talk summary, say it, and keep the exact words for later questions. */
+async function summarizeLecture(lines, photos = []) {
+  savedMeeting = lines.join("\n");
+  savedNotesKind = "lecture";
+  lectureFormOpen = true;
+  paintMeetingButton();
+  setStatus("Lecture off. Type the presenter's name and edit the title, then press Write summary.");
+  setCapsuleState(connected ? (muted ? "muted" : "listening") : "idle");
+  const details = await askLectureDetails(savedMeeting);
+  lectureFormOpen = false;
+  if (!details) {
+    if (photos.length) {
+      meetingToSave = {
+        lines: savedMeeting,
+        startedAt: meetingStartedAt,
+        endedAt: meetingEndedAt,
+        minutes: savedMeeting,
+        kind: "lecture",
+        presenter: "",
+        title: "Lecture",
+        photos,
+      };
+      const note = addBubble("lecture", "The summary was skipped. The photos can still be saved.", false);
+      attachMinutesButtons(note, meetingToSave);
+    }
+    setStatus(connected
+      ? "Lecture off. The words are kept. Say Hey to ask about the talk."
+      : "Lecture off. The words are kept.");
+    if (connected && !localStop) setCapsuleState(muted ? "muted" : "listening");
+    return;
+  }
+  meetingToSave = {
+    lines: savedMeeting,
+    startedAt: meetingStartedAt,
+    endedAt: meetingEndedAt,
+    minutes: "",
+    kind: "lecture",
+    presenter: details.presenter,
+    title: details.title,
+    photos,
+  };
+  const count = lines.length === 1 ? "1 line" : `${lines.length} lines`;
+  const photoNote = photos.length === 1 ? " and 1 photo" : photos.length ? ` and ${photos.length} photos` : "";
+  const note = addBubble("lecture", `Wrote down ${count}${photoNote}. Writing the talk summary now.`, false);
+  attachMinutesButtons(note, meetingToSave);
+  while (brainBusy) await sleep(40);
+  if (meetingOn || !connected) return;
+  paused = false;
+  addBubble("user", "Write the summary of this talk.", false);
+  await answerWithBrain("Write the summary of the talk that was just written down.", {
+    summarizeLecture: true,
+    presenter: details.presenter,
+    title: details.title,
+  });
+}
+
 /** Write the minutes, say them, and keep the exact words for later questions. */
 async function speakMeetingSummary() {
   if (meetingSummaryBusy) return;
-  const lines = Array.isArray(linesToSummarize) ? linesToSummarize : meetingLines.slice();
+  const kind = captureKind;
+  let lines = Array.isArray(linesToSummarize) ? linesToSummarize : meetingLines.slice();
+  const photos = photosToSave.slice();
+  photosToSave = [];
   linesToSummarize = null;
   meetingLines = [];
+  if (!lines.length && photos.length) lines = ["A photo was taken. No words were written down."];
   if (!lines.length) {
-    setStatus(connected ? "Meeting off. I did not catch any words. Say Hey when you have a question." : "Meeting off. I did not catch any words.");
+    captureKind = "";
+    paintMeetingButton();
+    const name = kind === "lecture" ? "Lecture" : "Meeting";
+    setStatus(connected ? `${name} off. I did not catch any words. Say Hey when you have a question.` : `${name} off. I did not catch any words.`);
     setCapsuleState(connected ? (muted ? "muted" : "listening") : "idle");
     return;
   }
+  if (kind === "lecture") {
+    meetingSummaryBusy = true;
+    syncCallButtons();
+    try {
+      await summarizeLecture(lines, photos);
+    } finally {
+      meetingSummaryBusy = false;
+      lectureFormOpen = false;
+      captureKind = "";
+      syncCallButtons();
+    }
+    return;
+  }
+  captureKind = "";
+  savedNotesKind = "";
   savedMeeting = lines.join("\n");
   const count = lines.length === 1 ? "1 line" : `${lines.length} lines`;
-  const note = addBubble("meeting", `Wrote down ${count}. Writing the minutes now.`, false);
+  const photoNote = photos.length === 1 ? " and 1 photo" : photos.length ? ` and ${photos.length} photos` : "";
+  const note = addBubble("meeting", `Wrote down ${count}${photoNote}. Writing the minutes now.`, false);
   note.querySelector(".who").textContent = "Meeting";
-  meetingToSave = { lines: savedMeeting, startedAt: meetingStartedAt, endedAt: meetingEndedAt, minutes: "" };
+  meetingToSave = { lines: savedMeeting, startedAt: meetingStartedAt, endedAt: meetingEndedAt, minutes: "", photos };
   attachMinutesButtons(note, meetingToSave);
   meetingSummaryBusy = true;
   syncCallButtons();
@@ -1779,7 +2374,7 @@ async function startLocalListen() {
       continue;
     }
 
-    setStatus(meetingOn ? "Writing down the meeting…" : "Writing down what you said…");
+    setStatus(meetingOn ? `Writing down the ${captureKind === "lecture" ? "lecture" : "meeting"}…` : "Writing down what you said…");
     setCapsuleState("thinking");
     let text = "";
     try {
@@ -1801,8 +2396,8 @@ async function startLocalListen() {
       const line = String(text || "").trim();
       if (line && !looksLikeSilence(line) && Array.isArray(linesToSummarize) && linesToSummarize.at(-1) !== line) {
         linesToSummarize.push(line);
-        const bubble = addBubble("meeting", line, false);
-        bubble.querySelector(".who").textContent = "Meeting";
+        const bubble = addBubble(captureRole(), line, false);
+        bubble.querySelector(".who").textContent = captureName();
       }
       await speakMeetingSummary();
       continue;
@@ -2348,6 +2943,7 @@ async function hangUp({ keepStatus = false } = {}) {
   stopSpeaking();
   connected = false;
   localStop = true;
+  closeLectureForm(null);
   voiceBlocked = "";
   muted = false;
   try { dc?.close(); } catch { /* already closed */ }
@@ -2386,11 +2982,15 @@ async function hangUp({ keepStatus = false } = {}) {
       savedMeeting = savedMeeting ? `${savedMeeting}\n${extra}` : extra;
     }
     if (meetingOn) {
-      const bubble = addBubble("meeting", "Meeting kept. Ask me about it the next time you start talking.", false);
-      bubble.querySelector(".who").textContent = "Meeting";
+      if (captureKind === "lecture") savedNotesKind = "lecture";
+      const name = captureName();
+      const bubble = addBubble(captureRole(), `${name} kept. Ask me about it the next time you start talking.`, false);
+      bubble.querySelector(".who").textContent = name;
     }
   }
   meetingOn = false;
+  captureKind = "";
+  lectureFormOpen = false;
   meetingLines = [];
   closeMeetingAfterClip = false;
   linesToSummarize = null;
@@ -2411,6 +3011,11 @@ function handleServerEvent(event) {
   const type = event.type;
 
   if (type === "input_audio_buffer.speech_started") {
+    if (lectureFormOpen) {
+      stopSpeaking();
+      setStatus("Type the presenter's name and edit the title, then press Write summary.");
+      return;
+    }
     if (meetingOn) {
       showMeetingStatus();
       return;
@@ -2429,6 +3034,10 @@ function handleServerEvent(event) {
     return;
   }
   if (type === "input_audio_buffer.speech_stopped") {
+    if (lectureFormOpen) {
+      stopSpeaking();
+      return;
+    }
     if (meetingOn) {
       showMeetingStatus();
       return;
@@ -2441,6 +3050,10 @@ function handleServerEvent(event) {
     return;
   }
   if (type === "response.created" || type === "response.output_item.added") {
+    if (lectureFormOpen) {
+      stopSpeaking();
+      return;
+    }
     if (meetingOn) {
       stopSpeaking();
       showMeetingStatus();
@@ -2486,6 +3099,7 @@ function handleServerEvent(event) {
     type === "conversation.item.input_audio_transcription.done"
   ) {
     const text = event.transcript || event.item?.content?.[0]?.transcript || "";
+    if (lectureFormOpen) return;
     if (meetingOn) {
       freezeMeetingDraft(text, meetingLines);
       showMeetingStatus();
@@ -2527,6 +3141,7 @@ function handleServerEvent(event) {
     type === "conversation.item.input_audio_transcription.partial"
   ) {
     const text = event.delta || event.transcript || "";
+    if (lectureFormOpen) return;
     if (meetingOn) {
       if (text) addMeetingPiece(text);
       return;
@@ -2535,6 +3150,7 @@ function handleServerEvent(event) {
     return;
   }
   if (type === "response.output_audio_transcript.delta" || type === "response.audio_transcript.delta") {
+    if (lectureFormOpen || meetingOn) return;
     if (!scriptedReply && event.delta) appendAssistantPartial(event.delta);
     return;
   }
@@ -2554,7 +3170,7 @@ function handleServerEvent(event) {
 
 /** Run a tool the voice model asked for, then hand the result back. */
 async function answerToolCall(event) {
-  if (meetingOn) return;
+  if (meetingOn || lectureFormOpen) return;
   const item = event.item || event;
   const callId = item.call_id || event.call_id;
   const name = item.name || event.name;
@@ -2831,9 +3447,11 @@ function armThinkCue() {}
 /** Bonsai and GPT-6 write the answer. Voice control is what speaks it. */
 async function answerWithBrain(question, extras) {
   const writingMinutes = Boolean(extras?.summarizeMeeting);
+  const writingLecture = Boolean(extras?.summarizeLecture);
+  const writingNotes = writingMinutes || writingLecture;
   await deskReady;
-  if (meetingOn || brainBusy || paused) return;
-  const tinyMove = writingMinutes ? "" : playTinyMove(question);
+  if (meetingOn || lectureFormOpen || brainBusy || paused) return;
+  const tinyMove = writingNotes ? "" : playTinyMove(question);
   if (!connected) setBusy(true);
   compressAbort?.abort();
   compressGen += 1;
@@ -2871,7 +3489,12 @@ async function answerWithBrain(question, extras) {
         history: chatTurns,
         memory: chatMemory,
         meetingNotes: savedMeeting,
+        notesKind: savedNotesKind,
         summarizeMeeting: Boolean(extras?.summarizeMeeting),
+        summarizeLecture: writingLecture,
+        presenter: extras?.presenter || "",
+        title: extras?.title || "",
+        photo: writingNotes ? "" : photoForQuestion(question),
         tinyMove,
         skill: activeSkillId,
         model: modelSelect.value,
@@ -2972,9 +3595,9 @@ async function answerWithBrain(question, extras) {
           unspoken += fresh;
           bubble ??= addBubble("assistant", "", true);
           currentAnswerBubble = bubble;
-          if (writingMinutes) {
-            bubble.classList.add("minutes");
-            bubble.querySelector(".who").textContent = "Minutes";
+          if (writingNotes) {
+            bubble.classList.add(writingLecture ? "lecture-notes" : "minutes");
+            bubble.querySelector(".who").textContent = writingLecture ? "Talk" : "Minutes";
           }
           if (parts.kind === "skill" && skillLabel) {
             bubble.querySelector(".who").textContent = skillLabel;
@@ -3011,10 +3634,10 @@ async function answerWithBrain(question, extras) {
       } else {
         bubble.querySelector(".text").textContent = spoken || written;
       }
-      if (writingMinutes) {
-        bubble.classList.add("minutes");
-        bubble.querySelector(".who").textContent = "Minutes";
-        // The saved file uses these minutes, and the buttons move under them.
+      if (writingNotes) {
+        bubble.classList.add(writingLecture ? "lecture-notes" : "minutes");
+        bubble.querySelector(".who").textContent = writingLecture ? "Talk" : "Minutes";
+        // The saved file uses these words, and the buttons move under them.
         if (meetingToSave) meetingToSave.minutes = spoken;
         if (meetingSaveRow) bubble.append(meetingSaveRow);
       }
@@ -3033,7 +3656,9 @@ async function answerWithBrain(question, extras) {
     if (/^I (?:saved that memo|opened that meeting)/.test(spoken)) flashSaved();
     if (connected && !localStop) {
       setCapsuleState("listening");
-      setStatus(writingMinutes
+      setStatus(writingLecture
+        ? "The talk summary is written. Say Hey, then ask anything about the lecture."
+        : writingMinutes
         ? "The minutes are written. Say Hey, then ask anything about the meeting."
         : macOnly
         ? WAKE_STATUS
@@ -3097,7 +3722,12 @@ function addBubble(role, text, partial) {
   bubble.className = `bubble ${role}${partial ? " partial" : ""}`;
   const who = document.createElement("div");
   who.className = "who";
-  who.textContent = role === "user" ? "You" : role === "note" ? "Medical" : role === "meeting" ? "Meeting" : "Brain";
+  who.textContent = role === "user" ? "You"
+    : role === "note" ? "Medical"
+    : role === "meeting" ? "Meeting"
+    : role === "lecture" ? "Lecture"
+    : role === "recap" ? "Recap"
+    : "Brain";
   const body = document.createElement("p");
   body.className = "text";
   body.textContent = text;
@@ -3521,6 +4151,36 @@ function addCardButton(parent, label, onClick) {
   parent.append(button);
 }
 
+/** Show or hide the work cards. The choice is kept on this Mac. */
+function applyDeskFold() {
+  deskEl.classList.toggle("is-collapsed", !deskOpen);
+  if (!deskToggle) return;
+  deskToggle.textContent = deskOpen ? "Collapse" : "Expand";
+  deskToggle.setAttribute("aria-expanded", deskOpen ? "true" : "false");
+}
+
+if (deskToggle) {
+  deskToggle.addEventListener("click", () => {
+    deskOpen = !deskOpen;
+    localStorage.setItem("deskOpen", deskOpen ? "open" : "closed");
+    applyDeskFold();
+  });
+}
+
+/**
+ * A short note under a card: what the email or message is about.
+ * about is "reply" when answering someone, or "draft" for a new email.
+ */
+function appendAbout(parent, about, summary) {
+  if (about !== "reply" && about !== "draft") return;
+  const line = document.createElement("p");
+  line.className = "work-about";
+  const label = document.createElement("span");
+  label.textContent = about === "draft" ? "This draft" : "Replying to";
+  line.append(label, document.createTextNode(summary || "Reading that message…"));
+  parent.append(line);
+}
+
 function renderDesk() {
   const jobs = deskView.jobs || [];
   const suggestions = deskView.suggestions || [];
@@ -3532,6 +4192,8 @@ function renderDesk() {
     return;
   }
   deskEl.hidden = false;
+  if (deskCount) deskCount.textContent = String(jobs.length + suggestions.length + flashes.length + (showMemory ? 1 : 0));
+  applyDeskFold();
 
   for (const card of flashes) {
     const article = document.createElement("article");
@@ -3561,9 +4223,11 @@ function renderDesk() {
         : "Reminder";
     const title = document.createElement("h3");
     title.textContent = job.title;
+    article.append(kicker, title);
+    appendAbout(article, job.about, job.summary);
     const detail = document.createElement("p");
     detail.textContent = job.detail || job.receipt || "";
-    article.append(kicker, title, detail);
+    article.append(detail);
     const actions = document.createElement("div");
     actions.className = "work-actions";
     if (job.kind === "draft") {
@@ -3601,6 +4265,7 @@ function renderDesk() {
     const title = document.createElement("h3");
     title.textContent = item.title;
     article.append(kicker, title);
+    appendAbout(article, item.about || "reply", item.summary);
     const actions = document.createElement("div");
     actions.className = "work-actions";
     addCardButton(actions, "Do this", async (event) => {

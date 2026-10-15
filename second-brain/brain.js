@@ -92,10 +92,11 @@ function wikiOfDay(day) {
 }
 
 /** Everything that happened on one day, by source. Empty sources are left out. */
-export function gatherDay(day, { meetingDir, notesDir }) {
+export function gatherDay(day, { meetingDir, notesDir, lectureDir }) {
   const sources = [
     ["Voice calls", readText(path.join(DAYLOG_DIR, `${day}.md`))],
     ["Meeting minutes", filesOfDay(meetingDir, day)],
+    ["Lectures", lectureDir ? filesOfDay(lectureDir, day) : ""],
     ["Memos", filesOfDay(notesDir, day)],
     ["Claude Code sessions", wikiOfDay(day)],
   ];
@@ -111,7 +112,7 @@ export function hasDay(day) {
 
 const SUMMARY_INSTRUCTION = [
   "You keep the long-term memory of Dr Iyad Sultan's second brain.",
-  "Below is everything from one day: voice calls, meeting minutes, memos, and what his Claude Code agents did.",
+  "Below is everything from one day: voice calls, meeting minutes, lectures, memos, and what his Claude Code agents did.",
   "Write what is worth remembering from this day, as short Markdown bullets under these headings, skipping any heading with nothing under it:",
   "### People, ### Work and projects, ### Decisions, ### Preferences, ### Open items.",
   "Only write facts that are in the text. Leave out greetings, small talk, tests, and requests that failed.",

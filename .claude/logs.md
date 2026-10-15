@@ -517,3 +517,15 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-15 10:14 — talk_to_your_brain
 
 **Prompt:** I want to add a button to meeting: recap/ask when hit, the model summarizes what was said in the meeting so far and suggest ciritical questions- shown but not TTS. this should not affect how final minutes are transcribed.
+
+- 2026-10-15: Added "Recap / Ask" button to Meeting (voice page). POST /meeting/recap returns a text-only summary + critical questions; reads a copy of meetingLines, not spoken, not added to minutes. Endpoint tested OK on port 3099.
+**Response:** Checking the new commit `71e941a` — it appeared mid-session and seems to include my edits.
+
+## 2026-10-15 10:19 — talk_to_your_brain
+
+**Prompt:** <task-notification> <task-id>bb4ysc00o</task-id> <tool-use-id>toolu_017riHiTF8RbnwhhXycb1fMB</tool-use-id> <output-file>/private/tmp/claude-501/-Users-USER-code-talk-to-your-brain/10e96d2c-4bf6-4f3a-8101-72b7ca7a23d3/tasks/bb4ysc00o.output</output-file> <status>failed</status> <summary>Background command "Run test server on port 3099" failed with exit code 1</summary> </task-notification>
+**Response:** That exit code 1 is from the test server on port 3099 shutting down when I killed it on purpose after the test. Nothing else is wrong, and the recap test passed before the shutdown. Next: hard-refresh the voice page, turn Meeting on, and press **Recap / Ask**.
+
+## 2026-10-15 10:31 — talk_to_your_brain
+
+**Prompt:** buttons are not clicking smoothly: need to double click on start call or meeting, check all is good

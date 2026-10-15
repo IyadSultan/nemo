@@ -1,0 +1,131 @@
+- generic [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e5]:
+      - paragraph [ref=e6]: Hey my brain
+      - paragraph [ref=e7]: Voice assistant for your notes
+    - region "Tokens for this whole chat" [ref=e8]:
+      - heading "This chat" [level=2] [ref=e9]
+      - generic [ref=e10]:
+        - generic "From the end of your question to the first spoken word" [ref=e11]:
+          - term [ref=e12]: Last answer
+          - definition [ref=e13]: –
+        - generic "Average over 0 answers this call" [ref=e102]:
+          - term [ref=e15]: Avg answer
+          - definition [ref=e16]: –
+        - generic [ref=e17]:
+          - term [ref=e18]: In
+          - definition [ref=e19]: "0"
+        - generic [ref=e20]:
+          - term [ref=e21]: Out
+          - definition [ref=e22]: "0"
+        - generic [ref=e23]:
+          - term [ref=e24]: Thinking
+          - definition [ref=e25]: "0"
+        - generic [ref=e26]:
+          - term [ref=e27]: Cost
+          - definition [ref=e28]: $0.00
+  - main [ref=e29]:
+    - region "Voice conversation controls" [ref=e30]:
+      - button "End call" [pressed] [ref=e103] [cursor=pointer]
+      - generic [aria-hidden] [ref=e35]: Meeting
+      - paragraph [ref=e36]: Meeting. I am writing the words as they are said, in Arabic or English.
+      - generic [ref=e37]:
+        - generic [ref=e38]: Or type a question
+        - generic [ref=e39]:
+          - textbox "Or type a question" [ref=e40]:
+            - /placeholder: Use this if listening misses what you said
+          - button "Ask" [ref=e41] [cursor=pointer]
+      - button "Meeting on" [active] [pressed] [ref=e104] [cursor=pointer]
+      - button "Recap / Ask" [ref=e43] [cursor=pointer]
+      - region "Skills" [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: Skills
+          - button "Upload" [ref=e47] [cursor=pointer]
+        - button "PRD simple Write a short product plan from what the user says. Ask only the missing pieces first." [ref=e49] [cursor=pointer]:
+          - strong [ref=e50]: PRD simple
+          - generic [ref=e51]: Write a short product plan from what the user says. Ask only the missing pieces first.
+      - generic [ref=e52]:
+        - generic [ref=e53]: Microphone
+        - combobox "Microphone" [ref=e54]:
+          - option "Local (MacBook Pro Microphone)" [selected]
+          - option "iPhone (iPhone (393) Microphone)"
+      - generic [ref=e55]:
+        - button "Mute mic" [ref=e56] [cursor=pointer]
+        - button "Pause" [ref=e57] [cursor=pointer]
+        - button "Stop" [ref=e58] [cursor=pointer]
+        - button "Restart last" [disabled] [ref=e59]
+      - group [ref=e60]:
+        - generic "▸ Settings" [ref=e61] [cursor=pointer]
+        - option "Voice mini"
+        - option "Voice"
+        - option "Gemini Live"
+        - option "GPT-6 Luna"
+        - option "GPT-6 Sol"
+        - option "GPT-6.1 Sol"
+        - option "GPT-6 Astra"
+        - option "Claude Opus" [selected]
+        - option "Claude Sonnet"
+        - option "Bonsai 27B"
+        - option "GPT-OSS 20B"
+        - option "Gemma 4 12B"
+        - option "Gemma 4 E4B"
+        - option "Gemma 4 E2B"
+        - option "Qwen 3.8 27B"
+        - option "Low" [selected]
+        - option "Medium"
+        - option "High"
+        - option "Extra high"
+        - option "Maximum"
+        - option "Marin" [selected]
+        - option "Cedar"
+        - option "Alloy"
+        - option "Ash"
+        - option "Coral"
+        - option "Sage"
+        - option "Whisper on this Mac, English + Arabic" [selected]
+        - option "Whisper English and Arabic together"
+        - option "Whisper on this Mac, English only"
+        - option "Hey"
+        - option "Medical speech (GPT-OSS 20B on this Mac)"
+        - option "Hey + Jev (TypeSafe cloud)"
+        - option "Hey + Gemma (on this Mac)" [selected]
+    - region "Live transcript" [ref=e62]:
+      - generic [ref=e63]:
+        - heading "Work" [level=2] [ref=e65]
+        - generic [ref=e66]:
+          - article [ref=e67]:
+            - paragraph [ref=e68]: Idea · the fifteenth of October, twenty twenty-six, at nine fifty-nine in the morning
+            - heading "Reply to RE PHARMACY SCM DATA" [level=3] [ref=e69]
+            - generic [ref=e70]:
+              - button "Do this" [ref=e71] [cursor=pointer]
+              - button "Skip" [ref=e72] [cursor=pointer]
+          - article [ref=e73]:
+            - paragraph [ref=e74]: Idea · the fifteenth of October, twenty twenty-six, at nine fifty-eight in the morning
+            - heading "Reply to Re Invoice Due Today - Article - MS 1912196" [level=3] [ref=e75]
+            - generic [ref=e76]:
+              - button "Do this" [ref=e77] [cursor=pointer]
+              - button "Skip" [ref=e78] [cursor=pointer]
+          - article [ref=e79]:
+            - paragraph [ref=e80]: Idea · the fifteenth of October, twenty twenty-six, at eight thirty in the morning
+            - heading "Reply to Daily To-Do List - 15 October 2026" [level=3] [ref=e81]
+            - generic [ref=e82]:
+              - button "Do this" [ref=e83] [cursor=pointer]
+              - button "Skip" [ref=e84] [cursor=pointer]
+          - article [ref=e85]:
+            - paragraph [ref=e86]: Idea · the fifteenth of October, twenty twenty-six, at eight twenty-five in the morning
+            - heading "Reply to 26 suspected, 18 watch — 25 ICU patients" [level=3] [ref=e87]
+            - generic [ref=e88]:
+              - button "Do this" [ref=e89] [cursor=pointer]
+              - button "Skip" [ref=e90] [cursor=pointer]
+          - article [ref=e91]:
+            - paragraph [ref=e92]: Last conversation
+            - heading "Write the minutes of the meeting that was just written down." [level=3] [ref=e93]
+            - button "Forget this" [ref=e95] [cursor=pointer]
+      - generic [ref=e96]:
+        - heading "Transcript" [level=2] [ref=e97]
+        - button "Clear" [ref=e98] [cursor=pointer]
+      - log [ref=e99]:
+        - article [ref=e105]:
+          - generic [ref=e106]: Meeting
+          - paragraph [ref=e107]: Listening. Arabic and English are written as they are said. I will stay quiet until you turn Meeting off.
+      - paragraph [ref=e101]: "Whole chat so far: 0 input · 0 output. Total $0.00. A new call starts the count over."

@@ -85,7 +85,7 @@
       return;
     }
     stopMouth();
-    if (state === "meeting") setPose("recording");
+    if (state === "meeting" || state === "lecture") setPose("recording");
     else if (state === "thinking" || state === "connecting") setPose("thinking");
     else if (state === "listening" && (lastState === "connecting" || lastState === "idle")) {
       // A call just started: wave hello, then settle.

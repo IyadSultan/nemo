@@ -96,6 +96,67 @@ function pushJob(job) {
   return saved;
 }
 
+/** "reply" when a draft answers a message, "draft" when it is a new email, otherwise blank. */
+function emailAbout(job) {
+  if (job.kind !== "draft" || job.draft?.type !== "email") return "";
+  return String(job.draft?.original || "").trim() ? "reply" : "draft";
+}
+
+/**
+ * Email drafts and reply ideas that still need a short summary.
+ * The server fills these with Haiku, then stores the result.
+ */
+export function pendingSummaries() {
+  const tasks = [];
+  for (const job of state.jobs) {
+    if (job.status !== "needs-you" || !emailAbout(job) || job.summary) continue;
+    const original = String(job.draft?.original || "").trim();
+    const body = String(job.draft?.body || "").trim();
+    const text = (original || body).slice(0, 3500);
+    if (!text) continue;
+    tasks.push({
+      kind: "job",
+      id: job.id,
+      about: emailAbout(job),
+      text,
+      fallback: "",
+    });
+  }
+  for (const item of state.suggestions) {
+    // A summary that is only the title, or still starts with "Subject:", was not written by Haiku yet.
+    if (item.summary && item.summary !== item.title && !/^subject:/i.test(item.summary)) continue;
+    tasks.push({
+      kind: "suggestion",
+      id: item.id,
+      key: item.key,
+      about: "reply",
+      text: "",
+      fallback: item.title || "",
+    });
+  }
+  return tasks;
+}
+
+/** Save the short note Haiku wrote for one work card. */
+export function rememberSummary(kind, id, summary) {
+  const text = clip(summary, 420);
+  if (!text) return false;
+  if (kind === "job") {
+    const job = jobById(id);
+    if (!job || job.summary === text) return false;
+    job.summary = text;
+    job.updated = nowIso();
+  } else if (kind === "suggestion") {
+    const item = suggestionById(id);
+    if (!item || item.summary === text) return false;
+    item.summary = text;
+  } else {
+    return false;
+  }
+  save();
+  return true;
+}
+
 /** A newer draft replaces the one that was still waiting. */
 function retireDrafts(type) {
   for (const job of state.jobs) {
@@ -120,12 +181,18 @@ export function publicDesk() {
       receipt: job.receipt,
       url: job.url || "",
       draftType: job.draft?.type || "",
+      // For an email draft: a short note about the message being answered.
+      summary: job.summary || "",
+      about: emailAbout(job),
     })),
     suggestions: state.suggestions.map((item) => ({
       id: item.id,
       title: item.title,
       source: item.source,
       detail: item.detail,
+      // Short note about the email this idea would answer. Empty until Haiku writes it.
+      summary: item.summary || "",
+      about: "reply",
     })),
     memory: {
       summary: state.memory.summary,
@@ -386,12 +453,15 @@ export function mergeSuggestions(items) {
     const key = String(item.key || "");
     if (!key || state.dismissed.includes(key)) continue;
     if (next.length >= MAX_SUGGESTIONS) break;
+    const previous = state.suggestions.find((entry) => entry.key === key);
     next.push({
       id: crypto.createHash("sha256").update(key).digest("hex").slice(0, 12),
       key,
       title: clip(item.title, 180),
       source: clip(item.source, 80),
       detail: clip(item.detail, 180),
+      // Keep a summary we already paid Haiku to write for this same email.
+      summary: previous?.summary || "",
     });
   }
   state.suggestions = next;
