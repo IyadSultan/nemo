@@ -3,11 +3,15 @@
 -- The green button uses the same live voice model as Nemo,
 -- so it hears the microphone and talks back.
 --
--- This window runs in its own Chrome profile so we can find it again.
--- Clicking the brain focuses that window if it is already open.
+-- The window is the Second Brain app (/Applications, built by rust/window/bundle.sh).
+-- Clicking the brain opens it, or focuses it if it is already open.
+-- The older Chrome window (its own profile) is used only if the app is missing,
+-- and is closed otherwise, so two pages never listen at once.
 
 local PORT = "3001"
 local VOICE_URL = "http://127.0.0.1:" .. PORT .. "/voice.html"
+local APP_ID = "com.iyad.second-brain"
+local APP_PATH = "/Applications/Second Brain.app"
 local CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 -- Separate from the user's normal Chrome, so this process is easy to spot.
 local PROFILE = os.getenv("HOME") .. "/Library/Application Support/hey-my-brain-chrome"
@@ -68,7 +72,21 @@ local function focusExistingVoice()
     return false
 end
 
+local function closeBrainChrome()
+    for _, pid in ipairs(brainPids()) do
+        local app = hs.application.applicationForPID(pid)
+        if app then app:kill() end
+    end
+end
+
 local function openVoice()
+    if hs.fs.attributes(APP_PATH) then
+        -- The app starts the server itself if it is down.
+        closeBrainChrome()
+        hs.application.launchOrFocusByBundleID(APP_ID)
+        if menu then menu:setTitle("🧠") end
+        return
+    end
     if not serverUp() then
         hs.alert.show("Voice app is not running. In Terminal: npm run brain", 4)
         return
@@ -99,10 +117,9 @@ end
 -- Restart the server (launchd keeps it alive), then reopen the window so it loads the new page.
 local function restartVoice()
     hs.alert.show("Restarting voice app…", 2)
-    for _, pid in ipairs(brainPids()) do
-        local app = hs.application.applicationForPID(pid)
-        if app then app:kill() end
-    end
+    closeBrainChrome()
+    local window = hs.application.get(APP_ID)
+    if window then window:kill() end
     hs.execute("/bin/launchctl kickstart -k gui/$(id -u)/com.iyad.talk-to-your-brain")
     local tries = 0
     local timer

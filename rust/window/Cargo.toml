@@ -1,0 +1,14 @@
+[package]
+name = "second-brain-window"
+version = "0.1.0"
+edition = "2021"
+description = "The second brain in its own window (WebKit, no browser)."
+
+[[bin]]
+name = "second-brain"
+path = "src/main.rs"
+
+[dependencies]
+wry = "0.57"
+tao = "0.37"
+muda = "0.17"

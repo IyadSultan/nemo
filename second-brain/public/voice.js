@@ -18,6 +18,7 @@ const pauseBtn = document.getElementById("pauseBtn");
 const stopBtn = document.getElementById("stopBtn");
 const restartBtn = document.getElementById("restartBtn");
 const clearBtn = document.getElementById("clearBtn");
+const saveClearBtn = document.getElementById("saveClearBtn");
 const typeForm = document.getElementById("typeForm");
 const typeInput = document.getElementById("typeInput");
 const transcriptEl = document.getElementById("transcript");
@@ -51,6 +52,8 @@ const meetingBtn = document.getElementById("meetingBtn");
 const lectureBtn = document.getElementById("lectureBtn");
 const recapBtn = document.getElementById("recapBtn");
 const photoBtn = document.getElementById("photoBtn");
+const documentBtn = document.getElementById("documentBtn");
+const documentFile = document.getElementById("documentFile");
 const photoSheet = document.getElementById("photoSheet");
 const photoVideo = document.getElementById("photoVideo");
 const cameraSelect = document.getElementById("cameraSelect");
@@ -418,7 +421,40 @@ muteBtn.addEventListener("click", () => {
   }
 });
 
-clearBtn.addEventListener("click", () => {
+clearBtn.addEventListener("click", () => clearTranscript());
+
+/** Clear & save: a summary of the conversation goes to brain.md first. Nothing is cleared if that fails. */
+saveClearBtn.addEventListener("click", async () => {
+  const lines = [...transcriptEl.querySelectorAll(".bubble:not(.partial)")].map((bubble) =>
+    `${bubble.querySelector(".who")?.textContent || ""}: ${bubble.querySelector(".text")?.textContent || ""}`);
+  if (chatMemory) lines.unshift(`Earlier in this conversation: ${chatMemory}`);
+  const text = lines.join("\n").trim();
+  if (!text) {
+    setStatus("There is no conversation to save yet.");
+    return;
+  }
+  saveClearBtn.disabled = true;
+  saveClearBtn.textContent = "Saving…";
+  try {
+    const response = await fetch("/brain/conversation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not save the conversation.");
+    clearTranscript();
+    setStatus("Saved a summary to brain.md, then cleared.");
+  } catch (err) {
+    console.error("Failed while saving the conversation:", err);
+    setStatus(`${err.message} Nothing was cleared.`);
+  } finally {
+    saveClearBtn.disabled = false;
+    saveClearBtn.textContent = "Clear & save";
+  }
+});
+
+function clearTranscript() {
   transcriptEl.innerHTML = '<p class="empty">Press Start talking and say Hey, or press Command and Control together. You can also type a question below the orb. Turn Meeting on to write down a conversation, or Lecture to write down a talk, without answering.</p>';
   assistantPartialEl = null;
   userPartialEl = null;
@@ -431,7 +467,7 @@ clearBtn.addEventListener("click", () => {
   latestShotSent = false;
   compressAbort?.abort();
   forgetSavedChat();
-});
+}
 
 let chosenModelId = "";
 let chatTurns = [];
@@ -1937,6 +1973,42 @@ navigator.mediaDevices?.addEventListener("devicechange", () => {
   usePhoneIfPresent(photoEpoch).catch((err) => {
     console.error("Failed while switching to the iPhone camera:", err);
   });
+});
+
+documentBtn.addEventListener("click", () => documentFile.click());
+
+/** Read an uploaded document; its summary joins the conversation so it can be asked about. */
+documentFile.addEventListener("change", async () => {
+  const file = documentFile.files?.[0];
+  documentFile.value = "";
+  if (!file) return;
+  documentBtn.disabled = true;
+  documentBtn.textContent = "Reading…";
+  setStatus(`Reading ${file.name}. Long documents take a minute.`);
+  try {
+    const response = await fetch("/document", {
+      method: "POST",
+      headers: {
+        // Raw bytes, so the server does not try to read a text file as a form.
+        "Content-Type": "application/octet-stream",
+        "X-File-Name": encodeURIComponent(file.name),
+        "X-Model": chosenModelId || "",
+      },
+      body: file,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not read that document.");
+    const said = `I read ${data.title}. ${data.summary}`;
+    addBubble("assistant", `${said}\n\nA copy and a wiki page are in the meeting folder. Ask me anything about it.`);
+    rememberTurn(`I uploaded the document "${file.name}". What is in it?`, said);
+    setStatus("Document saved. Ask me about it.");
+  } catch (err) {
+    console.error("Failed while uploading a document:", err);
+    setStatus(err.message);
+  } finally {
+    documentBtn.disabled = false;
+    documentBtn.textContent = "Document";
+  }
 });
 
 photoBtn.addEventListener("click", () => {

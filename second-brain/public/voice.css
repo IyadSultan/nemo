@@ -141,6 +141,12 @@ body {
   overflow-y: auto;
 }
 
+/* In a short window the panel scrolls. Items keep their full height, so the
+   three-line status text cannot spill over the typed-question box. */
+.booth > * {
+  flex-shrink: 0;
+}
+
 /* ---------- The orb and its three state animations ---------- */
 .capsule {
   --accent: var(--muted);
@@ -751,6 +757,11 @@ body {
   justify-content: space-between;
   padding: 0.7rem 1rem;
   border-bottom: 1px solid var(--line);
+}
+
+.transcript-actions {
+  display: flex;
+  gap: 0.4rem;
 }
 
 .transcript-head h2 {

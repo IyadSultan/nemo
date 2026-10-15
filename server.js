@@ -20,7 +20,8 @@ const PORT = Number(process.env.PORT) || 3000;
 // Accept raw SDP text from the browser
 app.use(express.text({ type: ["application/sdp", "text/plain"], limit: "1mb" }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+// deny: a hidden file such as a session log is not sent to the browser.
+app.use(express.static(path.join(__dirname, "public"), { dotfiles: "deny" }));
 
 const MODEL = "gpt-realtime-2.1-mini";
 const DEFAULT_VOICE = "marin";
@@ -109,22 +110,19 @@ app.post("/session", async (req, res) => {
     const answerSdp = await upstream.text();
 
     if (!upstream.ok) {
-      console.error("OpenAI /realtime/calls failed:", upstream.status, answerSdp);
-      return res.status(upstream.status).type("application/json").send(
-        JSON.stringify({
-          error: "OpenAI Realtime session failed",
-          status: upstream.status,
-          details: safeJson(answerSdp),
-        })
-      );
+      // The full reply stays in the server log. The browser only hears that it failed.
+      console.error("OpenAI /realtime/calls failed:", upstream.status, redactSecrets(answerSdp));
+      return res.status(upstream.status).json({
+        error: "OpenAI Realtime session failed",
+        status: upstream.status,
+      });
     }
 
     res.type("application/sdp").send(answerSdp);
   } catch (err) {
-    console.error("Session creation error:", err);
+    console.error("Session creation error:", redactSecrets(err?.message || String(err)));
     res.status(500).json({
       error: "Failed to create Realtime session",
-      message: err?.message || String(err),
     });
   }
 });
@@ -138,7 +136,8 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+// 127.0.0.1 means only this Mac can open the page. Other computers on the Wi-Fi cannot.
+app.listen(PORT, "127.0.0.1", () => {
   console.log(`\nNemo Realtime Voice → http://localhost:${PORT}`);
   if (!process.env.OPENAI_API_KEY) {
     console.warn("⚠️  OPENAI_API_KEY is not set. Copy .env.example to .env first.\n");
@@ -147,10 +146,10 @@ app.listen(PORT, () => {
   }
 });
 
-function safeJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
+/** Hide key-shaped text before it is written to a log. The call to OpenAI is unchanged. */
+function redactSecrets(text) {
+  return String(text || "")
+    .replace(/sk-[A-Za-z0-9_-]{8,}/g, "sk-hidden")
+    .replace(/AIza[0-9A-Za-z_-]{10,}/g, "AIza-hidden")
+    .replace(/apikey_[A-Za-z0-9_]+/g, "apikey-hidden");
 }

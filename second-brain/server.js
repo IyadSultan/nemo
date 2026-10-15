@@ -31,8 +31,9 @@ import { createSemanticIndex } from "./embed.js";
 import { judgeSpeech, warmJudge } from "./jev.js";
 import { cleanMedical, warmMedgem } from "./medgem.js";
 import { learningJob, runLearningJob, learningsBlock, closestIndex, siteShortcut } from "./learnings.js";
-import { appendDayLog, brainBlock, dayKey, summarizeDay } from "./brain.js";
+import { appendDayLog, brainBlock, dayKey, saveConversation, summarizeDay } from "./brain.js";
 import { loadDocs } from "./docs.js";
+import { ingestDocument } from "./upload.js";
 import { openFileJob, runOpenFile, findOnMacJob, runFindOnMac } from "./openfile.js";
 import { emailSearchJob, runEmailSearch } from "./emailsearch.js";
 import { registerIMessage, sendIMessage, imessageHandle, textMeJob, runTextMe } from "./imessage.js";
@@ -125,9 +126,10 @@ const STOP_WORDS = new Set([
 const app = express();
 app.use(express.json({ limit: "15mb" }));
 app.use(express.text({ type: ["application/sdp", "text/plain"], limit: "1mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+// deny: hidden files (the session log under public/.claude) are not sent to the browser.
+app.use(express.static(path.join(__dirname, "public"), { dotfiles: "deny" }));
 // Rive runtime for the Tiny mascot (served from node_modules, no CDN).
-app.use("/vendor/rive", express.static(path.join(__dirname, "..", "node_modules", "@rive-app", "canvas")));
+app.use("/vendor/rive", express.static(path.join(__dirname, "..", "node_modules", "@rive-app", "canvas"), { dotfiles: "deny" }));
 
 /** @type {{ rel: string, title: string, text: string, lower: string }[]} */
 let notes = [];
@@ -2396,7 +2398,7 @@ async function streamAnswer(apiKey, prompt, res, model, reasoning, spoken, photo
 
   if (!upstream.ok || !upstream.body) {
     const details = await upstream.text();
-    console.error("OpenAI request failed:", upstream.status, details);
+    console.error("OpenAI request failed:", upstream.status, redactSecrets(details));
     throw new Error(`OpenAI returned an error (${upstream.status}).`);
   }
 
@@ -2626,7 +2628,7 @@ function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000, di
           output_tokens: u.output_tokens || 0,
         });
       }
-      const why = result?.result || stderr.trim() || `exit code ${code}`;
+      const why = redactSecrets(result?.result || stderr.trim() || `exit code ${code}`);
       console.error("Claude Code failed:", why);
       reject(new Error(`Claude returned an error (${String(why).slice(0, 200)}).`));
     });
@@ -2979,10 +2981,62 @@ function folderState() {
   };
 }
 
+/**
+ * A notes folder must be your home folder, something inside it, or a folder on an
+ * external drive (/Volumes/...). OneDrive lives inside home, so the folders you
+ * already use still load. System folders such as /etc are refused.
+ */
+function isAllowedPlace(folderPath) {
+  const home = path.resolve(os.homedir());
+  const relHome = path.relative(home, folderPath);
+  if (relHome === "" || (!relHome.startsWith("..") && !path.isAbsolute(relHome))) return true;
+  const relVol = path.relative("/Volumes", folderPath);
+  return relVol !== "" && !relVol.startsWith("..") && !path.isAbsolute(relVol);
+}
+
+function hasBlockedPart(folderPath) {
+  const blocked = new Set([".ssh", ".aws", ".gnupg", ".kube"]);
+  return String(folderPath).split(path.sep).some((part) => blocked.has(part));
+}
+
+/** True when the folder exists and both the path and its real location are allowed. */
+function folderIsAllowed(folderPath) {
+  const resolved = path.resolve(String(folderPath || ""));
+  if (!isAllowedPlace(resolved) || hasBlockedPart(resolved)) return false;
+  try {
+    const real = fsSync.realpathSync(resolved);
+    return isAllowedPlace(real) && !hasBlockedPart(real);
+  } catch {
+    return false;
+  }
+}
+
+/** Saved list: keep a path under home even if the drive is still waking up. */
+function savedFolderOk(folderPath) {
+  const resolved = path.resolve(String(folderPath || ""));
+  if (!isAllowedPlace(resolved) || hasBlockedPart(resolved)) return false;
+  try {
+    const real = fsSync.realpathSync(resolved);
+    return isAllowedPlace(real) && !hasBlockedPart(real);
+  } catch {
+    return true;
+  }
+}
+
+/** Hide key-shaped text in logs and error lines. OpenAI and Claude are still called. */
+function redactSecrets(text) {
+  return String(text || "")
+    .replace(/sk-[A-Za-z0-9_-]{8,}/g, "sk-hidden")
+    .replace(/AIza[0-9A-Za-z_-]{10,}/g, "AIza-hidden")
+    .replace(/apikey_[A-Za-z0-9_]+/g, "apikey-hidden");
+}
+
 function readSavedFolders() {
   try {
     const data = JSON.parse(fsSync.readFileSync(FOLDERS_FILE, "utf8"));
-    const saved = Array.isArray(data.folders) ? data.folders.filter((item) => typeof item === "string") : [];
+    const saved = Array.isArray(data.folders)
+      ? data.folders.filter((item) => typeof item === "string" && savedFolderOk(item))
+      : [];
     folders = saved.length ? saved : [WIKI_PATH];
     if (Array.isArray(data.selected)) {
       selected = data.selected.filter((item) => folders.includes(item));
@@ -3141,8 +3195,11 @@ app.post("/folders", async (req, res) => {
       return res.status(400).json({ error: "That path is not a folder." });
     }
   } catch (err) {
-    console.error("Failed while checking a folder:", folderPath, err?.message || err);
+    console.error("Failed while checking a folder:", err?.message || err);
     return res.status(400).json({ error: "That folder was not found. Paste the full path." });
+  }
+  if (!folderIsAllowed(folderPath)) {
+    return res.status(400).json({ error: "Pick a folder inside your home folder." });
   }
   if (!folders.includes(folderPath)) folders.push(folderPath);
   if (!selected.includes(folderPath)) selected.push(folderPath);
@@ -3533,8 +3590,9 @@ app.post("/gemini-session", async (req, res) => {
     });
     const data = await response.json();
     if (!response.ok) {
-      console.error("Gemini refused the token:", data.error?.message || response.status);
-      return res.status(502).json({ error: data.error?.message || "Gemini refused the token." });
+      const geminiError = redactSecrets(data.error?.message || "Gemini refused the token.");
+      console.error("Gemini refused the token:", geminiError);
+      return res.status(502).json({ error: geminiError });
     }
     res.json({ token: data.name, setup });
   } catch (err) {
@@ -3707,17 +3765,18 @@ app.post("/session", async (req, res) => {
     });
     const answerSdp = await upstream.text();
     if (!upstream.ok) {
-      console.error("OpenAI voice session failed:", upstream.status, answerSdp);
+      // Logged here, not sent to the browser. The voice call to OpenAI still happens.
+      console.error("OpenAI voice session failed:", upstream.status, redactSecrets(answerSdp));
       return res.status(upstream.status).json({
         error: "OpenAI voice session failed",
-        details: safeJson(answerSdp),
+        status: upstream.status,
       });
     }
     res.type("application/sdp").send(answerSdp);
   } catch (err) {
     const reason = err?.cause?.message || err?.message || String(err);
-    console.error("Failed while starting the voice session:", reason);
-    res.status(500).json({ error: `Could not reach OpenAI (${reason}).` });
+    console.error("Failed while starting the voice session:", redactSecrets(reason));
+    res.status(500).json({ error: "Could not reach OpenAI." });
   }
 });
 
@@ -4102,6 +4161,9 @@ app.post("/meeting/save", async (req, res) => {
     if (!fsSync.existsSync(folder) || !fsSync.statSync(folder).isDirectory()) {
       return res.status(400).json({ error: "That folder does not exist." });
     }
+    if (!folderIsAllowed(folder)) {
+      return res.status(400).json({ error: "Pick a folder inside your home folder." });
+    }
   }
 
   const invite = await calendarInviteAt(start.getTime(), end.getTime());
@@ -4242,6 +4304,9 @@ app.post("/lecture/save", async (req, res) => {
     folder = path.resolve(req.body.folder.trim());
     if (!fsSync.existsSync(folder) || !fsSync.statSync(folder).isDirectory()) {
       return res.status(400).json({ error: "That folder does not exist." });
+    }
+    if (!folderIsAllowed(folder)) {
+      return res.status(400).json({ error: "Pick a folder inside your home folder." });
     }
   }
 
@@ -5000,6 +5065,56 @@ app.post("/brain/summarize", async (req, res) => {
   } catch (err) {
     console.error("Failed while writing brain.md:", err?.message || err);
     res.status(500).json({ error: err?.message || "Could not write brain.md." });
+  }
+});
+
+/**
+ * Upload a document from the voice page: a copy and a wiki page go to the meeting folder,
+ * and the wiki page joins the notes at once so questions can find it.
+ * The page sends the file as raw bytes, its name in X-File-Name.
+ */
+app.post("/document", express.raw({ type: "*/*", limit: "60mb" }), async (req, res) => {
+  let name = "";
+  try {
+    name = decodeURIComponent(String(req.get("x-file-name") || ""));
+  } catch {
+    return res.status(400).json({ error: "The file name could not be read." });
+  }
+  const folder = meetingFolder();
+  const model = getModel(req.get("x-model")) || getModel(DEFAULT_MODEL);
+  try {
+    const doc = await ingestDocument({
+      name,
+      bytes: Buffer.isBuffer(req.body) ? req.body : null,
+      folder,
+      ask: (instruction, text) => askModelOnce(model, instruction, text, process.env.OPENAI_API_KEY, 3000, 240000),
+    });
+    // The meeting folder is <root>/raw/meetings, so the note is relative to that root.
+    const root = path.dirname(path.dirname(folder));
+    notes = [...notes, parseNote(path.relative(root, doc.wikiPath), doc.wikiText)];
+    semantic.build(notes).catch((err) => console.error("Failed while building the meaning index:", err?.message || err));
+    console.log(`Saved an uploaded document and its wiki page (${path.extname(doc.copyPath)})`);
+    res.json({ title: doc.title, summary: doc.summary, wiki: doc.wikiPath, copy: doc.copyPath });
+  } catch (err) {
+    if (err?.status === 400) return res.status(400).json({ error: err.message });
+    console.error("Failed while saving an uploaded document:", err?.message || err);
+    res.status(500).json({ error: "Could not save that document." });
+  }
+});
+
+/** "Clear and save": summarize the conversation on screen into brain.md before the page clears it. */
+app.post("/brain/conversation", async (req, res) => {
+  const text = typeof req.body?.text === "string" ? req.body.text.trim().slice(0, 30000) : "";
+  if (text.length < 20) return res.status(400).json({ error: "There is no conversation to save yet." });
+  try {
+    const heading = await saveConversation(text, (instruction, input) =>
+      askModelOnce(getModel(DEFAULT_MODEL), instruction, input, process.env.OPENAI_API_KEY, 2000, 240000));
+    // Never log the conversation itself. It can name a patient.
+    console.log(`brain.md: saved ${heading}`);
+    res.json({ ok: true, heading });
+  } catch (err) {
+    console.error("Failed while saving the conversation to brain.md:", err?.message || err);
+    res.status(500).json({ error: "Could not save the conversation to brain.md." });
   }
 });
 

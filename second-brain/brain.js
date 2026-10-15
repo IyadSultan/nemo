@@ -139,6 +139,35 @@ export async function summarizeDay(day, folders, ask) {
   return "saved";
 }
 
+const CONVERSATION_INSTRUCTION = [
+  "You keep the long-term memory of Dr Iyad Sultan's second brain.",
+  "Below is one conversation between him and his second brain, just before he cleared it.",
+  "Write what is worth remembering from it, as short Markdown bullets under these headings, skipping any heading with nothing under it:",
+  "### People, ### Work and projects, ### Decisions, ### Preferences, ### Open items.",
+  "Only write facts that are in the text. Leave out greetings, small talk, tests, and requests that failed.",
+  "At most 15 bullets. Each bullet is one sentence.",
+  "Never write a medical record number, a national number, or a patient's name. Say 'a patient' instead.",
+  "Do not add a title or a date. Start with the first heading.",
+].join("\n");
+
+/**
+ * "Clear and save": summarize one conversation into brain.md, under its own heading
+ * ("## 2026-10-15 — conversation at 18:48") so the nightly "## 2026-10-15" section is still written.
+ * ask(instruction, text) calls the model. Returns the heading.
+ */
+export async function saveConversation(text, ask, when = new Date()) {
+  const summary = String(await ask(CONVERSATION_INSTRUCTION, text)).trim();
+  if (summary.length < 20) throw new Error("The model returned no summary.");
+  const clock = `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`;
+  const heading = `${dayKey(when)} — conversation at ${clock}`;
+  fs.mkdirSync(path.dirname(BRAIN_FILE), { recursive: true });
+  if (!fs.existsSync(BRAIN_FILE)) {
+    fs.writeFileSync(BRAIN_FILE, "# Brain\n\nWhat the second brain learned, one section per day. Written each night.\n", "utf8");
+  }
+  fs.appendFileSync(BRAIN_FILE, `\n## ${heading}\n\n${summary}\n`, "utf8");
+  return heading;
+}
+
 /** The newest days of brain.md, for the prompt. */
 export function brainBlock() {
   let text = readText(BRAIN_FILE);

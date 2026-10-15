@@ -118,6 +118,15 @@
         >
           Photo
         </button>
+        <button
+          type="button"
+          class="ghost-btn meeting-knob"
+          id="documentBtn"
+          title="Add a PDF, Word, or PowerPoint file. A copy and a wiki page go to the meeting folder, and you can ask about it."
+        >
+          Document
+        </button>
+        <input id="documentFile" type="file" accept=".pdf,.docx,.doc,.pptx,.rtf,.odt,.txt,.md" hidden />
 
         <section class="skills" aria-label="Skills">
           <div class="skills-head">
@@ -216,7 +225,10 @@
         </section>
         <div class="transcript-head">
           <h2>Transcript</h2>
-          <button type="button" class="ghost-btn small" id="clearBtn">Clear</button>
+          <span class="transcript-actions">
+            <button type="button" class="ghost-btn small" id="saveClearBtn" title="Save a summary to brain.md, then clear">Clear &amp; save</button>
+            <button type="button" class="ghost-btn small" id="clearBtn">Clear</button>
+          </span>
         </div>
         <div class="transcript" id="transcript" role="log" aria-live="polite">
           <p class="empty">Press Start talking and say Hey, or press Command and Control together. You can also type a question below the orb. Turn Meeting on to write down a conversation, or Lecture to write down a talk, without answering.</p>

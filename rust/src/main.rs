@@ -7,8 +7,9 @@
 //!   your key + session settings, then return OpenAI's "answer" to the browser.
 
 use axum::{
-    extract::{Query, State},
+    extract::{Query, Request, State},
     http::{header, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -124,23 +125,27 @@ async fn session(
             ([(header::CONTENT_TYPE, "application/sdp")], answer).into_response()
         }
         Ok((status, answer)) => {
-            eprintln!("OpenAI /realtime/calls failed: {} {}", status.as_u16(), answer);
+            // Full reply stays in the log. The browser only hears that the call failed.
+            eprintln!(
+                "OpenAI /realtime/calls failed: {} {}",
+                status.as_u16(),
+                redact_secrets(&answer)
+            );
             let code = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
             (
                 code,
                 Json(json!({
                     "error": "OpenAI Realtime session failed",
                     "status": status.as_u16(),
-                    "details": safe_json(&answer),
                 })),
             )
                 .into_response()
         }
         Err(err) => {
-            eprintln!("Session creation error: {err}");
+            eprintln!("Session creation error: {}", redact_secrets(&err.to_string()));
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Failed to create Realtime session", "message": err.to_string() })),
+                Json(json!({ "error": "Failed to create Realtime session" })),
             )
                 .into_response()
         }
@@ -152,11 +157,42 @@ async fn health(State(state): State<AppState>) -> Json<Value> {
     Json(json!({ "ok": true, "model": MODEL, "hasApiKey": state.api_key.is_some() }))
 }
 
+/// Hidden files (names starting with a dot) are not sent to the browser.
+async fn hide_dotfiles(req: Request, next: Next) -> Response {
+    let hidden = req.uri().path().split('/').any(|seg| seg.starts_with('.') && seg != "." && seg != "..");
+    if hidden {
+        return (StatusCode::NOT_FOUND, "Not found").into_response();
+    }
+    next.run(req).await
+}
+
+/// Hide key-shaped text before it is written to a log. The OpenAI call is unchanged.
+fn redact_secrets(text: &str) -> String {
+    let mut out = String::new();
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i..].starts_with(&['s', 'k', '-']) {
+            let rest = &chars[i + 3..];
+            let n = rest.iter().take_while(|c| c.is_ascii_alphanumeric() || **c == '_' || **c == '-').count();
+            if n >= 8 {
+                out.push_str("sk-hidden");
+                i += 3 + n;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
 fn app(state: AppState, public_dir: PathBuf) -> Router {
     Router::new()
         .route("/session", post(session))
         .route("/health", get(health))
         .fallback_service(ServeDir::new(public_dir))
+        .layer(middleware::from_fn(hide_dotfiles))
         .with_state(state)
 }
 
@@ -255,6 +291,22 @@ mod tests {
         assert_eq!(c["audio"]["output"]["voice"], "cedar");
         assert_eq!(c["model"], MODEL);
         assert_eq!(c["audio"]["input"]["turn_detection"]["type"], "semantic_vad");
+    }
+
+    #[tokio::test]
+    async fn hidden_files_are_not_served() {
+        let (s, _) = call(
+            test_app(None, ""),
+            Request::get("/.claude/logs.md").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(s, StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn redact_hides_a_key() {
+        assert_eq!(redact_secrets("bad sk-proj-abcdefghij end"), "bad sk-hidden end");
+        assert_eq!(redact_secrets("no key here"), "no key here");
     }
 
     #[test]
