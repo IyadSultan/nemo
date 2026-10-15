@@ -2574,12 +2574,14 @@ const CLAUDE_BIN = process.env.CLAUDE_BIN
  * Ask Claude through Claude Code (`claude -p`), which uses the logged-in Claude
  * subscription, not an API key. No saved session, no user settings,
  * so hooks and plugins from ~/.claude do not run for every answer.
- * With dirs, Claude may read (never write) files in those folders; without, it has no tools.
- * onText gets each piece of the answer. Resolves with the token usage.
+ * With dirs, Claude may read (never write) files in those folders, and may start
+ * helper agents (Task) that read in parallel; without dirs, it has no tools.
+ * onText gets each piece of the answer; onHelpers(n) gets the number of helpers started so far.
+ * Resolves with the token usage.
  */
-function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000, dirs = []) {
+function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000, dirs = [], onHelpers = () => {}) {
   return new Promise((resolve, reject) => {
-    const tools = dirs.length ? "Read,Glob,Grep" : "";
+    const tools = dirs.length ? "Read,Glob,Grep,Task" : "";
     const args = [
       "-p", "--model", model.cliModel, "--tools", tools, "--no-session-persistence",
       "--setting-sources", "", "--strict-mcp-config", "--system-prompt", system,
@@ -2596,6 +2598,7 @@ function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000, di
     let buffer = "";
     let stderr = "";
     let result = null;
+    let helpers = 0;
 
     child.stdout.on("data", (chunk) => {
       buffer += chunk;
@@ -2609,8 +2612,14 @@ function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000, di
         } catch {
           continue;
         }
+        // Only the main agent's text is the answer; helpers' own text stays inside.
+        if (msg.parent_tool_use_id) continue;
         const delta = msg.type === "stream_event" && msg.event?.type === "content_block_delta" ? msg.event.delta : null;
         if (delta?.type === "text_delta" && delta.text) onText(delta.text);
+        if (msg.type === "assistant") {
+          const started = (msg.message?.content || []).filter((c) => c.type === "tool_use" && (c.name === "Agent" || c.name === "Task")).length;
+          if (started) onHelpers((helpers += started));
+        }
         if (msg.type === "result") result = msg;
       }
     });
@@ -2642,11 +2651,13 @@ async function streamClaudeAnswer(prompt, res, model, reasoning, spoken) {
   const files = [
     `You can read the user's chosen folders with the Read, Glob and Grep tools: ${selected.join(", ")}.`,
     "Use them when the question is about a folder or file that the note excerpts do not cover. Read can open PDFs.",
+    "When a question needs several separate searches (for example notes, email, and documents, or several folders), start helper agents with the Task tool so they search in parallel, then combine what they found. Answer simple questions yourself.",
     "You cannot write files or run commands. Never type tool-call markup such as <invoke> in your answer.",
     "Do not narrate your searching. Answer only after you have looked.",
   ].join(" ");
   const system = [INSTRUCTIONS, files, spoken ? SPOKEN_STYLE : "", guideBlock()].filter(Boolean).join("\n\n");
-  const usage = await askClaude(model, system, prompt, reasoning, (text) => writeEvent(res, { type: "delta", text }), 180000, selected);
+  const onHelpers = (n) => writeEvent(res, { type: "status", message: `Working with ${n} helper${n === 1 ? "" : "s"}…` });
+  const usage = await askClaude(model, system, prompt, reasoning, (text) => writeEvent(res, { type: "delta", text }), 300000, selected, onHelpers);
   writeEvent(res, usageEvent(model, reasoning, usage));
 }
 
