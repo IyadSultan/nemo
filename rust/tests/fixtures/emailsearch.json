@@ -1,0 +1,370 @@
+{
+ "now": 1792060200000,
+ "script": "\non run argv\n  set theQuery to item 1 of argv\n  set oldClip to the clipboard\n  set the clipboard to theQuery\n  tell application \"Microsoft Outlook\" to activate\n  delay 0.8\n  tell application \"System Events\"\n    keystroke \"f\" using {command down, option down}\n    delay 0.4\n    keystroke \"a\" using {command down}\n    keystroke \"v\" using {command down}\n    delay 0.2\n    key code 36\n  end tell\n  delay 0.5\n  set the clipboard to oldClip\nend run",
+ "mails": [
+  {
+   "rel": "raw/FW_ Budget review for Q4.txt",
+   "title": "FW_ Budget review for Q4",
+   "mtime": 1792053000000,
+   "size": 33,
+   "lowerName": "fw_ budget review for q4.txt",
+   "words": [
+    "budget",
+    "review"
+   ]
+  },
+  {
+   "rel": "raw/RE_ RE_ IRB renewal due.md",
+   "title": "RE_ RE_ IRB renewal due",
+   "mtime": 1791988200000,
+   "size": 41,
+   "lowerName": "re_ re_ irb renewal due.md",
+   "words": [
+    "renewal"
+   ]
+  },
+  {
+   "rel": "raw/Budget_draft___v2.txt",
+   "title": "Budget_draft___v2",
+   "mtime": 1791801000000,
+   "size": 24,
+   "lowerName": "budget_draft___v2.txt",
+   "words": [
+    "budget",
+    "draft"
+   ]
+  },
+  {
+   "rel": "raw/Weekly update.txt",
+   "title": "Weekly update",
+   "mtime": 1791628200000,
+   "size": 38,
+   "lowerName": "weekly update.txt",
+   "words": [
+    "weekly",
+    "update"
+   ]
+  },
+  {
+   "rel": "raw/Tumor board agenda.txt",
+   "title": "Tumor board agenda",
+   "mtime": 1788604200000,
+   "size": 2044,
+   "lowerName": "tumor board agenda.txt",
+   "words": [
+    "tumor",
+    "board",
+    "agenda"
+   ]
+  },
+  {
+   "rel": "raw/Lunch.txt",
+   "title": "Lunch",
+   "mtime": 1791973800001,
+   "size": 18,
+   "lowerName": "lunch.txt",
+   "words": [
+    "lunch"
+   ]
+  },
+  {
+   "rel": "raw/blocked request.txt",
+   "title": "blocked request",
+   "mtime": 1791541800000,
+   "size": 8,
+   "lowerName": "blocked request.txt",
+   "words": [
+    "blocked",
+    "request"
+   ]
+  },
+  {
+   "rel": "raw/broken thing.txt",
+   "title": "broken thing",
+   "mtime": 1791455400000,
+   "size": 8,
+   "lowerName": "broken thing.txt",
+   "words": [
+    "broken",
+    "thing"
+   ]
+  },
+  {
+   "rel": "raw/Budget final.txt",
+   "title": "Budget final",
+   "mtime": 1791282600000,
+   "size": 13,
+   "lowerName": "budget final.txt",
+   "words": [
+    "budget",
+    "final"
+   ]
+  },
+  {
+   "rel": "raw/Café menu é.txt",
+   "title": "Café menu é",
+   "mtime": 1757500200000,
+   "size": 19,
+   "lowerName": "café menu é.txt",
+   "words": [
+    "menu"
+   ]
+  }
+ ],
+ "texts": {
+  "FW_ Budget review for Q4.txt": "From: Sara Haddad\nSubject: Budget",
+  "RE_ RE_ IRB renewal due.md": "From: Omar\nThe IRB renewal is due Friday.",
+  "Budget_draft___v2.txt": "From: Lee\nbudget numbers",
+  "Weekly update.txt": "From: Sara Haddad\nNothing about money.",
+  "Tumor board agenda.txt": "From: Dr Kim\nبروتوكول budget items xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxhidden-word",
+  "Lunch.txt": "From: Sara\nSee you",
+  "blocked request.txt": "From: IT",
+  "broken thing.txt": "From: IT",
+  "Budget final.txt": "From: Finance",
+  "Café menu é.txt": "From: Kitchen\nCAFÉ"
+ },
+ "parses": [
+  {
+   "q": "Find the email from Sara about the budget",
+   "out": {
+    "query": "from Sara about the budget",
+    "open": false
+   }
+  },
+  {
+   "q": "open the email about the IRB renewal.",
+   "out": {
+    "query": "about the IRB renewal",
+    "open": true
+   }
+  },
+  {
+   "q": "Hey, can you pull up my emails titled weekly update?",
+   "out": {
+    "query": "titled weekly update",
+    "open": true
+   }
+  },
+  {
+   "q": "show me that e-mail with Lee",
+   "out": {
+    "query": "with Lee",
+    "open": false
+   }
+  },
+  {
+   "q": "search my inbox for budget numbers!",
+   "out": {
+    "query": "budget numbers",
+    "open": false
+   }
+  },
+  {
+   "q": "search outlook for",
+   "out": null
+  },
+  {
+   "q": "find the budget file",
+   "out": null
+  },
+  {
+   "q": "“Locate an email regarding café”",
+   "out": {
+    "query": "regarding café",
+    "open": false
+   }
+  }
+ ],
+ "searches": [
+  {
+   "q": "budget",
+   "out": [
+    "raw/FW_ Budget review for Q4.txt",
+    "raw/Budget_draft___v2.txt",
+    "raw/Budget final.txt"
+   ]
+  },
+  {
+   "q": "sara budget",
+   "out": [
+    "raw/FW_ Budget review for Q4.txt"
+   ]
+  },
+  {
+   "q": "from the dr",
+   "out": []
+  },
+  {
+   "q": "irb",
+   "out": [
+    "raw/RE_ RE_ IRB renewal due.md"
+   ]
+  },
+  {
+   "q": "hidden-word",
+   "out": []
+  },
+  {
+   "q": "بروتوكول",
+   "out": [
+    "raw/Tumor board agenda.txt"
+   ]
+  },
+  {
+   "q": "café",
+   "out": [
+    "raw/Café menu é.txt"
+   ]
+  },
+  {
+   "q": "zzz nothing",
+   "out": []
+  },
+  {
+   "q": "money",
+   "out": [
+    "raw/Weekly update.txt"
+   ]
+  }
+ ],
+ "runs": [
+  {
+   "job": {
+    "query": "about the budget",
+    "open": false
+   },
+   "out": {
+    "text": "I found 3 emails. 1, FW Budget review for Q4, today. 2, Budget draft v2, on October 12. 3, Budget final, on October 6. Say open number one, two, or three to see it in Outlook.",
+    "card": {
+     "title": "Emails",
+     "lines": [
+      "1. FW Budget review for Q4 (today)",
+      "2. Budget draft v2 (on October 12)",
+      "3. Budget final (on October 6)"
+     ]
+    }
+   },
+   "queries": []
+  },
+  {
+   "job": {
+    "query": "about the IRB renewal",
+    "open": true
+   },
+   "out": {
+    "text": "I searched Outlook for IRB renewal due. It should be at the top.",
+    "card": {
+     "title": "Emails",
+     "lines": [
+      "I searched Outlook for IRB renewal due. It should be at the top."
+     ]
+    }
+   },
+   "queries": [
+    "IRB renewal due"
+   ]
+  },
+  {
+   "job": {
+    "query": "about budget final",
+    "open": true
+   },
+   "out": {
+    "text": "I searched Outlook for Budget final. It should be at the top.",
+    "card": {
+     "title": "Emails",
+     "lines": [
+      "I searched Outlook for Budget final. It should be at the top."
+     ]
+    }
+   },
+   "queries": [
+    "Budget final"
+   ]
+  },
+  {
+   "job": {
+    "query": "from Sara about money",
+    "open": false
+   },
+   "out": {
+    "text": "I found 1 email. 1, Weekly update, on October 10. Say open number one to see it in Outlook.",
+    "card": {
+     "title": "Emails",
+     "lines": [
+      "1. Weekly update (on October 10)"
+     ]
+    }
+   },
+   "queries": []
+  },
+  {
+   "job": {
+    "query": "about lunch",
+    "open": false
+   },
+   "out": {
+    "text": "I found 1 email. 1, Lunch, yesterday. Say open number one to see it in Outlook.",
+    "card": {
+     "title": "Emails",
+     "lines": [
+      "1. Lunch (yesterday)"
+     ]
+    }
+   },
+   "queries": []
+  },
+  {
+   "job": {
+    "query": "blocked request",
+    "open": true
+   },
+   "out": {
+    "text": "Outlook search needs one permission. Open System Settings, Privacy and Security, Accessibility, and turn on the app that runs the brain server. Then ask again.",
+    "card": {
+     "title": "Emails",
+     "lines": [
+      "Outlook search needs one permission. Open System Settings, Privacy and Security, Accessibility, and turn on the app that runs the brain server. Then ask again."
+     ]
+    }
+   },
+   "queries": [
+    "blocked request"
+   ]
+  },
+  {
+   "job": {
+    "query": "broken thing",
+    "open": true
+   },
+   "out": {
+    "text": "I could not search Outlook. Check that Outlook is open.",
+    "card": {
+     "title": "Emails",
+     "lines": [
+      "I could not search Outlook. Check that Outlook is open."
+     ]
+    }
+   },
+   "queries": [
+    "broken thing"
+   ]
+  },
+  {
+   "job": {
+    "query": "zzz",
+    "open": true
+   },
+   "out": {
+    "text": "I could not find an email zzz in your saved mail.",
+    "card": {
+     "title": "Emails",
+     "lines": [
+      "I could not find an email zzz in your saved mail."
+     ]
+    }
+   },
+   "queries": []
+  }
+ ]
+}

@@ -1,0 +1,668 @@
+{
+ "tree": [
+  [
+   "notes/wiki/todo.md",
+   1000
+  ],
+  [
+   "notes/projects/todo.md",
+   1001
+  ],
+  [
+   "notes/Grant Budget.docx",
+   1002
+  ],
+  [
+   "notes/protocol.docx",
+   1003
+  ],
+  [
+   "notes/بروتوكول الأسئلة القانونية.docx",
+   1004
+  ],
+  [
+   "notes/مذكرة الاستشارات القانونية.docx",
+   1005
+  ],
+  [
+   "notes/report-2026.pdf",
+   1006
+  ],
+  [
+   "notes/zzqx-other.md",
+   1007
+  ],
+  [
+   "notes/Laziness_Plan.md",
+   1008
+  ],
+  [
+   "notes2/todo.md",
+   1009
+  ],
+  [
+   "escape.md",
+   1010
+  ],
+  [
+   "Downloads/Grant Budget 2026.xlsx",
+   2000
+  ],
+  [
+   "Downloads/grant budget.docx",
+   2001
+  ],
+  [
+   "Documents/Lonely Plan.pdf",
+   2002
+  ],
+  [
+   "Documents/old/Lonely Plan v1.pdf",
+   1500
+  ],
+  [
+   "Library/Caches/grant budget.pdf",
+   3000
+  ],
+  [
+   ".hidden/grant budget.md",
+   3001
+  ],
+  [
+   "Documents/Budget Grant Notes.md",
+   2500
+  ]
+ ],
+ "notes": [
+  {
+   "rel": "wiki/todo.md",
+   "title": "todo"
+  },
+  {
+   "rel": "projects/todo.md",
+   "title": "todo"
+  },
+  {
+   "rel": "Grant Budget.docx",
+   "title": "Grant Budget"
+  },
+  {
+   "rel": "protocol.docx",
+   "title": ""
+  },
+  {
+   "rel": "بروتوكول الأسئلة القانونية.docx",
+   "title": "بروتوكول الأسئلة القانونية"
+  },
+  {
+   "rel": "مذكرة الاستشارات القانونية.docx",
+   "title": "مذكرة الاستشارات القانونية"
+  },
+  {
+   "rel": "report-2026.pdf",
+   "title": "report 2026"
+  },
+  {
+   "rel": "zzqx-other.md",
+   "title": "zzqx other"
+  },
+  {
+   "rel": "Laziness_Plan.md",
+   "title": "Laziness Plan"
+  },
+  {
+   "rel": "../escape.md",
+   "title": "escape"
+  },
+  {
+   "rel": "missing.md",
+   "title": "missing"
+  }
+ ],
+ "meaning": {
+  "legal questions": [
+   [
+    "بروتوكول الأسئلة القانونية.docx",
+    0.34
+   ],
+   [
+    "مذكرة الاستشارات القانونية.docx",
+    0.27
+   ],
+   [
+    "wiki/todo.md",
+    0.5
+   ]
+  ],
+  "legal advice": [
+   [
+    "بروتوكول الأسئلة القانونية.docx",
+    0.29
+   ],
+   [
+    "مذكرة الاستشارات القانونية.docx",
+    0.28
+   ]
+  ],
+  "weak match": [
+   [
+    "protocol.docx",
+    0.2
+   ]
+  ],
+  "boom": "throw"
+ },
+ "steps": [
+  {
+   "kind": "openFileJob",
+   "arg": "open my todo.md file",
+   "help": null,
+   "out": {
+    "name": "todo.md",
+    "explicit": true
+   },
+   "opened": []
+  },
+  {
+   "kind": "openFileJob",
+   "arg": "Hey, can you please open the grant budget document for me please?",
+   "help": null,
+   "out": {
+    "name": "grant budget",
+    "explicit": true
+   },
+   "opened": []
+  },
+  {
+   "kind": "openFileJob",
+   "arg": "Could you read the protocol word document",
+   "help": null,
+   "out": {
+    "name": "protocol",
+    "explicit": true
+   },
+   "opened": []
+  },
+  {
+   "kind": "openFileJob",
+   "arg": "read the news",
+   "help": null,
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "openFileJob",
+   "arg": "open the email from Sara",
+   "help": null,
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "openFileJob",
+   "arg": "open to-do dot md",
+   "help": null,
+   "out": {
+    "name": "to-do dot md",
+    "explicit": true
+   },
+   "opened": []
+  },
+  {
+   "kind": "openFileJob",
+   "arg": "  “Open it.”  ",
+   "help": null,
+   "out": {
+    "name": "it",
+    "explicit": false
+   },
+   "opened": []
+  },
+  {
+   "kind": "openFileJob",
+   "arg": "open the protocol dot docx",
+   "help": null,
+   "out": {
+    "name": "protocol dot",
+    "explicit": true
+   },
+   "opened": []
+  },
+  {
+   "kind": "openFileJob",
+   "arg": "bring up the lonely plan pdf",
+   "help": null,
+   "out": {
+    "name": "lonely plan",
+    "explicit": true
+   },
+   "opened": []
+  },
+  {
+   "kind": "openFileJob",
+   "arg": "open",
+   "help": null,
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "openFileJob",
+   "arg": "open the word document",
+   "help": null,
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "findOnMacJob",
+   "arg": "Find the grant budget on my Mac",
+   "help": null,
+   "out": {
+    "name": "grant budget"
+   },
+   "opened": []
+  },
+  {
+   "kind": "findOnMacJob",
+   "arg": "search my finder for a lonely plan.",
+   "help": null,
+   "out": {
+    "name": "lonely plan"
+   },
+   "opened": []
+  },
+  {
+   "kind": "findOnMacJob",
+   "arg": "where is my budget file on the computer?",
+   "help": null,
+   "out": {
+    "name": "budget"
+   },
+   "opened": []
+  },
+  {
+   "kind": "findOnMacJob",
+   "arg": "find my keys",
+   "help": null,
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "compact",
+   "arg": "To Do.md",
+   "help": null,
+   "out": "todo",
+   "opened": []
+  },
+  {
+   "kind": "compact",
+   "arg": "to-do dot md",
+   "help": null,
+   "out": "todo",
+   "opened": []
+  },
+  {
+   "kind": "compact",
+   "arg": "Grant  Budget.DOCX",
+   "help": null,
+   "out": "grantbudget",
+   "opened": []
+  },
+  {
+   "kind": "compact",
+   "arg": "بروتوكول الأسئلة القانونية",
+   "help": null,
+   "out": "بروتوكولالأسئلةالقانونية",
+   "opened": []
+  },
+  {
+   "kind": "words",
+   "arg": "the lazy meetings about a memo on Laziness",
+   "help": null,
+   "out": [
+    "lazi",
+    "meet"
+   ],
+   "opened": []
+  },
+  {
+   "kind": "words",
+   "arg": "Grant Budget 2026",
+   "help": null,
+   "out": [
+    "gran",
+    "budg",
+    "2026"
+   ],
+   "opened": []
+  },
+  {
+   "kind": "findFile",
+   "arg": "todo",
+   "help": null,
+   "out": "<HOME>/notes/wiki/todo.md",
+   "opened": []
+  },
+  {
+   "kind": "findFile",
+   "arg": "to do dot md",
+   "help": null,
+   "out": "<HOME>/notes/wiki/todo.md",
+   "opened": []
+  },
+  {
+   "kind": "findFile",
+   "arg": "grant budget",
+   "help": null,
+   "out": "<HOME>/notes/Grant Budget.docx",
+   "opened": []
+  },
+  {
+   "kind": "findFile",
+   "arg": "zzqx report",
+   "help": null,
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "findFile",
+   "arg": "escape",
+   "help": null,
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "findFile",
+   "arg": "missing",
+   "help": null,
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "findFile",
+   "arg": "laziness plan",
+   "help": null,
+   "out": "<HOME>/notes/Laziness_Plan.md",
+   "opened": []
+  },
+  {
+   "kind": "findFile",
+   "arg": "",
+   "help": null,
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "todo",
+    "explicit": true
+   },
+   "help": {},
+   "out": "I opened todo.",
+   "opened": [
+    "<HOME>/notes/wiki/todo.md|"
+   ]
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "grant budget",
+    "explicit": false
+   },
+   "help": {},
+   "out": "I opened Grant Budget in LibreOffice. You can read it and edit it there. The Word file itself is not changed until you save.",
+   "opened": [
+    "-a|<HOME>/LibreOffice.app|<HOME>/notes/Grant Budget.docx|"
+   ]
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "lonely plan",
+    "explicit": true
+   },
+   "help": {},
+   "out": "I opened Lonely Plan.",
+   "opened": [
+    "<HOME>/Documents/Lonely Plan.pdf|"
+   ]
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "number two",
+    "explicit": false
+   },
+   "help": {},
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "number three",
+    "explicit": false
+   },
+   "help": {},
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "nothing like this",
+    "explicit": true
+   },
+   "help": {},
+   "out": "I could not find a file called nothing like this in your notes or on your Mac.",
+   "opened": []
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "nothing like this",
+    "explicit": false
+   },
+   "help": {},
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "it",
+    "explicit": false
+   },
+   "help": {
+    "recentText": "We discussed بروتوكول الأسئلة القانونية yesterday."
+   },
+   "out": "I opened بروتوكول الأسئلة القانونية in LibreOffice. You can read it and edit it there. The Word file itself is not changed until you save.",
+   "opened": [
+    "-a|<HOME>/LibreOffice.app|<HOME>/notes/بروتوكول الأسئلة القانونية.docx|"
+   ]
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "the one we discussed",
+    "explicit": false
+   },
+   "help": {
+    "recentText": "short"
+   },
+   "out": "I opened بروتوكول الأسئلة القانونية in LibreOffice. You can read it and edit it there. The Word file itself is not changed until you save.",
+   "opened": [
+    "-a|<HOME>/LibreOffice.app|<HOME>/notes/بروتوكول الأسئلة القانونية.docx|"
+   ]
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "that one",
+    "explicit": false
+   },
+   "help": {
+    "recentText": "Both مذكرة الاستشارات القانونية and بروتوكول الأسئلة القانونية and report 2026 came up."
+   },
+   "out": "I found 3 files. 1, report-2026, a PDF in notes. 2, بروتوكول الأسئلة القانونية, a Word file in notes. 3, مذكرة الاستشارات القانونية, a Word file in notes. Say open number one, two, or three.",
+   "opened": []
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "that one",
+    "explicit": false
+   },
+   "help": {
+    "asked": "open that word one",
+    "recentText": "Both مذكرة الاستشارات القانونية and report 2026 came up."
+   },
+   "out": "I opened مذكرة الاستشارات القانونية in LibreOffice. You can read it and edit it there. The Word file itself is not changed until you save.",
+   "opened": [
+    "-a|<HOME>/LibreOffice.app|<HOME>/notes/مذكرة الاستشارات القانونية.docx|"
+   ]
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "legal protocol",
+    "explicit": false
+   },
+   "help": {
+    "recentText": "The legal protocol is in بروتوكول الأسئلة القانونية, see it."
+   },
+   "out": null,
+   "opened": []
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "legal questions",
+    "explicit": false
+   },
+   "help": {
+    "asked": "open the legal questions word document",
+    "meaning": true
+   },
+   "out": "I opened بروتوكول الأسئلة القانونية in LibreOffice. You can read it and edit it there. The Word file itself is not changed until you save.",
+   "opened": [
+    "-a|<HOME>/LibreOffice.app|<HOME>/notes/بروتوكول الأسئلة القانونية.docx|"
+   ]
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "legal advice",
+    "explicit": false
+   },
+   "help": {
+    "asked": "open the legal advice word file",
+    "meaning": true
+   },
+   "out": "I found 2 files. 1, بروتوكول الأسئلة القانونية, a Word file in notes. 2, مذكرة الاستشارات القانونية, a Word file in notes. Say open number one, two, or three.",
+   "opened": []
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "weak match",
+    "explicit": true
+   },
+   "help": {
+    "asked": "open weak match word document",
+    "meaning": true
+   },
+   "out": "I could not find a file called weak match in your notes or on your Mac.",
+   "opened": []
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "boom",
+    "explicit": true
+   },
+   "help": {
+    "asked": "open boom word document",
+    "meaning": true
+   },
+   "out": "I could not find a file called boom in your notes or on your Mac.",
+   "opened": []
+  },
+  {
+   "kind": "find",
+   "arg": {
+    "name": "grant budget"
+   },
+   "help": null,
+   "out": "I found 3 files. 1, grant budget, a Word file in Downloads. 2, Grant Budget, a Word file in notes. 3, Budget Grant Notes, a note in Documents. Say open number one, two, or three.",
+   "opened": []
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "number two",
+    "explicit": false
+   },
+   "help": {},
+   "out": "I opened Grant Budget in LibreOffice. You can read it and edit it there. The Word file itself is not changed until you save.",
+   "opened": [
+    "-a|<HOME>/LibreOffice.app|<HOME>/notes/Grant Budget.docx|"
+   ]
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "the third one",
+    "explicit": false
+   },
+   "help": {},
+   "out": "I opened Budget Grant Notes.",
+   "opened": [
+    "<HOME>/Documents/Budget Grant Notes.md|"
+   ]
+  },
+  {
+   "kind": "find",
+   "arg": {
+    "name": "lonely plan file"
+   },
+   "help": null,
+   "out": "I found 2 files. 1, Lonely Plan, a PDF in Documents. 2, Lonely Plan v1, a PDF in old. Say open number one, two, or three.",
+   "opened": []
+  },
+  {
+   "kind": "find",
+   "arg": {
+    "name": "zebra"
+   },
+   "help": null,
+   "out": "I could not find a file called zebra on your Mac.",
+   "opened": []
+  },
+  {
+   "kind": "find",
+   "arg": {
+    "name": "the"
+   },
+   "help": null,
+   "out": "I could not find a file called the on your Mac.",
+   "opened": []
+  },
+  {
+   "kind": "run",
+   "arg": {
+    "name": "it",
+    "explicit": false
+   },
+   "help": {
+    "recentText": "nothing named here at all"
+   },
+   "out": "I opened Budget Grant Notes.",
+   "opened": [
+    "<HOME>/Documents/Budget Grant Notes.md|"
+   ]
+  }
+ ],
+ "emailPick": {
+  "error": "ERR_INVALID_ARG_TYPE"
+ }
+}

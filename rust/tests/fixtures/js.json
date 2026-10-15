@@ -1,0 +1,6647 @@
+{
+ "regexes": [
+  {
+   "src": "^(?:hey,?\\s+)?(?:please\\s+)?(?:can\\s?you\\s+|could\\s?you\\s+|would\\s?you\\s+)?(?:please\\s+)?(?:open|pull up|bring up|edit|read)\\s+(?:up\\s+)?(?:my\\s+|the\\s+)?(.+?)(?:\\s+(file|note|document|doc|page|word file|pdf))?(?:\\s+for me)?(?:\\s+please)?[?.!]*$",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": true,
+     "match": [
+      "open my todo.md file",
+      "todo.md",
+      "file"
+     ],
+     "replace": "<todo.md|open my todo.md file|$>"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": true,
+     "match": [
+      "Hey, can you please open the grant budget document for me please?",
+      "grant budget",
+      "document"
+     ],
+     "replace": "<grant budget|Hey, can you please open the grant budget document for me please?|$>"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "Could you read the protocol word document",
+      "protocol word",
+      "document"
+     ],
+     "replace": "<protocol word|Could you read the protocol word document|$>"
+    },
+    {
+     "input": "read the news",
+     "test": true,
+     "match": [
+      "read the news",
+      "news",
+      null
+     ],
+     "replace": "<news|read the news|$>"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": true,
+     "match": [
+      "open the email from Sara",
+      "email from Sara",
+      null
+     ],
+     "replace": "<email from Sara|open the email from Sara|$>"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": true,
+     "match": [
+      "open to-do dot md",
+      "to-do dot md",
+      null
+     ],
+     "replace": "<to-do dot md|open to-do dot md|$>"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\b(?:e-?mails?|mail|inbox|outlook|calendar|meetings?|messages?)\\b",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": true,
+     "match": [
+      "email"
+     ],
+     "replace": "open the <$1|email|$> from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": true,
+     "match": [
+      "mail"
+     ],
+     "replace": "<$1|mail|$>@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "^(?:hey,?\\s+)?(?:please\\s+)?(?:can\\s?you\\s+|could\\s?you\\s+)?(?:please\\s+)?(?:find|search for|look for|locate|where is)\\s+(?:my\\s+|the\\s+|a\\s+)?(.+?)\\s+(?:file\\s+|document\\s+)?(?:on|in)\\s+(?:my\\s+|the\\s+)?(?:mac|computer|laptop|finder)[?.!]*$",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": true,
+     "match": [
+      "Find the grant budget on my Mac",
+      "grant budget"
+     ],
+     "replace": "<grant budget|Find the grant budget on my Mac|$>"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "^(?:hey,?\\s+)?(?:please\\s+)?(?:can\\s?you\\s+)?search\\s+(?:my\\s+|the\\s+)?(?:finder|mac|computer)\\s+for\\s+(?:my\\s+|the\\s+|a\\s+)?(.+?)[?.!]*$",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      "search my finder for a lonely plan.",
+      "lonely plan"
+     ],
+     "replace": "<lonely plan|search my finder for a lonely plan.|$>"
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "^(?:number\\s+|the\\s+)?(one|two|three|1|2|3|first|second|third)(?:\\s+one)?$",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": true,
+     "match": [
+      "number two",
+      "two"
+     ],
+     "replace": "<two|number two|$>"
+    },
+    {
+     "input": "The Third one",
+     "test": true,
+     "match": [
+      "The Third one",
+      "Third"
+     ],
+     "replace": "<Third|The Third one|$>"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\/(?:Library|node_modules|\\.[^/]+|[^/]+\\.app|tmp|venv|site-packages)\\/",
+   "flags": "",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      "/Library/"
+     ],
+     "replace": "/Users/x<$1|/Library/|$>a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\s+(?:file|document|doc|word file|pdf|presentation|spreadsheet)$",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": true,
+     "match": [
+      " file"
+     ],
+     "replace": "open my todo.md<$1| file|$>"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      " document"
+     ],
+     "replace": "Could you read the protocol word<$1| document|$>"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\s+dot\\s+(md|pdf|docx?)\\b",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": true,
+     "match": [
+      " dot md"
+     ],
+     "replace": "open to-do<md| dot md|$>"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\.(md|pdf|docx?)$",
+   "flags": "",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "[^\\p{L}\\p{N}]+",
+   "flags": "gu",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      ".",
+      " "
+     ],
+     "replace": "open<$1| |$>my<$1| |$>todo<$1|.|$>md<$1| |$>file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": true,
+     "match": [
+      ", ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      "?"
+     ],
+     "replace": "Hey<$1|, |$>can<$1| |$>you<$1| |$>please<$1| |$>open<$1| |$>the<$1| |$>grant<$1| |$>budget<$1| |$>document<$1| |$>for<$1| |$>me<$1| |$>please<$1|?|$>"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "Could<$1| |$>you<$1| |$>read<$1| |$>the<$1| |$>protocol<$1| |$>word<$1| |$>document"
+    },
+    {
+     "input": "read the news",
+     "test": true,
+     "match": [
+      " ",
+      " "
+     ],
+     "replace": "read<$1| |$>the<$1| |$>news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "open<$1| |$>the<$1| |$>email<$1| |$>from<$1| |$>Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": true,
+     "match": [
+      " ",
+      "-",
+      " ",
+      " "
+     ],
+     "replace": "open<$1| |$>to<$1|-|$>do<$1| |$>dot<$1| |$>md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "Find<$1| |$>the<$1| |$>grant<$1| |$>budget<$1| |$>on<$1| |$>my<$1| |$>Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      "."
+     ],
+     "replace": "search<$1| |$>my<$1| |$>finder<$1| |$>for<$1| |$>a<$1| |$>lonely<$1| |$>plan<$1|.|$>"
+    },
+    {
+     "input": "number two",
+     "test": true,
+     "match": [
+      " "
+     ],
+     "replace": "number<$1| |$>two"
+    },
+    {
+     "input": "The Third one",
+     "test": true,
+     "match": [
+      " ",
+      " "
+     ],
+     "replace": "The<$1| |$>Third<$1| |$>one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      "/",
+      "/",
+      "/",
+      "/",
+      ".",
+      " ",
+      " /",
+      "/",
+      "/.",
+      "/",
+      " ",
+      " /",
+      "/",
+      ".",
+      "/",
+      " ",
+      " /",
+      "/",
+      "/",
+      "/"
+     ],
+     "replace": "<$1|/|$>Users<$1|/|$>x<$1|/|$>Library<$1|/|$>a<$1|.|$>txt<$1| |$>and<$1| /|$>Users<$1|/|$>x<$1|/.|$>git<$1|/|$>b<$1| |$>and<$1| /|$>A<$1|/|$>Foo<$1|.|$>app<$1|/|$>c<$1| |$>and<$1| /|$>Users<$1|/|$>x<$1|/|$>docs<$1|/|$>f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": true,
+     "match": [
+      "  “",
+      " ",
+      ".”  "
+     ],
+     "replace": "<$1|  “|$>Open<$1| |$>it<$1|.”  |$>"
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " ",
+      "_",
+      " ",
+      "-"
+     ],
+     "replace": "café<$1| |$>Ünïcode<$1| |$>مرحبا<$1| |$>١٢٣<$1| |$>x<$1|_|$>y<$1| |$>z<$1|-|$>9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "\n",
+      " ",
+      " ",
+      " ",
+      " ",
+      "\r"
+     ],
+     "replace": "a<$1|\n|$>c<$1| |$>abc<$1| |$>a<$1| |$>c<$1| |$>a<$1|\r|$>c"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": true,
+     "match": [
+      "@",
+      ".",
+      ", ",
+      ".",
+      "-",
+      "@",
+      "."
+     ],
+     "replace": "mail<$1|@|$>x<$1|.|$>com<$1|, |$>a<$1|.|$>b<$1|-|$>c<$1|@|$>d<$1|.|$>e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": true,
+     "match": [
+      " {",
+      "} } ",
+      " "
+     ],
+     "replace": "xx<$1| {|$>a<$1|} } |$>é<$1| |$>A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": true,
+     "match": [
+      "[",
+      "] & ",
+      " ~"
+     ],
+     "replace": "<$1|[|$>a<$1|] & |$>b<$1| ~|$>"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": true,
+     "match": [
+      " ",
+      "\n",
+      " "
+     ],
+     "replace": "hello<$1| |$>world<$1|\n|$>big<$1| |$>bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": true,
+     "match": [
+      "_",
+      "__",
+      "_"
+     ],
+     "replace": "Reading<$1|_|$>my<$1|__|$>file<$1|_|$>name"
+    },
+    {
+     "input": "lazy y",
+     "test": true,
+     "match": [
+      " "
+     ],
+     "replace": "lazy<$1| |$>y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "^[\"“'\\s.,]+|[\"”'\\s]+$",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": true,
+     "match": [
+      "  “",
+      "”  "
+     ],
+     "replace": "<$1|  “|$>Open it.<$1|”  |$>"
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "^(?:hey,?\\s+)?(?:please\\s+)?(?:can\\s?you\\s+|could\\s?you\\s+|would\\s?you\\s+)?(?:please\\s+)?read\\b",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "Could you read"
+     ],
+     "replace": "<$1|Could you read|$> the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": true,
+     "match": [
+      "read"
+     ],
+     "replace": "<$1|read|$> the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\b(?:word|docx?|dot\\s+docx?)\\b",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "word"
+     ],
+     "replace": "Could you read the protocol <$1|word|$> document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\b(?:word\\s+(?:documents?|docs?|files?)|docx?|dot\\s+docx?)\\b",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "word document"
+     ],
+     "replace": "Could you read the protocol <$1|word document|$>"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\.(?:docx?|dot\\s+docx?)\\b",
+   "flags": "gi",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\b(?:word|documents?|docs?|files?|docx)\\b",
+   "flags": "gi",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": true,
+     "match": [
+      "file"
+     ],
+     "replace": "open my todo.md <$1|file|$>"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": true,
+     "match": [
+      "document"
+     ],
+     "replace": "Hey, can you please open the grant budget <$1|document|$> for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "word",
+      "document"
+     ],
+     "replace": "Could you read the protocol <$1|word|$> <$1|document|$>"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      "docs"
+     ],
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/<$1|docs|$>/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\s+",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "open<$1| |$>my<$1| |$>todo.md<$1| |$>file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "Hey,<$1| |$>can<$1| |$>you<$1| |$>please<$1| |$>open<$1| |$>the<$1| |$>grant<$1| |$>budget<$1| |$>document<$1| |$>for<$1| |$>me<$1| |$>please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "Could<$1| |$>you<$1| |$>read<$1| |$>the<$1| |$>protocol<$1| |$>word<$1| |$>document"
+    },
+    {
+     "input": "read the news",
+     "test": true,
+     "match": [
+      " ",
+      " "
+     ],
+     "replace": "read<$1| |$>the<$1| |$>news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "open<$1| |$>the<$1| |$>email<$1| |$>from<$1| |$>Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "open<$1| |$>to-do<$1| |$>dot<$1| |$>md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "Find<$1| |$>the<$1| |$>grant<$1| |$>budget<$1| |$>on<$1| |$>my<$1| |$>Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "search<$1| |$>my<$1| |$>finder<$1| |$>for<$1| |$>a<$1| |$>lonely<$1| |$>plan."
+    },
+    {
+     "input": "number two",
+     "test": true,
+     "match": [
+      " "
+     ],
+     "replace": "number<$1| |$>two"
+    },
+    {
+     "input": "The Third one",
+     "test": true,
+     "match": [
+      " ",
+      " "
+     ],
+     "replace": "The<$1| |$>Third<$1| |$>one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "/Users/x/Library/a.txt<$1| |$>and<$1| |$>/Users/x/.git/b<$1| |$>and<$1| |$>/A/Foo.app/c<$1| |$>and<$1| |$>/Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": true,
+     "match": [
+      "  ",
+      " ",
+      "  "
+     ],
+     "replace": "<$1|  |$>“Open<$1| |$>it.”<$1|  |$>"
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "café<$1| |$>Ünïcode<$1| |$>مرحبا<$1| |$>١٢٣<$1| |$>x_y<$1| |$>z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "\n",
+      " ",
+      " ",
+      " ",
+      " ",
+      "\r"
+     ],
+     "replace": "a<$1|\n|$>c<$1| |$>abc<$1| |$>a<$1| |$>c<$1| |$>a<$1|\r|$>c"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": true,
+     "match": [
+      " "
+     ],
+     "replace": "mail@x.com,<$1| |$>a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "xx<$1| |$>{a}<$1| |$>}<$1| |$>é<$1| |$>A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": true,
+     "match": [
+      " ",
+      " ",
+      " "
+     ],
+     "replace": "[a]<$1| |$>&<$1| |$>b<$1| |$>~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": true,
+     "match": [
+      " ",
+      "\n",
+      " "
+     ],
+     "replace": "hello<$1| |$>world<$1|\n|$>big<$1| |$>bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": true,
+     "match": [
+      " "
+     ],
+     "replace": "lazy<$1| |$>y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "(?:\\.|\\bdot\\s+)(?:md|pdf|docx?)\\b",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": true,
+     "match": [
+      ".md"
+     ],
+     "replace": "open my todo<$1|.md|$> file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": true,
+     "match": [
+      "dot md"
+     ],
+     "replace": "open to-do <$1|dot md|$>"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\bword\\b",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "word"
+     ],
+     "replace": "Could you read the protocol <$1|word|$> document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\.(md|pdf|docx?)$",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\s+dot\\s+\\w+$",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": true,
+     "match": [
+      " dot md"
+     ],
+     "replace": "open to-do<$1| dot md|$>"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\s+dot\\s+(\\w+)$",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": true,
+     "match": [
+      " dot md",
+      "md"
+     ],
+     "replace": "open to-do<md| dot md|$>"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\.\\w+$",
+   "flags": "",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": true,
+     "match": [
+      ".e"
+     ],
+     "replace": "mail@x.com, a.b-c@d<$1|.e|$>"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "[\\p{L}\\p{N}]+",
+   "flags": "gu",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": true,
+     "match": [
+      "open",
+      "my",
+      "todo",
+      "md",
+      "file"
+     ],
+     "replace": "<$1|open|$> <$1|my|$> <$1|todo|$>.<$1|md|$> <$1|file|$>"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": true,
+     "match": [
+      "Hey",
+      "can",
+      "you",
+      "please",
+      "open",
+      "the",
+      "grant",
+      "budget",
+      "document",
+      "for",
+      "me",
+      "please"
+     ],
+     "replace": "<$1|Hey|$>, <$1|can|$> <$1|you|$> <$1|please|$> <$1|open|$> <$1|the|$> <$1|grant|$> <$1|budget|$> <$1|document|$> <$1|for|$> <$1|me|$> <$1|please|$>?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "Could",
+      "you",
+      "read",
+      "the",
+      "protocol",
+      "word",
+      "document"
+     ],
+     "replace": "<$1|Could|$> <$1|you|$> <$1|read|$> <$1|the|$> <$1|protocol|$> <$1|word|$> <$1|document|$>"
+    },
+    {
+     "input": "read the news",
+     "test": true,
+     "match": [
+      "read",
+      "the",
+      "news"
+     ],
+     "replace": "<$1|read|$> <$1|the|$> <$1|news|$>"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": true,
+     "match": [
+      "open",
+      "the",
+      "email",
+      "from",
+      "Sara"
+     ],
+     "replace": "<$1|open|$> <$1|the|$> <$1|email|$> <$1|from|$> <$1|Sara|$>"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": true,
+     "match": [
+      "open",
+      "to",
+      "do",
+      "dot",
+      "md"
+     ],
+     "replace": "<$1|open|$> <$1|to|$>-<$1|do|$> <$1|dot|$> <$1|md|$>"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": true,
+     "match": [
+      "Find",
+      "the",
+      "grant",
+      "budget",
+      "on",
+      "my",
+      "Mac"
+     ],
+     "replace": "<$1|Find|$> <$1|the|$> <$1|grant|$> <$1|budget|$> <$1|on|$> <$1|my|$> <$1|Mac|$>"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      "search",
+      "my",
+      "finder",
+      "for",
+      "a",
+      "lonely",
+      "plan"
+     ],
+     "replace": "<$1|search|$> <$1|my|$> <$1|finder|$> <$1|for|$> <$1|a|$> <$1|lonely|$> <$1|plan|$>."
+    },
+    {
+     "input": "number two",
+     "test": true,
+     "match": [
+      "number",
+      "two"
+     ],
+     "replace": "<$1|number|$> <$1|two|$>"
+    },
+    {
+     "input": "The Third one",
+     "test": true,
+     "match": [
+      "The",
+      "Third",
+      "one"
+     ],
+     "replace": "<$1|The|$> <$1|Third|$> <$1|one|$>"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      "Users",
+      "x",
+      "Library",
+      "a",
+      "txt",
+      "and",
+      "Users",
+      "x",
+      "git",
+      "b",
+      "and",
+      "A",
+      "Foo",
+      "app",
+      "c",
+      "and",
+      "Users",
+      "x",
+      "docs",
+      "f"
+     ],
+     "replace": "/<$1|Users|$>/<$1|x|$>/<$1|Library|$>/<$1|a|$>.<$1|txt|$> <$1|and|$> /<$1|Users|$>/<$1|x|$>/.<$1|git|$>/<$1|b|$> <$1|and|$> /<$1|A|$>/<$1|Foo|$>.<$1|app|$>/<$1|c|$> <$1|and|$> /<$1|Users|$>/<$1|x|$>/<$1|docs|$>/<$1|f|$>"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": true,
+     "match": [
+      "Open",
+      "it"
+     ],
+     "replace": "  “<$1|Open|$> <$1|it|$>.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": true,
+     "match": [
+      "café",
+      "Ünïcode",
+      "مرحبا",
+      "١٢٣",
+      "x",
+      "y",
+      "z",
+      "9"
+     ],
+     "replace": "<$1|café|$> <$1|Ünïcode|$> <$1|مرحبا|$> <$1|١٢٣|$> <$1|x|$>_<$1|y|$> <$1|z|$>-<$1|9|$>"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "a",
+      "c",
+      "abc",
+      "a",
+      "c",
+      "a",
+      "c"
+     ],
+     "replace": "<$1|a|$>\n<$1|c|$> <$1|abc|$> <$1|a|$> <$1|c|$> <$1|a|$>\r<$1|c|$>"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": true,
+     "match": [
+      "mail",
+      "x",
+      "com",
+      "a",
+      "b",
+      "c",
+      "d",
+      "e"
+     ],
+     "replace": "<$1|mail|$>@<$1|x|$>.<$1|com|$>, <$1|a|$>.<$1|b|$>-<$1|c|$>@<$1|d|$>.<$1|e|$>"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": true,
+     "match": [
+      "xx",
+      "a",
+      "é",
+      "A"
+     ],
+     "replace": "<$1|xx|$> {<$1|a|$>} } <$1|é|$> <$1|A|$>"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": true,
+     "match": [
+      "a",
+      "b"
+     ],
+     "replace": "[<$1|a|$>] & <$1|b|$> ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": true,
+     "match": [
+      "hello",
+      "world",
+      "big",
+      "bob"
+     ],
+     "replace": "<$1|hello|$> <$1|world|$>\n<$1|big|$> <$1|bob|$>"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": true,
+     "match": [
+      "Reading",
+      "my",
+      "file",
+      "name"
+     ],
+     "replace": "<$1|Reading|$>_<$1|my|$>__<$1|file|$>_<$1|name|$>"
+    },
+    {
+     "input": "lazy y",
+     "test": true,
+     "match": [
+      "lazy",
+      "y"
+     ],
+     "replace": "<$1|lazy|$> <$1|y|$>"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "^(?:it|that|this|one|the one|that one|this one|same one|we discussed|one we discussed|document we discussed|file we discussed|the one we discussed)$",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "[?.!]+$",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": true,
+     "match": [
+      "?"
+     ],
+     "replace": "Hey, can you please open the grant budget document for me please<$1|?|$>"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      "."
+     ],
+     "replace": "search my finder for a lonely plan<$1|.|$>"
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\b(?:word|docx?)\\b",
+   "flags": "i",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "word"
+     ],
+     "replace": "Could you read the protocol <$1|word|$> document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "[_]+",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": true,
+     "match": [
+      "_"
+     ],
+     "replace": "café Ünïcode مرحبا ١٢٣ x<$1|_|$>y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": true,
+     "match": [
+      "_",
+      "__",
+      "_"
+     ],
+     "replace": "Reading<$1|_|$>my<$1|__|$>file<$1|_|$>name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "y$",
+   "flags": "",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": true,
+     "match": [
+      "y"
+     ],
+     "replace": "lazy <$1|y|$>"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "a.c",
+   "flags": "",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      "arc"
+     ],
+     "replace": "se<$1|arc|$>h my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "abc"
+     ],
+     "replace": "a\nc <$1|abc|$> a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "a.c",
+   "flags": "s",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      "arc"
+     ],
+     "replace": "se<$1|arc|$>h my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "a\nc"
+     ],
+     "replace": "<$1|a\nc|$> abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "a.c",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      "arc"
+     ],
+     "replace": "se<$1|arc|$>h my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "abc"
+     ],
+     "replace": "a\nc <$1|abc|$> a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "[\\s\\S]+",
+   "flags": "",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": true,
+     "match": [
+      "open my todo.md file"
+     ],
+     "replace": "<$1|open my todo.md file|$>"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": true,
+     "match": [
+      "Hey, can you please open the grant budget document for me please?"
+     ],
+     "replace": "<$1|Hey, can you please open the grant budget document for me please?|$>"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "Could you read the protocol word document"
+     ],
+     "replace": "<$1|Could you read the protocol word document|$>"
+    },
+    {
+     "input": "read the news",
+     "test": true,
+     "match": [
+      "read the news"
+     ],
+     "replace": "<$1|read the news|$>"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": true,
+     "match": [
+      "open the email from Sara"
+     ],
+     "replace": "<$1|open the email from Sara|$>"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": true,
+     "match": [
+      "open to-do dot md"
+     ],
+     "replace": "<$1|open to-do dot md|$>"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": true,
+     "match": [
+      "Find the grant budget on my Mac"
+     ],
+     "replace": "<$1|Find the grant budget on my Mac|$>"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      "search my finder for a lonely plan."
+     ],
+     "replace": "<$1|search my finder for a lonely plan.|$>"
+    },
+    {
+     "input": "number two",
+     "test": true,
+     "match": [
+      "number two"
+     ],
+     "replace": "<$1|number two|$>"
+    },
+    {
+     "input": "The Third one",
+     "test": true,
+     "match": [
+      "The Third one"
+     ],
+     "replace": "<$1|The Third one|$>"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+     ],
+     "replace": "<$1|/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f|$>"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": true,
+     "match": [
+      "  “Open it.”  "
+     ],
+     "replace": "<$1|  “Open it.”  |$>"
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": true,
+     "match": [
+      "café Ünïcode مرحبا ١٢٣ x_y z-9"
+     ],
+     "replace": "<$1|café Ünïcode مرحبا ١٢٣ x_y z-9|$>"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "a\nc abc a c a\rc"
+     ],
+     "replace": "<$1|a\nc abc a c a\rc|$>"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": true,
+     "match": [
+      "mail@x.com, a.b-c@d.e"
+     ],
+     "replace": "<$1|mail@x.com, a.b-c@d.e|$>"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": true,
+     "match": [
+      "xx {a} } é A"
+     ],
+     "replace": "<$1|xx {a} } é A|$>"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": true,
+     "match": [
+      "[a] & b ~"
+     ],
+     "replace": "<$1|[a] & b ~|$>"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": true,
+     "match": [
+      "hello world\nbig bob"
+     ],
+     "replace": "<$1|hello world\nbig bob|$>"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": true,
+     "match": [
+      "Reading_my__file_name"
+     ],
+     "replace": "<$1|Reading_my__file_name|$>"
+    },
+    {
+     "input": "lazy y",
+     "test": true,
+     "match": [
+      "lazy y"
+     ],
+     "replace": "<$1|lazy y|$>"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "[^\\s\\d]+",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": true,
+     "match": [
+      "open",
+      "my",
+      "todo.md",
+      "file"
+     ],
+     "replace": "<$1|open|$> <$1|my|$> <$1|todo.md|$> <$1|file|$>"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": true,
+     "match": [
+      "Hey,",
+      "can",
+      "you",
+      "please",
+      "open",
+      "the",
+      "grant",
+      "budget",
+      "document",
+      "for",
+      "me",
+      "please?"
+     ],
+     "replace": "<$1|Hey,|$> <$1|can|$> <$1|you|$> <$1|please|$> <$1|open|$> <$1|the|$> <$1|grant|$> <$1|budget|$> <$1|document|$> <$1|for|$> <$1|me|$> <$1|please?|$>"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "Could",
+      "you",
+      "read",
+      "the",
+      "protocol",
+      "word",
+      "document"
+     ],
+     "replace": "<$1|Could|$> <$1|you|$> <$1|read|$> <$1|the|$> <$1|protocol|$> <$1|word|$> <$1|document|$>"
+    },
+    {
+     "input": "read the news",
+     "test": true,
+     "match": [
+      "read",
+      "the",
+      "news"
+     ],
+     "replace": "<$1|read|$> <$1|the|$> <$1|news|$>"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": true,
+     "match": [
+      "open",
+      "the",
+      "email",
+      "from",
+      "Sara"
+     ],
+     "replace": "<$1|open|$> <$1|the|$> <$1|email|$> <$1|from|$> <$1|Sara|$>"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": true,
+     "match": [
+      "open",
+      "to-do",
+      "dot",
+      "md"
+     ],
+     "replace": "<$1|open|$> <$1|to-do|$> <$1|dot|$> <$1|md|$>"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": true,
+     "match": [
+      "Find",
+      "the",
+      "grant",
+      "budget",
+      "on",
+      "my",
+      "Mac"
+     ],
+     "replace": "<$1|Find|$> <$1|the|$> <$1|grant|$> <$1|budget|$> <$1|on|$> <$1|my|$> <$1|Mac|$>"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      "search",
+      "my",
+      "finder",
+      "for",
+      "a",
+      "lonely",
+      "plan."
+     ],
+     "replace": "<$1|search|$> <$1|my|$> <$1|finder|$> <$1|for|$> <$1|a|$> <$1|lonely|$> <$1|plan.|$>"
+    },
+    {
+     "input": "number two",
+     "test": true,
+     "match": [
+      "number",
+      "two"
+     ],
+     "replace": "<$1|number|$> <$1|two|$>"
+    },
+    {
+     "input": "The Third one",
+     "test": true,
+     "match": [
+      "The",
+      "Third",
+      "one"
+     ],
+     "replace": "<$1|The|$> <$1|Third|$> <$1|one|$>"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      "/Users/x/Library/a.txt",
+      "and",
+      "/Users/x/.git/b",
+      "and",
+      "/A/Foo.app/c",
+      "and",
+      "/Users/x/docs/f"
+     ],
+     "replace": "<$1|/Users/x/Library/a.txt|$> <$1|and|$> <$1|/Users/x/.git/b|$> <$1|and|$> <$1|/A/Foo.app/c|$> <$1|and|$> <$1|/Users/x/docs/f|$>"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": true,
+     "match": [
+      "“Open",
+      "it.”"
+     ],
+     "replace": "  <$1|“Open|$> <$1|it.”|$>  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": true,
+     "match": [
+      "café",
+      "Ünïcode",
+      "مرحبا",
+      "١٢٣",
+      "x_y",
+      "z-"
+     ],
+     "replace": "<$1|café|$> <$1|Ünïcode|$> <$1|مرحبا|$> <$1|١٢٣|$> <$1|x_y|$> <$1|z-|$>9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "a",
+      "c",
+      "abc",
+      "a",
+      "c",
+      "a",
+      "c"
+     ],
+     "replace": "<$1|a|$>\n<$1|c|$> <$1|abc|$> <$1|a|$> <$1|c|$> <$1|a|$>\r<$1|c|$>"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": true,
+     "match": [
+      "mail@x.com,",
+      "a.b-c@d.e"
+     ],
+     "replace": "<$1|mail@x.com,|$> <$1|a.b-c@d.e|$>"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": true,
+     "match": [
+      "xx",
+      "{a}",
+      "}",
+      "é",
+      "A"
+     ],
+     "replace": "<$1|xx|$> <$1|{a}|$> <$1|}|$> <$1|é|$> <$1|A|$>"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": true,
+     "match": [
+      "[a]",
+      "&",
+      "b",
+      "~"
+     ],
+     "replace": "<$1|[a]|$> <$1|&|$> <$1|b|$> <$1|~|$>"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": true,
+     "match": [
+      "hello",
+      "world",
+      "big",
+      "bob"
+     ],
+     "replace": "<$1|hello|$> <$1|world|$>\n<$1|big|$> <$1|bob|$>"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": true,
+     "match": [
+      "Reading_my__file_name"
+     ],
+     "replace": "<$1|Reading_my__file_name|$>"
+    },
+    {
+     "input": "lazy y",
+     "test": true,
+     "match": [
+      "lazy",
+      "y"
+     ],
+     "replace": "<$1|lazy|$> <$1|y|$>"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "[\\w.-]+@[\\w.-]+",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": true,
+     "match": [
+      "mail@x.com",
+      "a.b-c@d.e"
+     ],
+     "replace": "<$1|mail@x.com|$>, <$1|a.b-c@d.e|$>"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "é|\\x41",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      "A"
+     ],
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /<$1|A|$>/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": true,
+     "match": [
+      "é"
+     ],
+     "replace": "caf<$1|é|$> Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": true,
+     "match": [
+      "é",
+      "A"
+     ],
+     "replace": "xx {a} } <$1|é|$> <$1|A|$>"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "x{2}|{a}|}",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": true,
+     "match": [
+      "xx",
+      "{a}",
+      "}"
+     ],
+     "replace": "<$1|xx|$> <$1|{a}|$> <$1|}|$> é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "[[a]",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": true,
+     "match": [
+      "a",
+      "a",
+      "a",
+      "a"
+     ],
+     "replace": "Hey, c<$1|a|$>n you ple<$1|a|$>se open the gr<$1|a|$>nt budget document for me ple<$1|a|$>se?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "a"
+     ],
+     "replace": "Could you re<$1|a|$>d the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": true,
+     "match": [
+      "a"
+     ],
+     "replace": "re<$1|a|$>d the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": true,
+     "match": [
+      "a",
+      "a",
+      "a"
+     ],
+     "replace": "open the em<$1|a|$>il from S<$1|a|$>r<$1|a|$>"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": true,
+     "match": [
+      "a",
+      "a"
+     ],
+     "replace": "Find the gr<$1|a|$>nt budget on my M<$1|a|$>c"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      "a",
+      "a",
+      "a"
+     ],
+     "replace": "se<$1|a|$>rch my finder for <$1|a|$> lonely pl<$1|a|$>n."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      "a",
+      "a",
+      "a",
+      "a",
+      "a",
+      "a"
+     ],
+     "replace": "/Users/x/Libr<$1|a|$>ry/<$1|a|$>.txt <$1|a|$>nd /Users/x/.git/b <$1|a|$>nd /A/Foo.<$1|a|$>pp/c <$1|a|$>nd /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": true,
+     "match": [
+      "a"
+     ],
+     "replace": "c<$1|a|$>fé Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "a",
+      "a",
+      "a",
+      "a"
+     ],
+     "replace": "<$1|a|$>\nc <$1|a|$>bc <$1|a|$> c <$1|a|$>\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": true,
+     "match": [
+      "a",
+      "a"
+     ],
+     "replace": "m<$1|a|$>il@x.com, <$1|a|$>.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": true,
+     "match": [
+      "a"
+     ],
+     "replace": "xx {<$1|a|$>} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": true,
+     "match": [
+      "[",
+      "a"
+     ],
+     "replace": "<$1|[|$><$1|a|$>] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": true,
+     "match": [
+      "a",
+      "a"
+     ],
+     "replace": "Re<$1|a|$>ding_my__file_n<$1|a|$>me"
+    },
+    {
+     "input": "lazy y",
+     "test": true,
+     "match": [
+      "a"
+     ],
+     "replace": "l<$1|a|$>zy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "[a&&b~]",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": true,
+     "match": [
+      "a",
+      "a",
+      "a",
+      "b",
+      "a"
+     ],
+     "replace": "Hey, c<$1|a|$>n you ple<$1|a|$>se open the gr<$1|a|$>nt <$1|b|$>udget document for me ple<$1|a|$>se?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "a"
+     ],
+     "replace": "Could you re<$1|a|$>d the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": true,
+     "match": [
+      "a"
+     ],
+     "replace": "re<$1|a|$>d the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": true,
+     "match": [
+      "a",
+      "a",
+      "a"
+     ],
+     "replace": "open the em<$1|a|$>il from S<$1|a|$>r<$1|a|$>"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": true,
+     "match": [
+      "a",
+      "b",
+      "a"
+     ],
+     "replace": "Find the gr<$1|a|$>nt <$1|b|$>udget on my M<$1|a|$>c"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      "a",
+      "a",
+      "a"
+     ],
+     "replace": "se<$1|a|$>rch my finder for <$1|a|$> lonely pl<$1|a|$>n."
+    },
+    {
+     "input": "number two",
+     "test": true,
+     "match": [
+      "b"
+     ],
+     "replace": "num<$1|b|$>er two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      "b",
+      "a",
+      "a",
+      "a",
+      "b",
+      "a",
+      "a",
+      "a"
+     ],
+     "replace": "/Users/x/Li<$1|b|$>r<$1|a|$>ry/<$1|a|$>.txt <$1|a|$>nd /Users/x/.git/<$1|b|$> <$1|a|$>nd /A/Foo.<$1|a|$>pp/c <$1|a|$>nd /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": true,
+     "match": [
+      "a"
+     ],
+     "replace": "c<$1|a|$>fé Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "a",
+      "a",
+      "b",
+      "a",
+      "a"
+     ],
+     "replace": "<$1|a|$>\nc <$1|a|$><$1|b|$>c <$1|a|$> c <$1|a|$>\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": true,
+     "match": [
+      "a",
+      "a",
+      "b"
+     ],
+     "replace": "m<$1|a|$>il@x.com, <$1|a|$>.<$1|b|$>-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": true,
+     "match": [
+      "a"
+     ],
+     "replace": "xx {<$1|a|$>} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": true,
+     "match": [
+      "a",
+      "&",
+      "b",
+      "~"
+     ],
+     "replace": "[<$1|a|$>] <$1|&|$> <$1|b|$> <$1|~|$>"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": true,
+     "match": [
+      "b",
+      "b",
+      "b"
+     ],
+     "replace": "hello world\n<$1|b|$>ig <$1|b|$>o<$1|b|$>"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": true,
+     "match": [
+      "a",
+      "a"
+     ],
+     "replace": "Re<$1|a|$>ding_my__file_n<$1|a|$>me"
+    },
+    {
+     "input": "lazy y",
+     "test": true,
+     "match": [
+      "a"
+     ],
+     "replace": "l<$1|a|$>zy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "(?<word>\\w+) (\\w+)",
+   "flags": "",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": true,
+     "match": [
+      "open my",
+      "open",
+      "my"
+     ],
+     "replace": "<open|open my|$> todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": true,
+     "match": [
+      "can you",
+      "can",
+      "you"
+     ],
+     "replace": "Hey, <can|can you|$> please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": true,
+     "match": [
+      "Could you",
+      "Could",
+      "you"
+     ],
+     "replace": "<Could|Could you|$> read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": true,
+     "match": [
+      "read the",
+      "read",
+      "the"
+     ],
+     "replace": "<read|read the|$> news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": true,
+     "match": [
+      "open the",
+      "open",
+      "the"
+     ],
+     "replace": "<open|open the|$> email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": true,
+     "match": [
+      "open to",
+      "open",
+      "to"
+     ],
+     "replace": "<open|open to|$>-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": true,
+     "match": [
+      "Find the",
+      "Find",
+      "the"
+     ],
+     "replace": "<Find|Find the|$> grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": true,
+     "match": [
+      "search my",
+      "search",
+      "my"
+     ],
+     "replace": "<search|search my|$> finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": true,
+     "match": [
+      "number two",
+      "number",
+      "two"
+     ],
+     "replace": "<number|number two|$>"
+    },
+    {
+     "input": "The Third one",
+     "test": true,
+     "match": [
+      "The Third",
+      "The",
+      "Third"
+     ],
+     "replace": "<The|The Third|$> one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      "txt and",
+      "txt",
+      "and"
+     ],
+     "replace": "/Users/x/Library/a.<txt|txt and|$> /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": true,
+     "match": [
+      "Open it",
+      "Open",
+      "it"
+     ],
+     "replace": "  “<Open|Open it|$>.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": true,
+     "match": [
+      "x_y z",
+      "x_y",
+      "z"
+     ],
+     "replace": "café Ünïcode مرحبا ١٢٣ <x_y|x_y z|$>-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "c abc",
+      "c",
+      "abc"
+     ],
+     "replace": "a\n<c|c abc|$> a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": true,
+     "match": [
+      "hello world",
+      "hello",
+      "world"
+     ],
+     "replace": "<hello|hello world|$>\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": true,
+     "match": [
+      "lazy y",
+      "lazy",
+      "y"
+     ],
+     "replace": "<lazy|lazy y|$>"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "^b",
+   "flags": "m",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": false,
+     "match": null,
+     "replace": "number two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": false,
+     "match": null,
+     "replace": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": false,
+     "match": null,
+     "replace": "a\nc abc a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": true,
+     "match": [
+      "b"
+     ],
+     "replace": "hello world\n<$1|b|$>ig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  },
+  {
+   "src": "\\Bb\\B",
+   "flags": "g",
+   "results": [
+    {
+     "input": "open my todo.md file",
+     "test": false,
+     "match": null,
+     "replace": "open my todo.md file"
+    },
+    {
+     "input": "Hey, can you please open the grant budget document for me please?",
+     "test": false,
+     "match": null,
+     "replace": "Hey, can you please open the grant budget document for me please?"
+    },
+    {
+     "input": "Could you read the protocol word document",
+     "test": false,
+     "match": null,
+     "replace": "Could you read the protocol word document"
+    },
+    {
+     "input": "read the news",
+     "test": false,
+     "match": null,
+     "replace": "read the news"
+    },
+    {
+     "input": "open the email from Sara",
+     "test": false,
+     "match": null,
+     "replace": "open the email from Sara"
+    },
+    {
+     "input": "open to-do dot md",
+     "test": false,
+     "match": null,
+     "replace": "open to-do dot md"
+    },
+    {
+     "input": "Find the grant budget on my Mac",
+     "test": false,
+     "match": null,
+     "replace": "Find the grant budget on my Mac"
+    },
+    {
+     "input": "search my finder for a lonely plan.",
+     "test": false,
+     "match": null,
+     "replace": "search my finder for a lonely plan."
+    },
+    {
+     "input": "number two",
+     "test": true,
+     "match": [
+      "b"
+     ],
+     "replace": "num<$1|b|$>er two"
+    },
+    {
+     "input": "The Third one",
+     "test": false,
+     "match": null,
+     "replace": "The Third one"
+    },
+    {
+     "input": "/Users/x/Library/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f",
+     "test": true,
+     "match": [
+      "b"
+     ],
+     "replace": "/Users/x/Li<$1|b|$>rary/a.txt and /Users/x/.git/b and /A/Foo.app/c and /Users/x/docs/f"
+    },
+    {
+     "input": "  “Open it.”  ",
+     "test": false,
+     "match": null,
+     "replace": "  “Open it.”  "
+    },
+    {
+     "input": "café Ünïcode مرحبا ١٢٣ x_y z-9",
+     "test": false,
+     "match": null,
+     "replace": "café Ünïcode مرحبا ١٢٣ x_y z-9"
+    },
+    {
+     "input": "a\nc abc a c a\rc",
+     "test": true,
+     "match": [
+      "b"
+     ],
+     "replace": "a\nc a<$1|b|$>c a c a\rc"
+    },
+    {
+     "input": "mail@x.com, a.b-c@d.e",
+     "test": false,
+     "match": null,
+     "replace": "mail@x.com, a.b-c@d.e"
+    },
+    {
+     "input": "xx {a} } é A",
+     "test": false,
+     "match": null,
+     "replace": "xx {a} } é A"
+    },
+    {
+     "input": "[a] & b ~",
+     "test": false,
+     "match": null,
+     "replace": "[a] & b ~"
+    },
+    {
+     "input": "hello world\nbig bob",
+     "test": false,
+     "match": null,
+     "replace": "hello world\nbig bob"
+    },
+    {
+     "input": "Reading_my__file_name",
+     "test": false,
+     "match": null,
+     "replace": "Reading_my__file_name"
+    },
+    {
+     "input": "lazy y",
+     "test": false,
+     "match": null,
+     "replace": "lazy y"
+    },
+    {
+     "input": "",
+     "test": false,
+     "match": null,
+     "replace": ""
+    }
+   ]
+  }
+ ],
+ "paths": [
+  {
+   "p": ".bashrc",
+   "extname": "",
+   "dirname": ".",
+   "basename": ".bashrc",
+   "basenameExt": ".bashrc",
+   "normalize": ".bashrc",
+   "join": "/root/notes/.bashrc",
+   "resolve": "/root/notes/.bashrc",
+   "relative": null
+  },
+  {
+   "p": "..",
+   "extname": "",
+   "dirname": ".",
+   "basename": "..",
+   "basenameExt": "..",
+   "normalize": "..",
+   "join": "/root",
+   "resolve": "/root",
+   "relative": null
+  },
+  {
+   "p": "...",
+   "extname": ".",
+   "dirname": ".",
+   "basename": "...",
+   "basenameExt": "..",
+   "normalize": "...",
+   "join": "/root/notes/...",
+   "resolve": "/root/notes/...",
+   "relative": null
+  },
+  {
+   "p": "..a",
+   "extname": ".a",
+   "dirname": ".",
+   "basename": "..a",
+   "basenameExt": ".",
+   "normalize": "..a",
+   "join": "/root/notes/..a",
+   "resolve": "/root/notes/..a",
+   "relative": null
+  },
+  {
+   "p": "a.",
+   "extname": ".",
+   "dirname": ".",
+   "basename": "a.",
+   "basenameExt": "a",
+   "normalize": "a.",
+   "join": "/root/notes/a.",
+   "resolve": "/root/notes/a.",
+   "relative": null
+  },
+  {
+   "p": "a.b.c",
+   "extname": ".c",
+   "dirname": ".",
+   "basename": "a.b.c",
+   "basenameExt": "a.b",
+   "normalize": "a.b.c",
+   "join": "/root/notes/a.b.c",
+   "resolve": "/root/notes/a.b.c",
+   "relative": null
+  },
+  {
+   "p": ".a.b",
+   "extname": ".b",
+   "dirname": ".",
+   "basename": ".a.b",
+   "basenameExt": ".a",
+   "normalize": ".a.b",
+   "join": "/root/notes/.a.b",
+   "resolve": "/root/notes/.a.b",
+   "relative": null
+  },
+  {
+   "p": "dir/.x",
+   "extname": "",
+   "dirname": "dir",
+   "basename": ".x",
+   "basenameExt": ".x",
+   "normalize": "dir/.x",
+   "join": "/root/notes/dir/.x",
+   "resolve": "/root/notes/dir/.x",
+   "relative": null
+  },
+  {
+   "p": "dir/a.b/",
+   "extname": ".b",
+   "dirname": "dir",
+   "basename": "a.b",
+   "basenameExt": "a",
+   "normalize": "dir/a.b/",
+   "join": "/root/notes/dir/a.b/",
+   "resolve": "/root/notes/dir/a.b",
+   "relative": null
+  },
+  {
+   "p": "a",
+   "extname": "",
+   "dirname": ".",
+   "basename": "a",
+   "basenameExt": "a",
+   "normalize": "a",
+   "join": "/root/notes/a",
+   "resolve": "/root/notes/a",
+   "relative": null
+  },
+  {
+   "p": "/",
+   "extname": "",
+   "dirname": "/",
+   "basename": "",
+   "basenameExt": "",
+   "normalize": "/",
+   "join": "/root/notes/",
+   "resolve": "/",
+   "relative": "../.."
+  },
+  {
+   "p": "",
+   "extname": "",
+   "dirname": ".",
+   "basename": "",
+   "basenameExt": "",
+   "normalize": ".",
+   "join": "/root/notes",
+   "resolve": "/root/notes",
+   "relative": null
+  },
+  {
+   "p": "x/",
+   "extname": "",
+   "dirname": ".",
+   "basename": "x",
+   "basenameExt": "x",
+   "normalize": "x/",
+   "join": "/root/notes/x/",
+   "resolve": "/root/notes/x",
+   "relative": null
+  },
+  {
+   "p": "/a",
+   "extname": "",
+   "dirname": "/",
+   "basename": "a",
+   "basenameExt": "a",
+   "normalize": "/a",
+   "join": "/root/notes/a",
+   "resolve": "/a",
+   "relative": "../../a"
+  },
+  {
+   "p": "/Users/me/notes/wiki/todo.md",
+   "extname": ".md",
+   "dirname": "/Users/me/notes/wiki",
+   "basename": "todo.md",
+   "basenameExt": "todo",
+   "normalize": "/Users/me/notes/wiki/todo.md",
+   "join": "/root/notes/Users/me/notes/wiki/todo.md",
+   "resolve": "/Users/me/notes/wiki/todo.md",
+   "relative": "../../Users/me/notes/wiki/todo.md"
+  },
+  {
+   "p": "notes//sub/../x.docx",
+   "extname": ".docx",
+   "dirname": "notes//sub/..",
+   "basename": "x.docx",
+   "basenameExt": "x",
+   "normalize": "notes/x.docx",
+   "join": "/root/notes/notes/x.docx",
+   "resolve": "/root/notes/notes/x.docx",
+   "relative": null
+  },
+  {
+   "p": "./a/./b/",
+   "extname": "",
+   "dirname": "./a/.",
+   "basename": "b",
+   "basenameExt": "b",
+   "normalize": "a/b/",
+   "join": "/root/notes/a/b/",
+   "resolve": "/root/notes/a/b",
+   "relative": null
+  },
+  {
+   "p": "/../a",
+   "extname": "",
+   "dirname": "/..",
+   "basename": "a",
+   "basenameExt": "a",
+   "normalize": "/a",
+   "join": "/root/a",
+   "resolve": "/a",
+   "relative": "../../a"
+  },
+  {
+   "p": "../../a/b",
+   "extname": "",
+   "dirname": "../../a",
+   "basename": "b",
+   "basenameExt": "b",
+   "normalize": "../../a/b",
+   "join": "/a/b",
+   "resolve": "/a/b",
+   "relative": null
+  },
+  {
+   "p": "/root/notes",
+   "extname": "",
+   "dirname": "/root",
+   "basename": "notes",
+   "basenameExt": "notes",
+   "normalize": "/root/notes",
+   "join": "/root/notes/root/notes",
+   "resolve": "/root/notes",
+   "relative": ""
+  },
+  {
+   "p": "/root/notes/a/b.pdf",
+   "extname": ".pdf",
+   "dirname": "/root/notes/a",
+   "basename": "b.pdf",
+   "basenameExt": "b",
+   "normalize": "/root/notes/a/b.pdf",
+   "join": "/root/notes/root/notes/a/b.pdf",
+   "resolve": "/root/notes/a/b.pdf",
+   "relative": "a/b.pdf"
+  },
+  {
+   "p": "/root/notesx/y",
+   "extname": "",
+   "dirname": "/root/notesx",
+   "basename": "y",
+   "basenameExt": "y",
+   "normalize": "/root/notesx/y",
+   "join": "/root/notes/root/notesx/y",
+   "resolve": "/root/notesx/y",
+   "relative": "../notesx/y"
+  },
+  {
+   "p": "/root",
+   "extname": "",
+   "dirname": "/",
+   "basename": "root",
+   "basenameExt": "root",
+   "normalize": "/root",
+   "join": "/root/notes/root",
+   "resolve": "/root",
+   "relative": ".."
+  },
+  {
+   "p": "/other/z",
+   "extname": "",
+   "dirname": "/other",
+   "basename": "z",
+   "basenameExt": "z",
+   "normalize": "/other/z",
+   "join": "/root/notes/other/z",
+   "resolve": "/other/z",
+   "relative": "../../other/z"
+  }
+ ],
+ "slices": [
+  {
+   "s": "abcdefg",
+   "len": 7,
+   "head4": "abcd"
+  },
+  {
+   "s": "ab😀cd",
+   "len": 6,
+   "head4": "ab😀"
+  },
+  {
+   "s": "مرحبا بالعالم",
+   "len": 13,
+   "head4": "مرحب"
+  },
+  {
+   "s": "x",
+   "len": 1,
+   "head4": "x"
+  }
+ ]
+}

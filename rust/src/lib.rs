@@ -1,4 +1,9 @@
+pub mod desk;
+pub mod docs;
+pub mod emailsearch;
 pub mod embed;
 pub mod js;
+pub mod learnings;
 pub mod medgem;
+pub mod openfile;
 pub mod pricing;

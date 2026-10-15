@@ -1,0 +1,390 @@
+{
+ "parses": [
+  {
+   "q": "What have you learned about me?",
+   "out": {
+    "kind": "list"
+   }
+  },
+  {
+   "q": "what do you remember",
+   "out": {
+    "kind": "list"
+   }
+  },
+  {
+   "q": "show me my memories",
+   "out": {
+    "kind": "list"
+   }
+  },
+  {
+   "q": "Read the learnings.",
+   "out": {
+    "kind": "list"
+   }
+  },
+  {
+   "q": "Forget that Dr Khaled leads the AML protocol.",
+   "out": {
+    "kind": "forget",
+    "text": "Dr Khaled leads the AML protocol"
+   }
+  },
+  {
+   "q": "please unlearn about lazy answers",
+   "out": {
+    "kind": "forget",
+    "text": "lazy answers"
+   }
+  },
+  {
+   "q": "stop remembering the coffee thing",
+   "out": {
+    "kind": "forget",
+    "text": "the coffee thing"
+   }
+  },
+  {
+   "q": "Learn that Dr Khaled leads the AML protocol!",
+   "out": {
+    "kind": "add",
+    "text": "Dr Khaled leads the AML protocol"
+   }
+  },
+  {
+   "q": "keep in mind the tumor board is on Tuesdays",
+   "out": {
+    "kind": "add",
+    "text": "the tumor board is on Tuesdays"
+   }
+  },
+  {
+   "q": "From now on, keep answers short",
+   "out": {
+    "kind": "add",
+    "text": "keep answers short"
+   }
+  },
+  {
+   "q": "Remember: do not be lazy",
+   "out": {
+    "kind": "add",
+    "text": "do not be lazy"
+   }
+  },
+  {
+   "q": "remember to always cite the note",
+   "out": {
+    "kind": "add",
+    "text": "always cite the note"
+   }
+  },
+  {
+   "q": "remember that Sara owes me slides",
+   "out": null
+  },
+  {
+   "q": "hello",
+   "out": null
+  },
+  {
+   "q": "",
+   "out": null
+  }
+ ],
+ "steps": [
+  {
+   "step": [
+    "block"
+   ],
+   "out": "",
+   "file": null
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "list"
+    }
+   ],
+   "out": "",
+   "file": null
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "forget",
+     "text": "anything"
+    }
+   ],
+   "out": null,
+   "file": null
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "add",
+     "text": "dr Khaled leads the AML protocol"
+    }
+   ],
+   "out": "Got it. I will keep in mind: Dr Khaled leads the AML protocol",
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Dr Khaled leads the AML protocol\n"
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "add",
+     "text": "keep answers under three sentences."
+    }
+   ],
+   "out": "Got it. I will keep in mind: Keep answers under three sentences.",
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Dr Khaled leads the AML protocol\n- Keep answers under three sentences.\n"
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "add",
+     "text": "DR KHALED LEADS THE AML PROTOCOL"
+    }
+   ],
+   "out": "Got it. I will keep in mind: DR KHALED LEADS THE AML PROTOCOL",
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- DR KHALED LEADS THE AML PROTOCOL\n"
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "add",
+     "text": "when I ask you to go to inotes, open https://inotes.example.org/home."
+    }
+   ],
+   "out": "Got it. I will keep in mind: When I ask you to go to inotes, open https://inotes.example.org/home.",
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- DR KHALED LEADS THE AML PROTOCOL\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n"
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "add",
+     "text": "go to the portal and https://portal.example.com"
+    }
+   ],
+   "out": "Got it. I will keep in mind: Go to the portal and https://portal.example.com",
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- DR KHALED LEADS THE AML PROTOCOL\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n"
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "add",
+     "text": "If I say go to lab results then open https://lab.example.com/r?x=1), thanks"
+    }
+   ],
+   "out": "Got it. I will keep in mind: If I say go to lab results then open https://lab.example.com/r?x=1), thanks",
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- DR KHALED LEADS THE AML PROTOCOL\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "add",
+     "text": "ß and émile like laziness"
+    }
+   ],
+   "out": "Got it. I will keep in mind: SS and émile like laziness",
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- DR KHALED LEADS THE AML PROTOCOL\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n- SS and émile like laziness\n"
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "list"
+    }
+   ],
+   "out": "I keep 6 things in mind. Keep answers under three sentences. DR KHALED LEADS THE AML PROTOCOL. When I ask you to go to inotes, open https://inotes.example.org/home. Go to the portal and https://portal.example.com. If I say go to lab results then open https://lab.example.com/r?x=1), thanks. SS and émile like laziness.",
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- DR KHALED LEADS THE AML PROTOCOL\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n- SS and émile like laziness\n"
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "forget",
+     "text": "the lazy thing"
+    }
+   ],
+   "out": "Done. I forgot: SS and émile like laziness",
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- DR KHALED LEADS THE AML PROTOCOL\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "forget",
+     "text": "zebra crossing"
+    }
+   ],
+   "out": null,
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- DR KHALED LEADS THE AML PROTOCOL\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "run",
+    {
+     "kind": "forget",
+     "text": "khaled protocol"
+    }
+   ],
+   "out": "Done. I forgot: DR KHALED LEADS THE AML PROTOCOL",
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "block"
+   ],
+   "out": "Things the user asked you to always keep in mind:\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n- Go to the portal and https://portal.example.com\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Keep answers under three sentences.",
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "site",
+    "go to inotes"
+   ],
+   "out": {
+    "name": "inotes",
+    "url": "https://inotes.example.org/home"
+   },
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "site",
+    "Open ions."
+   ],
+   "out": {
+    "name": "inotes",
+    "url": "https://inotes.example.org/home"
+   },
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "site",
+    "please take me to the lab results page"
+   ],
+   "out": {
+    "name": "lab results",
+    "url": "https://lab.example.com/r?x=1"
+   },
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "site",
+    "open the portal"
+   ],
+   "out": null,
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "site",
+    "go to iNotes now"
+   ],
+   "out": {
+    "name": "inotes",
+    "url": "https://inotes.example.org/home"
+   },
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "site",
+    "open inotes.example.org"
+   ],
+   "out": null,
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "site",
+    "go to"
+   ],
+   "out": null,
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "site",
+    "launch the site eyenotes"
+   ],
+   "out": {
+    "name": "inotes",
+    "url": "https://inotes.example.org/home"
+   },
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "site",
+    "go to lab"
+   ],
+   "out": null,
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "closest",
+    "lazy meetings",
+    [
+     "meeting notes",
+     "be lazy about meetings",
+     "nothing"
+    ]
+   ],
+   "out": 1,
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "closest",
+    "the one about",
+    [
+     "a",
+     "b"
+    ]
+   ],
+   "out": -1,
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "closest",
+    "budget review",
+    [
+     "budget",
+     "review"
+    ]
+   ],
+   "out": 0,
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  },
+  {
+   "step": [
+    "closest",
+    "x",
+    []
+   ],
+   "out": -1,
+   "file": "# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n- Keep answers under three sentences.\n- When I ask you to go to inotes, open https://inotes.example.org/home.\n- Go to the portal and https://portal.example.com\n- If I say go to lab results then open https://lab.example.com/r?x=1), thanks\n"
+  }
+ ],
+ "big": {
+  "file": "# Learnings\n\n- Fact 0 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 1 xxxxxxxxxx\n- Fact 2 xxxxxxxxxx\n- Fact 3 xxxxxxxxxx\n- Fact 4 xxxxxxxxxx\n- Fact 5 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 6 xxxxxxxxxx\n- Fact 7 xxxxxxxxxx\n- Fact 8 xxxxxxxxxx\n- Fact 9 xxxxxxxxxx\n- Fact 10 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 11 xxxxxxxxxx\n- Fact 12 xxxxxxxxxx\n- Fact 13 xxxxxxxxxx\n- Fact 14 xxxxxxxxxx\n- Fact 15 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 16 xxxxxxxxxx\n- Fact 17 xxxxxxxxxx\n- Fact 18 xxxxxxxxxx\n- Fact 19 xxxxxxxxxx\n- Fact 20 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 21 xxxxxxxxxx\n- Fact 22 xxxxxxxxxx\n- Fact 23 xxxxxxxxxx\n- Fact 24 xxxxxxxxxx\n- Fact 25 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 26 xxxxxxxxxx\n- Fact 27 xxxxxxxxxx\n- Fact 28 xxxxxxxxxx\n- Fact 29 xxxxxxxxxx\n- Fact 30 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 31 xxxxxxxxxx\n- Fact 32 xxxxxxxxxx\n- Fact 33 xxxxxxxxxx\n- Fact 34 xxxxxxxxxx\n- Fact 35 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 36 xxxxxxxxxx\n- Fact 37 xxxxxxxxxx\n- Fact 38 xxxxxxxxxx\n- Fact 39 xxxxxxxxxx\n- Fact 40 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 41 xxxxxxxxxx\n- Fact 42 xxxxxxxxxx\n- Fact 43 xxxxxxxxxx\n- Fact 44 xxxxxxxxxx\n  - not a line\n-no space\n",
+  "block": "Things the user asked you to always keep in mind:\n- Fact 44 xxxxxxxxxx\n- Fact 43 xxxxxxxxxx\n- Fact 42 xxxxxxxxxx\n- Fact 41 xxxxxxxxxx\n- Fact 40 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 39 xxxxxxxxxx\n- Fact 38 xxxxxxxxxx\n- Fact 37 xxxxxxxxxx\n- Fact 36 xxxxxxxxxx\n- Fact 35 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 34 xxxxxxxxxx\n- Fact 33 xxxxxxxxxx\n- Fact 32 xxxxxxxxxx\n- Fact 31 xxxxxxxxxx\n- Fact 30 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 29 xxxxxxxxxx\n- Fact 28 xxxxxxxxxx\n- Fact 27 xxxxxxxxxx\n- Fact 26 xxxxxxxxxx\n- Fact 25 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 24 xxxxxxxxxx\n- Fact 23 xxxxxxxxxx\n- Fact 22 xxxxxxxxxx\n- Fact 21 xxxxxxxxxx\n- Fact 20 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 19 xxxxxxxxxx\n- Fact 18 xxxxxxxxxx\n- Fact 17 xxxxxxxxxx\n- Fact 16 xxxxxxxxxx\n- Fact 15 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- Fact 14 xxxxxxxxxx\n- Fact 13 xxxxxxxxxx\n- Fact 12 xxxxxxxxxx\n- Fact 11 xxxxxxxxxx"
+ }
+}

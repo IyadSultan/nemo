@@ -175,28 +175,6 @@ pub fn strip_obvious_ids(text: &str) -> String {
     js::trim(&t).to_string()
 }
 
-/// JS truthiness, for model output that ignored the schema.
-fn truthy(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
-        Value::String(s) => !s.is_empty(),
-        _ => true,
-    }
-}
-
-/// JS `String(v || "")` for the values a model can return.
-fn js_string(v: &Value) -> String {
-    match v {
-        _ if !truthy(v) => String::new(),
-        Value::String(s) => s.clone(),
-        Value::Object(_) => "[object Object]".into(),
-        Value::Array(a) => a.iter().map(|x| if x.is_null() { String::new() } else { js_string(x) }).collect::<Vec<_>>().join(","),
-        other => other.to_string(),
-    }
-}
-
 static TWO_CAPITALIZED: LazyLock<Regex> = LazyLock::new(|| re(r"{B}[A-Z][a-z]+[{S}]+[A-Z][a-z]+{B}"));
 static WRAPPING_QUOTE: LazyLock<Regex> = LazyLock::new(|| re(r#"^["']|["']$"#));
 
@@ -263,7 +241,7 @@ impl Medgem {
             return Ok(sentence);
         }
         let data: Value = response.json().await.map_err(|e| e.to_string())?;
-        let visible = visible_text(&js_string(&data["response"]));
+        let visible = visible_text(&js::to_str(&data["response"]));
         let rewritten = strip_obvious_ids(&WRAPPING_QUOTE.replace_all(&visible, ""));
         Ok(if rewritten.is_empty() { sentence } else { rewritten })
     }
@@ -300,15 +278,15 @@ impl Medgem {
             return Err(format!("Ollama returned {}", response.status().as_u16()));
         }
         let data: Value = response.json().await.map_err(|e| e.to_string())?;
-        let parsed = parse_cleaned(&js_string(&data["response"]))?;
-        let medical = truthy(&parsed["medical"]);
-        let mut english = if medical { strip_obvious_ids(&js_string(&parsed["english"])) } else { String::new() };
+        let parsed = parse_cleaned(&js::to_str(&data["response"]))?;
+        let medical = js::truthy(&parsed["medical"]);
+        let mut english = if medical { strip_obvious_ids(&js::to_str(&parsed["english"])) } else { String::new() };
         if !english.is_empty() {
             english = self.drop_names(english).await?;
         }
         // Hey, or a clear lookup, is a question even when the model leaves for_brain blank.
         let mut question = if medical {
-            question_for_brain(text, &english, &strip_obvious_ids(&js_string(&parsed["for_brain"])))
+            question_for_brain(text, &english, &strip_obvious_ids(&js::to_str(&parsed["for_brain"])))
         } else {
             String::new()
         };
@@ -318,7 +296,7 @@ impl Medgem {
         let ms = started.elapsed().as_millis() as u64;
         let tokens = match &data["eval_count"] {
             Value::Null => "?".to_string(),
-            v => js_string(v),
+            v => js::to_str(v),
         };
         // Never log the transcript. It can name a patient.
         println!(
