@@ -17,6 +17,7 @@
 //! Lengths and cuts count UTF-16 units, like JS strings, so pieces and their
 //! hashes match the Node version exactly.
 
+use crate::js;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -65,15 +66,13 @@ pub trait NoteText {
     fn text(&self) -> &str;
 }
 
-/// JS `\s` / `trim()` whitespace (differs from Rust: adds U+FEFF, drops U+0085).
+/// JS whitespace, per UTF-16 unit (every JS space is a single unit).
 fn is_js_space(u: u16) -> bool {
-    matches!(u, 0x09..=0x0D | 0x20 | 0xA0 | 0x1680 | 0x2000..=0x200A | 0x2028 | 0x2029 | 0x202F | 0x205F | 0x3000 | 0xFEFF)
+    char::from_u32(u as u32).is_some_and(js::is_js_space)
 }
 
 /// JS `/\n\s*\n/`.
-static PARA_BREAK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\n[\t\n\x0B\x0C\r \xA0\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]*\n").unwrap()
-});
+static PARA_BREAK: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"\n[{}]*\n", js::JS_SPACE)).unwrap());
 
 fn utf16(s: &str) -> Vec<u16> {
     s.encode_utf16().collect()

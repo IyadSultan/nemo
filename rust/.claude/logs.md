@@ -11,3 +11,8 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-15 15:07 — rust
 
 **Prompt:** next
+**Response:** All 25 tests pass. Next, a quick check that the parity test actually catches mistakes: I'll swap in plain Rust case-insensitive matching for emails and expect a failure.
+
+## 2026-10-15 15:20 — rust
+
+**Prompt:** commit

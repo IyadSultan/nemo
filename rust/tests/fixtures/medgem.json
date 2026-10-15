@@ -1,0 +1,563 @@
+{
+ "helpers": {
+  "prompt": "You clean a doctor's speech transcript. You do not answer, and you do not give medical advice.\nReturn only the JSON object.\nmedical is true only when the words include clinical content: symptoms, exam, diagnosis, medicines, labs, imaging, treatment, or a medical question.\nmedical is false for greetings, weather, jokes, and other non-medical talk. Then english and for_brain are empty.\nenglish is the medical part only, written in English. Drop every non-medical word. If the words are already English, still rewrite them.\nRemove identifiers from english and from for_brain: people's names, medical record numbers, file numbers, phone numbers, email addresses, street addresses, national ID numbers, exact dates of birth, and room or bed numbers.\nKeep age, sex, and the clinical facts. Keep relative time such as yesterday or for three days.\nfor_brain is the speaker's question for the notes assistant, copied into English, with identifiers removed. It is not an answer.\nWhen the speaker says Hey and then asks something, for_brain must be that question. It must not be empty.\nAlso set for_brain when they ask for a protocol, a prior note, a lookup, or a dose from the records.\nA question spoken to a patient, a nurse, or a colleague is dictation. Leave for_brain empty for that.\nPure dictation, an order, or narration leaves for_brain empty.\nDo not invent a question from plain dictation. Do not write medical advice in english or in for_brain.\nWhen you set for_brain, write the question so it can be answered on its own, using the clinical facts but no identifiers.\n\nHeard: Hello, nice weather today. The child has had fever for three days and a cough.\n{\"medical\":true,\"english\":\"The child has had fever for three days and a cough.\",\"for_brain\":\"\"}\n\nHeard: Patient Sara Haddad, file number 445566, phone 0791112233, has neutropenia after chemotherapy.\n{\"medical\":true,\"english\":\"The patient has neutropenia after chemotherapy.\",\"for_brain\":\"\"}\n\nHeard: Patient Omar Nasser, born 2 February 2014, in room 12, has a fever.\n{\"medical\":true,\"english\":\"The patient has a fever.\",\"for_brain\":\"\"}\n\nHeard: عند الطفل حرارة من يومين ونقص عدلات\n{\"medical\":true,\"english\":\"The child has had fever for two days and neutropenia.\",\"for_brain\":\"\"}\n\nHeard: Give ceftriaxone 50 mg per kg. Did you already give the morning dose?\n{\"medical\":true,\"english\":\"Ceftriaxone 50 mg per kg was ordered. Someone was asked whether the morning dose was already given.\",\"for_brain\":\"\"}\n\nHeard: Let's get coffee after the meeting.\n{\"medical\":false,\"english\":\"\",\"for_brain\":\"\"}\n\nHeard: Hey, what is our protocol for febrile neutropenia?\n{\"medical\":true,\"english\":\"What is our protocol for febrile neutropenia?\",\"for_brain\":\"What is our protocol for febrile neutropenia?\"}\n\nHeard: I need our note on vancomycin dosing.\n{\"medical\":true,\"english\":\"A note on vancomycin dosing was requested.\",\"for_brain\":\"What is our note on vancomycin dosing?\"}\n\nHeard: Patient has fever.",
+  "strip": [
+   [
+    "Email sara.h@khcc.jo or SARA@EXAMPLE.ORG now",
+    "Email or now"
+   ],
+   [
+    "call 0791112233 or +962 (79) 111-2233.",
+    "call or +."
+   ],
+   [
+    "short 12345 stays, 1234567 goes",
+    "short 12345 stays, 1234567 goes"
+   ],
+   [
+    "MRN: AB-1234 and mrn#99887 and File Number 445566 and national id 9981234567 and ID number X12",
+    "and and and"
+   ],
+   [
+    "national number: 1234 stays label-less? mrn 12 too short",
+    "stays label-less? mrn 12 too short"
+   ],
+   [
+    "seen 2/2/2014 and 12-31-99 and 1/1/1 stays",
+    "seen and and 1/1/1 stays"
+   ],
+   [
+    "born March 3, 2014; DOB: Feb 2 2014; date of birth sept 9, 2001; Sep 10 1999",
+    "; ; ;"
+   ],
+   [
+    "may 5, 2020 and mayday 5, 2020",
+    "and mayday 5, 2020"
+   ],
+   [
+    "Born, the child.  Two  spaces , and comma .",
+    "the child. Two spaces, and comma."
+   ],
+   [
+    "  padded  text ﻿",
+    "padded text"
+   ],
+   [
+    "ſep 3, 2020 and Kelvin@x.com",
+    "ſep 3, 2020 and K"
+   ],
+   [
+    "Arabic digits ٠٧٩١١١٢٢٣٣ stay",
+    "Arabic digits ٠٧٩١١١٢٢٣٣ stay"
+   ],
+   [
+    "",
+    ""
+   ]
+  ],
+  "questions": [
+   {
+    "raw": "Hey what is the dose",
+    "english": "What is the dose",
+    "fromModel": "",
+    "result": "What is the dose"
+   },
+   {
+    "raw": "hey my brain, find it",
+    "english": "Hey my brain, can you find our note on X?",
+    "fromModel": "",
+    "result": "can you find our note on X?"
+   },
+   {
+    "raw": "  هاي شو",
+    "english": "هاي، what is our protocol?",
+    "fromModel": "",
+    "result": "what is our protocol?"
+   },
+   {
+    "raw": "يا دماغي",
+    "english": "يا  دماغي - our protocol for fever",
+    "fromModel": "",
+    "result": "our protocol for fever"
+   },
+   {
+    "raw": "the dose",
+    "english": "Can you find our note on dosing?",
+    "fromModel": "",
+    "result": "Can you find our note on dosing?"
+   },
+   {
+    "raw": "the dose",
+    "english": "Did you give it?",
+    "fromModel": "",
+    "result": ""
+   },
+   {
+    "raw": "the dose",
+    "english": "Did you find our note?",
+    "fromModel": "",
+    "result": "Did you find our note?"
+   },
+   {
+    "raw": "Hey",
+    "english": "Did you give it?",
+    "fromModel": "",
+    "result": "Did you give it?"
+   },
+   {
+    "raw": "the dose",
+    "english": "",
+    "fromModel": "Could you check vitals?",
+    "result": ""
+   },
+   {
+    "raw": "the dose",
+    "english": "",
+    "fromModel": "What is the protocol?",
+    "result": "What is the protocol?"
+   },
+   {
+    "raw": "heyday",
+    "english": "What is the dose",
+    "fromModel": "",
+    "result": ""
+   },
+   {
+    "raw": "the dose",
+    "english": "what did I write yesterday",
+    "fromModel": "",
+    "result": "what did I write yesterday"
+   },
+   {
+    "raw": "the dose",
+    "english": "Hey ourprotocol",
+    "fromModel": "",
+    "result": ""
+   }
+  ],
+  "visible": [
+   [
+    "<think>a\nb</think> answer ",
+    "answer"
+   ],
+   [
+    "<THINK>x</Think>{}<think>y</think>",
+    "{}"
+   ],
+   [
+    "no think",
+    "no think"
+   ],
+   [
+    "",
+    ""
+   ]
+  ],
+  "parse": [
+   {
+    "input": "{\"a\":1}",
+    "ok": {
+     "a": 1
+    }
+   },
+   {
+    "input": " <think>t</think> {\"medical\":true} ",
+    "ok": {
+     "medical": true
+    }
+   },
+   {
+    "input": "pre {\"x\":{\"y\":2}} post",
+    "ok": {
+     "x": {
+      "y": 2
+     }
+    }
+   },
+   {
+    "input": "nothing here",
+    "ok": null
+   },
+   {
+    "input": "{ broken",
+    "ok": null
+   }
+  ]
+ },
+ "cases": [
+  {
+   "text": "Hello, nice weather. The child has fever.",
+   "result": {
+    "medical": true,
+    "english": "The child has fever.",
+    "question": ""
+   },
+   "requests": [
+    {
+     "body": {
+      "model": "gpt-oss:20b",
+      "prompt": "You clean a doctor's speech transcript. You do not answer, and you do not give medical advice.\nReturn only the JSON object.\nmedical is true only when the words include clinical content: symptoms, exam, diagnosis, medicines, labs, imaging, treatment, or a medical question.\nmedical is false for greetings, weather, jokes, and other non-medical talk. Then english and for_brain are empty.\nenglish is the medical part only, written in English. Drop every non-medical word. If the words are already English, still rewrite them.\nRemove identifiers from english and from for_brain: people's names, medical record numbers, file numbers, phone numbers, email addresses, street addresses, national ID numbers, exact dates of birth, and room or bed numbers.\nKeep age, sex, and the clinical facts. Keep relative time such as yesterday or for three days.\nfor_brain is the speaker's question for the notes assistant, copied into English, with identifiers removed. It is not an answer.\nWhen the speaker says Hey and then asks something, for_brain must be that question. It must not be empty.\nAlso set for_brain when they ask for a protocol, a prior note, a lookup, or a dose from the records.\nA question spoken to a patient, a nurse, or a colleague is dictation. Leave for_brain empty for that.\nPure dictation, an order, or narration leaves for_brain empty.\nDo not invent a question from plain dictation. Do not write medical advice in english or in for_brain.\nWhen you set for_brain, write the question so it can be answered on its own, using the clinical facts but no identifiers.\n\nHeard: Hello, nice weather today. The child has had fever for three days and a cough.\n{\"medical\":true,\"english\":\"The child has had fever for three days and a cough.\",\"for_brain\":\"\"}\n\nHeard: Patient Sara Haddad, file number 445566, phone 0791112233, has neutropenia after chemotherapy.\n{\"medical\":true,\"english\":\"The patient has neutropenia after chemotherapy.\",\"for_brain\":\"\"}\n\nHeard: Patient Omar Nasser, born 2 February 2014, in room 12, has a fever.\n{\"medical\":true,\"english\":\"The patient has a fever.\",\"for_brain\":\"\"}\n\nHeard: عند الطفل حرارة من يومين ونقص عدلات\n{\"medical\":true,\"english\":\"The child has had fever for two days and neutropenia.\",\"for_brain\":\"\"}\n\nHeard: Give ceftriaxone 50 mg per kg. Did you already give the morning dose?\n{\"medical\":true,\"english\":\"Ceftriaxone 50 mg per kg was ordered. Someone was asked whether the morning dose was already given.\",\"for_brain\":\"\"}\n\nHeard: Let's get coffee after the meeting.\n{\"medical\":false,\"english\":\"\",\"for_brain\":\"\"}\n\nHeard: Hey, what is our protocol for febrile neutropenia?\n{\"medical\":true,\"english\":\"What is our protocol for febrile neutropenia?\",\"for_brain\":\"What is our protocol for febrile neutropenia?\"}\n\nHeard: I need our note on vancomycin dosing.\n{\"medical\":true,\"english\":\"A note on vancomycin dosing was requested.\",\"for_brain\":\"What is our note on vancomycin dosing?\"}\n\nHeard: Hello, nice weather. The child has fever.",
+      "stream": false,
+      "think": "low",
+      "format": {
+       "type": "object",
+       "properties": {
+        "medical": {
+         "type": "boolean"
+        },
+        "english": {
+         "type": "string"
+        },
+        "for_brain": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "medical",
+        "english",
+        "for_brain"
+       ]
+      },
+      "keep_alive": "30m",
+      "options": {
+       "temperature": 0,
+       "num_predict": 2000,
+       "num_ctx": 4096
+      }
+     },
+     "reply": {
+      "response": "{\"medical\":true,\"english\":\"The child has fever.\",\"for_brain\":\"\"}",
+      "eval_count": 42
+     }
+    }
+   ]
+  },
+  {
+   "text": "Let's get coffee.",
+   "result": {
+    "medical": false,
+    "english": "",
+    "question": ""
+   },
+   "requests": [
+    {
+     "body": {
+      "model": "gpt-oss:20b",
+      "prompt": "You clean a doctor's speech transcript. You do not answer, and you do not give medical advice.\nReturn only the JSON object.\nmedical is true only when the words include clinical content: symptoms, exam, diagnosis, medicines, labs, imaging, treatment, or a medical question.\nmedical is false for greetings, weather, jokes, and other non-medical talk. Then english and for_brain are empty.\nenglish is the medical part only, written in English. Drop every non-medical word. If the words are already English, still rewrite them.\nRemove identifiers from english and from for_brain: people's names, medical record numbers, file numbers, phone numbers, email addresses, street addresses, national ID numbers, exact dates of birth, and room or bed numbers.\nKeep age, sex, and the clinical facts. Keep relative time such as yesterday or for three days.\nfor_brain is the speaker's question for the notes assistant, copied into English, with identifiers removed. It is not an answer.\nWhen the speaker says Hey and then asks something, for_brain must be that question. It must not be empty.\nAlso set for_brain when they ask for a protocol, a prior note, a lookup, or a dose from the records.\nA question spoken to a patient, a nurse, or a colleague is dictation. Leave for_brain empty for that.\nPure dictation, an order, or narration leaves for_brain empty.\nDo not invent a question from plain dictation. Do not write medical advice in english or in for_brain.\nWhen you set for_brain, write the question so it can be answered on its own, using the clinical facts but no identifiers.\n\nHeard: Hello, nice weather today. The child has had fever for three days and a cough.\n{\"medical\":true,\"english\":\"The child has had fever for three days and a cough.\",\"for_brain\":\"\"}\n\nHeard: Patient Sara Haddad, file number 445566, phone 0791112233, has neutropenia after chemotherapy.\n{\"medical\":true,\"english\":\"The patient has neutropenia after chemotherapy.\",\"for_brain\":\"\"}\n\nHeard: Patient Omar Nasser, born 2 February 2014, in room 12, has a fever.\n{\"medical\":true,\"english\":\"The patient has a fever.\",\"for_brain\":\"\"}\n\nHeard: عند الطفل حرارة من يومين ونقص عدلات\n{\"medical\":true,\"english\":\"The child has had fever for two days and neutropenia.\",\"for_brain\":\"\"}\n\nHeard: Give ceftriaxone 50 mg per kg. Did you already give the morning dose?\n{\"medical\":true,\"english\":\"Ceftriaxone 50 mg per kg was ordered. Someone was asked whether the morning dose was already given.\",\"for_brain\":\"\"}\n\nHeard: Let's get coffee after the meeting.\n{\"medical\":false,\"english\":\"\",\"for_brain\":\"\"}\n\nHeard: Hey, what is our protocol for febrile neutropenia?\n{\"medical\":true,\"english\":\"What is our protocol for febrile neutropenia?\",\"for_brain\":\"What is our protocol for febrile neutropenia?\"}\n\nHeard: I need our note on vancomycin dosing.\n{\"medical\":true,\"english\":\"A note on vancomycin dosing was requested.\",\"for_brain\":\"What is our note on vancomycin dosing?\"}\n\nHeard: Let's get coffee.",
+      "stream": false,
+      "think": "low",
+      "format": {
+       "type": "object",
+       "properties": {
+        "medical": {
+         "type": "boolean"
+        },
+        "english": {
+         "type": "string"
+        },
+        "for_brain": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "medical",
+        "english",
+        "for_brain"
+       ]
+      },
+      "keep_alive": "30m",
+      "options": {
+       "temperature": 0,
+       "num_predict": 2000,
+       "num_ctx": 4096
+      }
+     },
+     "reply": {
+      "response": "{\"medical\":false,\"english\":\"ignored\",\"for_brain\":\"ignored\"}",
+      "eval_count": 42
+     }
+    }
+   ]
+  },
+  {
+   "text": "Hey, what is our protocol for febrile neutropenia?",
+   "result": {
+    "medical": true,
+    "english": "What is our protocol for febrile neutropenia?",
+    "question": "What is our protocol for febrile neutropenia?"
+   },
+   "requests": [
+    {
+     "body": {
+      "model": "gpt-oss:20b",
+      "prompt": "You clean a doctor's speech transcript. You do not answer, and you do not give medical advice.\nReturn only the JSON object.\nmedical is true only when the words include clinical content: symptoms, exam, diagnosis, medicines, labs, imaging, treatment, or a medical question.\nmedical is false for greetings, weather, jokes, and other non-medical talk. Then english and for_brain are empty.\nenglish is the medical part only, written in English. Drop every non-medical word. If the words are already English, still rewrite them.\nRemove identifiers from english and from for_brain: people's names, medical record numbers, file numbers, phone numbers, email addresses, street addresses, national ID numbers, exact dates of birth, and room or bed numbers.\nKeep age, sex, and the clinical facts. Keep relative time such as yesterday or for three days.\nfor_brain is the speaker's question for the notes assistant, copied into English, with identifiers removed. It is not an answer.\nWhen the speaker says Hey and then asks something, for_brain must be that question. It must not be empty.\nAlso set for_brain when they ask for a protocol, a prior note, a lookup, or a dose from the records.\nA question spoken to a patient, a nurse, or a colleague is dictation. Leave for_brain empty for that.\nPure dictation, an order, or narration leaves for_brain empty.\nDo not invent a question from plain dictation. Do not write medical advice in english or in for_brain.\nWhen you set for_brain, write the question so it can be answered on its own, using the clinical facts but no identifiers.\n\nHeard: Hello, nice weather today. The child has had fever for three days and a cough.\n{\"medical\":true,\"english\":\"The child has had fever for three days and a cough.\",\"for_brain\":\"\"}\n\nHeard: Patient Sara Haddad, file number 445566, phone 0791112233, has neutropenia after chemotherapy.\n{\"medical\":true,\"english\":\"The patient has neutropenia after chemotherapy.\",\"for_brain\":\"\"}\n\nHeard: Patient Omar Nasser, born 2 February 2014, in room 12, has a fever.\n{\"medical\":true,\"english\":\"The patient has a fever.\",\"for_brain\":\"\"}\n\nHeard: عند الطفل حرارة من يومين ونقص عدلات\n{\"medical\":true,\"english\":\"The child has had fever for two days and neutropenia.\",\"for_brain\":\"\"}\n\nHeard: Give ceftriaxone 50 mg per kg. Did you already give the morning dose?\n{\"medical\":true,\"english\":\"Ceftriaxone 50 mg per kg was ordered. Someone was asked whether the morning dose was already given.\",\"for_brain\":\"\"}\n\nHeard: Let's get coffee after the meeting.\n{\"medical\":false,\"english\":\"\",\"for_brain\":\"\"}\n\nHeard: Hey, what is our protocol for febrile neutropenia?\n{\"medical\":true,\"english\":\"What is our protocol for febrile neutropenia?\",\"for_brain\":\"What is our protocol for febrile neutropenia?\"}\n\nHeard: I need our note on vancomycin dosing.\n{\"medical\":true,\"english\":\"A note on vancomycin dosing was requested.\",\"for_brain\":\"What is our note on vancomycin dosing?\"}\n\nHeard: Hey, what is our protocol for febrile neutropenia?",
+      "stream": false,
+      "think": "low",
+      "format": {
+       "type": "object",
+       "properties": {
+        "medical": {
+         "type": "boolean"
+        },
+        "english": {
+         "type": "string"
+        },
+        "for_brain": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "medical",
+        "english",
+        "for_brain"
+       ]
+      },
+      "keep_alive": "30m",
+      "options": {
+       "temperature": 0,
+       "num_predict": 2000,
+       "num_ctx": 4096
+      }
+     },
+     "reply": {
+      "response": "<think>short</think>{\"medical\":true,\"english\":\"What is our protocol for febrile neutropenia?\",\"for_brain\":\"\"}",
+      "eval_count": 42
+     }
+    }
+   ]
+  },
+  {
+   "text": "Sara Haddad, MRN: AB-1234, phone +962 79 111 2233, has neutropenia.",
+   "result": {
+    "medical": true,
+    "english": "the patient,, phone +, has neutropenia.",
+    "question": ""
+   },
+   "requests": [
+    {
+     "body": {
+      "model": "gpt-oss:20b",
+      "prompt": "You clean a doctor's speech transcript. You do not answer, and you do not give medical advice.\nReturn only the JSON object.\nmedical is true only when the words include clinical content: symptoms, exam, diagnosis, medicines, labs, imaging, treatment, or a medical question.\nmedical is false for greetings, weather, jokes, and other non-medical talk. Then english and for_brain are empty.\nenglish is the medical part only, written in English. Drop every non-medical word. If the words are already English, still rewrite them.\nRemove identifiers from english and from for_brain: people's names, medical record numbers, file numbers, phone numbers, email addresses, street addresses, national ID numbers, exact dates of birth, and room or bed numbers.\nKeep age, sex, and the clinical facts. Keep relative time such as yesterday or for three days.\nfor_brain is the speaker's question for the notes assistant, copied into English, with identifiers removed. It is not an answer.\nWhen the speaker says Hey and then asks something, for_brain must be that question. It must not be empty.\nAlso set for_brain when they ask for a protocol, a prior note, a lookup, or a dose from the records.\nA question spoken to a patient, a nurse, or a colleague is dictation. Leave for_brain empty for that.\nPure dictation, an order, or narration leaves for_brain empty.\nDo not invent a question from plain dictation. Do not write medical advice in english or in for_brain.\nWhen you set for_brain, write the question so it can be answered on its own, using the clinical facts but no identifiers.\n\nHeard: Hello, nice weather today. The child has had fever for three days and a cough.\n{\"medical\":true,\"english\":\"The child has had fever for three days and a cough.\",\"for_brain\":\"\"}\n\nHeard: Patient Sara Haddad, file number 445566, phone 0791112233, has neutropenia after chemotherapy.\n{\"medical\":true,\"english\":\"The patient has neutropenia after chemotherapy.\",\"for_brain\":\"\"}\n\nHeard: Patient Omar Nasser, born 2 February 2014, in room 12, has a fever.\n{\"medical\":true,\"english\":\"The patient has a fever.\",\"for_brain\":\"\"}\n\nHeard: عند الطفل حرارة من يومين ونقص عدلات\n{\"medical\":true,\"english\":\"The child has had fever for two days and neutropenia.\",\"for_brain\":\"\"}\n\nHeard: Give ceftriaxone 50 mg per kg. Did you already give the morning dose?\n{\"medical\":true,\"english\":\"Ceftriaxone 50 mg per kg was ordered. Someone was asked whether the morning dose was already given.\",\"for_brain\":\"\"}\n\nHeard: Let's get coffee after the meeting.\n{\"medical\":false,\"english\":\"\",\"for_brain\":\"\"}\n\nHeard: Hey, what is our protocol for febrile neutropenia?\n{\"medical\":true,\"english\":\"What is our protocol for febrile neutropenia?\",\"for_brain\":\"What is our protocol for febrile neutropenia?\"}\n\nHeard: I need our note on vancomycin dosing.\n{\"medical\":true,\"english\":\"A note on vancomycin dosing was requested.\",\"for_brain\":\"What is our note on vancomycin dosing?\"}\n\nHeard: Sara Haddad, MRN: AB-1234, phone +962 79 111 2233, has neutropenia.",
+      "stream": false,
+      "think": "low",
+      "format": {
+       "type": "object",
+       "properties": {
+        "medical": {
+         "type": "boolean"
+        },
+        "english": {
+         "type": "string"
+        },
+        "for_brain": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "medical",
+        "english",
+        "for_brain"
+       ]
+      },
+      "keep_alive": "30m",
+      "options": {
+       "temperature": 0,
+       "num_predict": 2000,
+       "num_ctx": 4096
+      }
+     },
+     "reply": {
+      "response": "Sure: {\"medical\":true,\"english\":\"Sara Haddad, MRN: AB-1234, phone +962 79 111 2233, has neutropenia.\",\"for_brain\":\"\"} done",
+      "eval_count": 42
+     }
+    },
+    {
+     "body": {
+      "model": "gpt-oss:20b",
+      "prompt": "Rewrite the sentence with no person names.\nSay the patient instead of a name. Keep the medical facts. Do not add advice.\nSentence: Sara Haddad,, phone +, has neutropenia.\nRewritten:",
+      "stream": false,
+      "think": "low",
+      "keep_alive": "30m",
+      "options": {
+       "temperature": 0,
+       "num_predict": 1600,
+       "num_ctx": 4096
+      }
+     },
+     "reply": {
+      "response": "\"the patient,, phone +, has neutropenia.\"",
+      "eval_count": 42
+     }
+    }
+   ]
+  },
+  {
+   "text": "Did you give the morning dose?",
+   "result": {
+    "medical": true,
+    "english": "Did you give the morning dose?",
+    "question": ""
+   },
+   "requests": [
+    {
+     "body": {
+      "model": "gpt-oss:20b",
+      "prompt": "You clean a doctor's speech transcript. You do not answer, and you do not give medical advice.\nReturn only the JSON object.\nmedical is true only when the words include clinical content: symptoms, exam, diagnosis, medicines, labs, imaging, treatment, or a medical question.\nmedical is false for greetings, weather, jokes, and other non-medical talk. Then english and for_brain are empty.\nenglish is the medical part only, written in English. Drop every non-medical word. If the words are already English, still rewrite them.\nRemove identifiers from english and from for_brain: people's names, medical record numbers, file numbers, phone numbers, email addresses, street addresses, national ID numbers, exact dates of birth, and room or bed numbers.\nKeep age, sex, and the clinical facts. Keep relative time such as yesterday or for three days.\nfor_brain is the speaker's question for the notes assistant, copied into English, with identifiers removed. It is not an answer.\nWhen the speaker says Hey and then asks something, for_brain must be that question. It must not be empty.\nAlso set for_brain when they ask for a protocol, a prior note, a lookup, or a dose from the records.\nA question spoken to a patient, a nurse, or a colleague is dictation. Leave for_brain empty for that.\nPure dictation, an order, or narration leaves for_brain empty.\nDo not invent a question from plain dictation. Do not write medical advice in english or in for_brain.\nWhen you set for_brain, write the question so it can be answered on its own, using the clinical facts but no identifiers.\n\nHeard: Hello, nice weather today. The child has had fever for three days and a cough.\n{\"medical\":true,\"english\":\"The child has had fever for three days and a cough.\",\"for_brain\":\"\"}\n\nHeard: Patient Sara Haddad, file number 445566, phone 0791112233, has neutropenia after chemotherapy.\n{\"medical\":true,\"english\":\"The patient has neutropenia after chemotherapy.\",\"for_brain\":\"\"}\n\nHeard: Patient Omar Nasser, born 2 February 2014, in room 12, has a fever.\n{\"medical\":true,\"english\":\"The patient has a fever.\",\"for_brain\":\"\"}\n\nHeard: عند الطفل حرارة من يومين ونقص عدلات\n{\"medical\":true,\"english\":\"The child has had fever for two days and neutropenia.\",\"for_brain\":\"\"}\n\nHeard: Give ceftriaxone 50 mg per kg. Did you already give the morning dose?\n{\"medical\":true,\"english\":\"Ceftriaxone 50 mg per kg was ordered. Someone was asked whether the morning dose was already given.\",\"for_brain\":\"\"}\n\nHeard: Let's get coffee after the meeting.\n{\"medical\":false,\"english\":\"\",\"for_brain\":\"\"}\n\nHeard: Hey, what is our protocol for febrile neutropenia?\n{\"medical\":true,\"english\":\"What is our protocol for febrile neutropenia?\",\"for_brain\":\"What is our protocol for febrile neutropenia?\"}\n\nHeard: I need our note on vancomycin dosing.\n{\"medical\":true,\"english\":\"A note on vancomycin dosing was requested.\",\"for_brain\":\"What is our note on vancomycin dosing?\"}\n\nHeard: Did you give the morning dose?",
+      "stream": false,
+      "think": "low",
+      "format": {
+       "type": "object",
+       "properties": {
+        "medical": {
+         "type": "boolean"
+        },
+        "english": {
+         "type": "string"
+        },
+        "for_brain": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "medical",
+        "english",
+        "for_brain"
+       ]
+      },
+      "keep_alive": "30m",
+      "options": {
+       "temperature": 0,
+       "num_predict": 2000,
+       "num_ctx": 4096
+      }
+     },
+     "reply": {
+      "response": "{\"medical\":true,\"english\":\"Did you give the morning dose?\",\"for_brain\":\"Did you give the morning dose?\"}",
+      "eval_count": 42
+     }
+    }
+   ]
+  },
+  {
+   "text": "هاي شو البروتوكول",
+   "result": {
+    "medical": true,
+    "english": "Can you find our note on vancomycin dosing?",
+    "question": "Can you find our note on vancomycin dosing?"
+   },
+   "requests": [
+    {
+     "body": {
+      "model": "gpt-oss:20b",
+      "prompt": "You clean a doctor's speech transcript. You do not answer, and you do not give medical advice.\nReturn only the JSON object.\nmedical is true only when the words include clinical content: symptoms, exam, diagnosis, medicines, labs, imaging, treatment, or a medical question.\nmedical is false for greetings, weather, jokes, and other non-medical talk. Then english and for_brain are empty.\nenglish is the medical part only, written in English. Drop every non-medical word. If the words are already English, still rewrite them.\nRemove identifiers from english and from for_brain: people's names, medical record numbers, file numbers, phone numbers, email addresses, street addresses, national ID numbers, exact dates of birth, and room or bed numbers.\nKeep age, sex, and the clinical facts. Keep relative time such as yesterday or for three days.\nfor_brain is the speaker's question for the notes assistant, copied into English, with identifiers removed. It is not an answer.\nWhen the speaker says Hey and then asks something, for_brain must be that question. It must not be empty.\nAlso set for_brain when they ask for a protocol, a prior note, a lookup, or a dose from the records.\nA question spoken to a patient, a nurse, or a colleague is dictation. Leave for_brain empty for that.\nPure dictation, an order, or narration leaves for_brain empty.\nDo not invent a question from plain dictation. Do not write medical advice in english or in for_brain.\nWhen you set for_brain, write the question so it can be answered on its own, using the clinical facts but no identifiers.\n\nHeard: Hello, nice weather today. The child has had fever for three days and a cough.\n{\"medical\":true,\"english\":\"The child has had fever for three days and a cough.\",\"for_brain\":\"\"}\n\nHeard: Patient Sara Haddad, file number 445566, phone 0791112233, has neutropenia after chemotherapy.\n{\"medical\":true,\"english\":\"The patient has neutropenia after chemotherapy.\",\"for_brain\":\"\"}\n\nHeard: Patient Omar Nasser, born 2 February 2014, in room 12, has a fever.\n{\"medical\":true,\"english\":\"The patient has a fever.\",\"for_brain\":\"\"}\n\nHeard: عند الطفل حرارة من يومين ونقص عدلات\n{\"medical\":true,\"english\":\"The child has had fever for two days and neutropenia.\",\"for_brain\":\"\"}\n\nHeard: Give ceftriaxone 50 mg per kg. Did you already give the morning dose?\n{\"medical\":true,\"english\":\"Ceftriaxone 50 mg per kg was ordered. Someone was asked whether the morning dose was already given.\",\"for_brain\":\"\"}\n\nHeard: Let's get coffee after the meeting.\n{\"medical\":false,\"english\":\"\",\"for_brain\":\"\"}\n\nHeard: Hey, what is our protocol for febrile neutropenia?\n{\"medical\":true,\"english\":\"What is our protocol for febrile neutropenia?\",\"for_brain\":\"What is our protocol for febrile neutropenia?\"}\n\nHeard: I need our note on vancomycin dosing.\n{\"medical\":true,\"english\":\"A note on vancomycin dosing was requested.\",\"for_brain\":\"What is our note on vancomycin dosing?\"}\n\nHeard: هاي شو البروتوكول",
+      "stream": false,
+      "think": "low",
+      "format": {
+       "type": "object",
+       "properties": {
+        "medical": {
+         "type": "boolean"
+        },
+        "english": {
+         "type": "string"
+        },
+        "for_brain": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "medical",
+        "english",
+        "for_brain"
+       ]
+      },
+      "keep_alive": "30m",
+      "options": {
+       "temperature": 0,
+       "num_predict": 2000,
+       "num_ctx": 4096
+      }
+     },
+     "reply": {
+      "response": "{\"medical\":true,\"english\":\"Can you find our note on vancomycin dosing?\",\"for_brain\":\"\"}",
+      "eval_count": 42
+     }
+    }
+   ]
+  },
+  {
+   "text": "Omar Nasser born March 3, 2014 has fever",
+   "result": {
+    "medical": true,
+    "english": "the patient has fever",
+    "question": ""
+   },
+   "requests": [
+    {
+     "body": {
+      "model": "gpt-oss:20b",
+      "prompt": "You clean a doctor's speech transcript. You do not answer, and you do not give medical advice.\nReturn only the JSON object.\nmedical is true only when the words include clinical content: symptoms, exam, diagnosis, medicines, labs, imaging, treatment, or a medical question.\nmedical is false for greetings, weather, jokes, and other non-medical talk. Then english and for_brain are empty.\nenglish is the medical part only, written in English. Drop every non-medical word. If the words are already English, still rewrite them.\nRemove identifiers from english and from for_brain: people's names, medical record numbers, file numbers, phone numbers, email addresses, street addresses, national ID numbers, exact dates of birth, and room or bed numbers.\nKeep age, sex, and the clinical facts. Keep relative time such as yesterday or for three days.\nfor_brain is the speaker's question for the notes assistant, copied into English, with identifiers removed. It is not an answer.\nWhen the speaker says Hey and then asks something, for_brain must be that question. It must not be empty.\nAlso set for_brain when they ask for a protocol, a prior note, a lookup, or a dose from the records.\nA question spoken to a patient, a nurse, or a colleague is dictation. Leave for_brain empty for that.\nPure dictation, an order, or narration leaves for_brain empty.\nDo not invent a question from plain dictation. Do not write medical advice in english or in for_brain.\nWhen you set for_brain, write the question so it can be answered on its own, using the clinical facts but no identifiers.\n\nHeard: Hello, nice weather today. The child has had fever for three days and a cough.\n{\"medical\":true,\"english\":\"The child has had fever for three days and a cough.\",\"for_brain\":\"\"}\n\nHeard: Patient Sara Haddad, file number 445566, phone 0791112233, has neutropenia after chemotherapy.\n{\"medical\":true,\"english\":\"The patient has neutropenia after chemotherapy.\",\"for_brain\":\"\"}\n\nHeard: Patient Omar Nasser, born 2 February 2014, in room 12, has a fever.\n{\"medical\":true,\"english\":\"The patient has a fever.\",\"for_brain\":\"\"}\n\nHeard: عند الطفل حرارة من يومين ونقص عدلات\n{\"medical\":true,\"english\":\"The child has had fever for two days and neutropenia.\",\"for_brain\":\"\"}\n\nHeard: Give ceftriaxone 50 mg per kg. Did you already give the morning dose?\n{\"medical\":true,\"english\":\"Ceftriaxone 50 mg per kg was ordered. Someone was asked whether the morning dose was already given.\",\"for_brain\":\"\"}\n\nHeard: Let's get coffee after the meeting.\n{\"medical\":false,\"english\":\"\",\"for_brain\":\"\"}\n\nHeard: Hey, what is our protocol for febrile neutropenia?\n{\"medical\":true,\"english\":\"What is our protocol for febrile neutropenia?\",\"for_brain\":\"What is our protocol for febrile neutropenia?\"}\n\nHeard: I need our note on vancomycin dosing.\n{\"medical\":true,\"english\":\"A note on vancomycin dosing was requested.\",\"for_brain\":\"What is our note on vancomycin dosing?\"}\n\nHeard: Omar Nasser born March 3, 2014 has fever",
+      "stream": false,
+      "think": "low",
+      "format": {
+       "type": "object",
+       "properties": {
+        "medical": {
+         "type": "boolean"
+        },
+        "english": {
+         "type": "string"
+        },
+        "for_brain": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "medical",
+        "english",
+        "for_brain"
+       ]
+      },
+      "keep_alive": "30m",
+      "options": {
+       "temperature": 0,
+       "num_predict": 2000,
+       "num_ctx": 4096
+      }
+     },
+     "reply": {
+      "response": "{\"medical\":\"yes\",\"english\":\"Omar Nasser born March 3, 2014 has fever\",\"for_brain\":0}",
+      "eval_count": 42
+     }
+    },
+    {
+     "body": {
+      "model": "gpt-oss:20b",
+      "prompt": "Rewrite the sentence with no person names.\nSay the patient instead of a name. Keep the medical facts. Do not add advice.\nSentence: Omar Nasser has fever\nRewritten:",
+      "stream": false,
+      "think": "low",
+      "keep_alive": "30m",
+      "options": {
+       "temperature": 0,
+       "num_predict": 1600,
+       "num_ctx": 4096
+      }
+     },
+     "reply": {
+      "response": "\"the patient has fever\"",
+      "eval_count": 42
+     }
+    }
+   ]
+  }
+ ],
+ "warm": {
+  "model": "gpt-oss:20b",
+  "prompt": "",
+  "stream": false,
+  "keep_alive": "30m",
+  "options": {
+   "num_ctx": 4096
+  }
+ }
+}
