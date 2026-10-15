@@ -20,7 +20,7 @@ use axum::{
     Json, Router,
 };
 use hyper_util::{client::legacy::connect::HttpConnector, client::legacy::Client, rt::TokioExecutor};
-use nemo_realtime_voice::{clock, js, medgem::Medgem, pricing, skills};
+use nemo_realtime_voice::{clock, js, medgem::Medgem, pricing};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -33,8 +33,6 @@ const RUST_ROUTES: &[&str] = &[
     "POST /medgem/warm",
     "POST /medgem/clean",
     "GET /here",
-    "GET /skills",
-    "POST /skills",
     "POST /meeting/folder",
     "static files (public/, /vendor/rive)",
 ];
@@ -48,7 +46,6 @@ struct AppState {
     medgem: Arc<Medgem>,
     public: PathBuf,
     rive: PathBuf,
-    skills_dir: PathBuf,
 }
 
 fn mark(mut res: Response, who: &'static str) -> Response {
@@ -106,23 +103,6 @@ async fn medgem_clean(State(s): State<AppState>, headers: axum::http::HeaderMap,
 async fn here() -> Response {
     let now = chrono::Utc::now().timestamp_millis();
     mark(Json(json!({ "text": clock::here_and_now(now, &clock::zone_name()) })).into_response(), "rust")
-}
-
-/// The names of the skills on this Mac. The page shows this list.
-async fn skills_list(State(s): State<AppState>) -> Response {
-    let list = skills::list_skills(&s.skills_dir);
-    mark(Json(json!({ "skills": list })).into_response(), "rust")
-}
-
-/// Save a markdown skill the user uploaded from the voice page.
-async fn skills_save(State(s): State<AppState>, headers: axum::http::HeaderMap, body: Bytes) -> Response {
-    let body = json_body(&headers, &body);
-    let text = body["text"].as_str().unwrap_or("");
-    let res = match skills::save_skill(&s.skills_dir, text, &js::to_str(&body["name"])) {
-        Ok(skill) => Json(skill).into_response(),
-        Err((code, error)) => (StatusCode::from_u16(code).unwrap(), Json(json!({ "error": error }))).into_response(),
-    };
-    mark(res, "rust")
 }
 
 /// Ask macOS for a folder. Returns an empty path if the user cancels.
@@ -199,8 +179,11 @@ async fn files_or_node(State(s): State<AppState>, req: Request) -> Response {
         let mut file_req = Request::new(Body::empty());
         *file_req.uri_mut() = if sub.is_empty() { "/".parse().unwrap() } else { sub.parse().unwrap_or_else(|_| "/".parse().unwrap()) };
         *file_req.method_mut() = req.method().clone();
-        let res = ServeDir::new(dir).oneshot(file_req).await.unwrap_or_else(|never| match never {});
+        let mut res = ServeDir::new(dir).oneshot(file_req).await.unwrap_or_else(|never| match never {});
         if res.status() != StatusCode::NOT_FOUND {
+            // As express.static did: check for a newer copy every time. Without it,
+            // WebKit kept old pages for hours after they changed.
+            res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=0"));
             return mark(res.map(Body::new), "rust");
         }
     }
@@ -213,7 +196,6 @@ fn app(state: AppState) -> Router {
         .route("/medgem/warm", post(medgem_warm))
         .route("/medgem/clean", post(medgem_clean))
         .route("/here", get(here))
-        .route("/skills", get(skills_list).post(skills_save))
         .route("/meeting/folder", post(meeting_folder))
         .route("/rust", get(status))
         .fallback(files_or_node)
@@ -232,7 +214,6 @@ async fn main() {
         medgem: Arc::new(Medgem::from_env()),
         public: repo.join("second-brain").join("public"),
         rive: repo.join("node_modules").join("@rive-app").join("canvas"),
-        skills_dir: repo.join("second-brain").join("skills"),
     };
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.unwrap_or_else(|e| panic!("port {port}: {e}"));
     println!("Second brain (Rust front) → http://localhost:{port}  (everything not yet in Rust goes to {node})");
@@ -281,12 +262,7 @@ mod tests {
     }
 
     async fn front(node: String, public: PathBuf) -> String {
-        front_with(node, public, PathBuf::from("/nonexistent")).await
-    }
-
-    async fn front_with(node: String, public: PathBuf, skills_dir: PathBuf) -> String {
         let state = AppState {
-            skills_dir,
             client: Client::builder(TokioExecutor::new()).build(HttpConnector::new()),
             node,
             medgem: Arc::new(Medgem::new("http://127.0.0.1:9")),
@@ -317,6 +293,7 @@ mod tests {
         let base = front(fake_node().await, public_dir()).await;
         let res = client().get(format!("{base}/")).send().await.unwrap();
         assert_eq!(res.headers()["x-served-by"], "rust");
+        assert_eq!(res.headers()["cache-control"], "public, max-age=0");
         assert_eq!(res.text().await.unwrap(), "<html>home</html>");
         let res = client().get(format!("{base}/models")).send().await.unwrap();
         assert_eq!(res.headers()["x-served-by"], "rust");
@@ -384,48 +361,17 @@ mod tests {
         assert_eq!(res.json::<Value>().await.unwrap(), json!({ "error": "The Node brain server is not answering." }));
     }
 
-    /// Golden test: the skills and /here handlers extracted from server.js
-    /// (rust/tests/fixtures/gen_routes.mjs) answer exactly like these.
+    /// Golden test: hereAndNow extracted from server.js (rust/tests/fixtures/gen_routes.mjs).
     #[tokio::test]
-    async fn skill_and_here_routes_match_node() {
+    async fn here_matches_node() {
         std::env::set_var("TZ", "Asia/Amman");
         let f: Value = serde_json::from_str(include_str!("../../tests/fixtures/routes.json")).unwrap();
         for h in f["heres"].as_array().unwrap() {
             assert_eq!(json!(clock::here_and_now(h["ms"].as_i64().unwrap(), "Asia/Amman")), h["text"]);
         }
-        let dir = std::env::temp_dir().join(format!("routes-skills-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        for (name, text) in f["seed"].as_object().unwrap() {
-            std::fs::write(dir.join(name), text.as_str().unwrap()).unwrap();
-        }
-        let base = front_with("http://127.0.0.1:9".into(), public_dir(), dir.clone()).await;
-        for a in f["answers"].as_array().unwrap() {
-            let url = format!("{base}{}", a["url"].as_str().unwrap());
-            let req = match a["method"].as_str().unwrap() {
-                "GET" => client().get(url),
-                _ => match &a["body"] {
-                    Value::String(text) => client().post(url).header("content-type", "text/plain").body(text.clone()),
-                    body => client().post(url).json(body),
-                },
-            };
-            let res = req.send().await.unwrap();
-            let status = res.status().as_u16();
-            let answer: Value = res.json().await.unwrap();
-            if a["url"] == "/here" {
-                let now = f["now"].as_i64().unwrap();
-                assert_eq!(a["answer"], json!({ "text": clock::here_and_now(now, "Asia/Amman") }));
-                assert!(answer["text"].as_str().unwrap().starts_with("It is "));
-                continue;
-            }
-            assert_eq!((status, &answer), (a["status"].as_u64().unwrap() as u16, &a["answer"]), "{} {} {}", a["method"], a["url"], a["body"]);
-        }
-        let mut files = serde_json::Map::new();
-        let mut names: Vec<String> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
-        names.sort();
-        for name in names {
-            files.insert(name.clone(), json!(std::fs::read_to_string(dir.join(&name)).unwrap()));
-        }
-        assert_eq!(Value::Object(files), f["files"]);
+        let base = front("http://127.0.0.1:9".into(), public_dir()).await;
+        let res = client().get(format!("{base}/here")).send().await.unwrap();
+        assert_eq!(res.headers()["x-served-by"], "rust");
+        assert!(res.json::<Value>().await.unwrap()["text"].as_str().unwrap().starts_with("It is "));
     }
 }

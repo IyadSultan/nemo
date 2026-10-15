@@ -147,6 +147,8 @@ pub struct Suggestion {
     pub title: String,
     pub source: String,
     pub detail: String,
+    /// When the email arrived (ms since 1970), for the card's numeric date.
+    pub at: Option<f64>,
 }
 
 type Clock = Box<dyn Fn() -> i64 + Send + Sync>;
@@ -310,6 +312,7 @@ impl Desk {
             .iter()
             .map(|item| {
                 let mut m = copy(item, &["id", "title", "source", "detail"]);
+                m.insert("at".into(), if js::truthy(&item["at"]) { item["at"].clone() } else { json!(0) });
                 // Short note about the email this idea would answer. Empty until Haiku writes it.
                 m.insert("summary".into(), or_empty(&item["summary"]));
                 m.insert("about".into(), json!("reply"));
@@ -644,15 +647,20 @@ impl Desk {
                 break;
             }
             let previous = state.suggestions.iter().find(|e| e["key"] == item.key.as_str());
-            next.push(json!({
+            let mut entry = json!({
                 "id": &hex::encode(Sha256::digest(item.key.as_bytes()))[..12],
                 "key": item.key,
                 "title": clip(&item.title, 180),
                 "source": clip(&item.source, 80),
                 "detail": clip(&item.detail, 180),
-                // Keep a summary we already paid Haiku to write for this same email.
-                "summary": previous.map_or(json!(""), |p| or_empty(&p["summary"])),
-            }));
+            });
+            // Left out when unknown, as JSON.stringify drops undefined.
+            if let Some(at) = item.at.filter(|a| *a != 0.0 && !a.is_nan()) {
+                entry["at"] = number(at);
+            }
+            // Keep a summary we already paid Haiku to write for this same email.
+            entry["summary"] = previous.map_or(json!(""), |p| or_empty(&p["summary"]));
+            next.push(entry);
         }
         state.suggestions = next.clone();
         self.save(&state);

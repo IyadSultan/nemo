@@ -71,12 +71,15 @@
             <input
               id="typeInput"
               type="text"
-              placeholder="Use this if listening misses what you said"
+              placeholder="Ask, or type / for a skill"
               autocomplete="off"
               enterkeyhint="send"
+              aria-autocomplete="list"
+              aria-controls="slashMenu"
             />
             <button type="submit" class="ghost-btn" id="typeBtn">Ask</button>
           </span>
+          <div class="slash-menu" id="slashMenu" role="listbox" aria-label="Skills" hidden></div>
         </form>
 
         <div class="mode-row">
@@ -131,10 +134,8 @@
         <section class="skills" aria-label="Skills">
           <div class="skills-head">
             <span>Skills</span>
-            <button type="button" class="ghost-btn small" id="uploadSkillBtn">Upload</button>
-            <input id="skillFile" type="file" accept=".md,.txt,text/markdown,text/plain" hidden />
           </div>
-          <div id="skillList" class="skill-list"></div>
+          <div id="skillList" class="skill-on"></div>
         </section>
 
         <label class="field mic-pick">

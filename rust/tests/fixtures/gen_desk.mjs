@@ -96,10 +96,10 @@ const steps = [
   ["cancelWatches", []],
   ["cancelWatches", []],
   ["mergeSuggestions", [[
-    { key: "k2", title: "Reply to Lee again", source: "Email", detail: "y2" },
+    { key: "k2", title: "Reply to Lee again", source: "Email", detail: "y2", at: 1760500000123 },
     { key: "k0", title: "Dismissed", source: "Email", detail: "" },
     { key: "", title: "No key", source: "", detail: "" },
-    { key: "k3", title: "Reply   to Kim", source: "Email", detail: "z" },
+    { key: "k3", title: "Reply   to Kim", source: "Email", detail: "z", at: 1760500000000.5 },
     { key: "k4", title: "Four", source: "Email", detail: "" },
     { key: "k5", title: "Five", source: "Email", detail: "" },
     { key: "k6", title: "Six", source: "Email", detail: "" },

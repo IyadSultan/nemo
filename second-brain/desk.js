@@ -190,6 +190,7 @@ export function publicDesk() {
       title: item.title,
       source: item.source,
       detail: item.detail,
+      at: item.at || 0,
       // Short note about the email this idea would answer. Empty until Haiku writes it.
       summary: item.summary || "",
       about: "reply",
@@ -460,6 +461,8 @@ export function mergeSuggestions(items) {
       title: clip(item.title, 180),
       source: clip(item.source, 80),
       detail: clip(item.detail, 180),
+      // When the email arrived (ms), so the card can show the date in numbers.
+      at: Number(item.at) || undefined,
       // Keep a summary we already paid Haiku to write for this same email.
       summary: previous?.summary || "",
     });

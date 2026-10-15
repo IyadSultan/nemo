@@ -1,9 +1,8 @@
 // Regenerate: node rust/tests/fixtures/gen_routes.mjs > rust/tests/fixtures/routes.json
 //
 // server.js starts the whole app on import, so this pulls the exact source of
-// the functions and route handlers being ported out of it, runs them in a small
-// Express app against a temp skills folder, and records every answer.
-// The Rust test sends the same requests to the Rust routes.
+// the functions being ported out of it and runs them with a fixed clock.
+// The Rust test checks its answers against these.
 
 process.env.TZ = "Asia/Amman";
 
@@ -26,30 +25,7 @@ function pick(start) {
 }
 
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "routes-fixture-"));
-const skillsDir = path.join(dir, "skills");
-await fs.mkdir(skillsDir);
-const seed = {
-  "prd-simple.md": "---\nname: PRD simple\ndescription: Write a short PRD.\n---\n\nSteps here.",
-  "zeta.md": "No front matter, just a body that is long enough.",
-  "alpha-2.md": "---\r\nName: alpha two\r\ndescription:   spaced   \r\nother: x\r\n---\r\nBody",
-  "Bad_Name.md": "---\nname: ignored\n---\nbody",
-  "notes.txt": "not a skill",
-  "_draft.md": "---\nname: Underscore\n---\n",
-  "beta.md": "---\nname: beta\n---\n",
-  "beta-upper.md": "---\nname: Beta\n---\n",
-  "digits.md": "---\nname: 2 Fast\n---\n",
-  "dash.md": "---\nname: - dash first\n---\n",
-  "long.md": `---\nname: ${"N".repeat(100)}\ndescription: ${"d".repeat(300)}\n---\n`,
-};
-for (const [name, text] of Object.entries(seed)) await fs.writeFile(path.join(skillsDir, name), text);
-
 const module = [
-  'import fs from "node:fs/promises";',
-  'import path from "node:path";',
-  `import express from ${JSON.stringify(path.join(repo, "node_modules/express/index.js"))};`,
-  "const app = express();",
-  'app.use(express.json({ limit: "15mb" }));',
-  `const SKILLS_DIR = ${JSON.stringify(skillsDir)};`,
   pick("const MONTH_NAMES = ["),
   pick("const SMALL_WORDS = ["),
   pick("const DAY_WORDS = ["),
@@ -58,13 +34,7 @@ const module = [
   pick("function spokenClock("),
   pick("function spokenDay("),
   pick("function hereAndNow("),
-  pick("function skillFileId("),
-  pick("function parseSkill("),
-  pick("async function listSkills("),
-  pick('app.get("/here"'),
-  pick('app.get("/skills"'),
-  pick('app.post("/skills"'),
-  "export { app, hereAndNow };",
+  "export { hereAndNow };",
 ].join("\n\n");
 await fs.writeFile(path.join(dir, "routes.mjs"), module);
 
@@ -78,11 +48,7 @@ globalThis.Date = class extends RealDate {
     return globalThis.__now;
   }
 };
-const { app, hereAndNow } = await import(path.join(dir, "routes.mjs"));
-const listener = await new Promise((resolve) => {
-  const s = app.listen(0, "127.0.0.1", () => resolve(s));
-});
-const base = `http://127.0.0.1:${listener.address().port}`;
+const { hereAndNow } = await import(path.join(dir, "routes.mjs"));
 
 // Amman local times (UTC+3) covering every part of the day and minute form.
 const times = [
@@ -95,34 +61,5 @@ const heres = times.map((ms) => {
   return { ms, text: hereAndNow() };
 });
 
-const requests = [
-  ["GET", "/skills"],
-  ["POST", "/skills", { text: "too short" }],
-  ["POST", "/skills", { text: "x".repeat(80001) }],
-  ["POST", "/skills", { text: "   Plenty of words for a skill body here.   ", name: "My New Skill.md" }],
-  ["POST", "/skills", { text: "---\nname: From Front\ndescription: Has front matter\n---\nBody of the skill text." }],
-  ["POST", "/skills", { text: "Another body that is long enough to keep.", name: "!!!" }],
-  ["POST", "/skills", { text: "A body with a multi-line name that is long.", name: "Line one\nline two" }],
-  ["POST", "/skills", { text: "Numeric name body that is long enough.", name: 42 }],
-  ["POST", "/skills", { text: 12345 }],
-  ["POST", "/skills", "not json"],
-  ["GET", "/skills"],
-  ["GET", "/here"],
-];
-globalThis.__now = RealDate.UTC(2026, 9, 15, 14, 5);
-const answers = [];
-for (const [method, url, body] of requests) {
-  const init = { method, headers: {} };
-  if (body !== undefined) {
-    init.headers["content-type"] = typeof body === "string" ? "text/plain" : "application/json";
-    init.body = typeof body === "string" ? body : JSON.stringify(body);
-  }
-  const res = await fetch(base + url, init);
-  answers.push({ method, url, body: body ?? null, status: res.status, answer: await res.json() });
-}
-const files = {};
-for (const name of (await fs.readdir(skillsDir)).sort()) files[name] = await fs.readFile(path.join(skillsDir, name), "utf8");
-
-listener.close();
-console.log(JSON.stringify({ seed, heres, now: globalThis.__now, answers, files }, null, 1));
+console.log(JSON.stringify({ heres }, null, 1));
 await fs.rm(dir, { recursive: true });

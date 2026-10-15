@@ -2448,8 +2448,8 @@ async function streamAnswer(apiKey, prompt, res, model, reasoning, spoken, photo
         }
       } else if (eventName === "response.failed" || eventName === "error") {
         const message = payload.error?.message || payload.message || "OpenAI failed while answering.";
-        console.error("OpenAI stream error:", message);
-        writeEvent(res, { type: "error", message });
+        console.error("OpenAI stream error:", redactSecrets(message));
+        writeEvent(res, { type: "error", message: clientError(message, "OpenAI failed while answering.") });
       }
     }
   }
@@ -2548,7 +2548,9 @@ async function streamLocalAnswer(prompt, res, model, reasoning, spoken, longSpok
         continue;
       }
       if (payload.error) {
-        writeEvent(res, { type: "error", message: String(payload.error) });
+        const message = String(payload.error);
+        console.error("Local model stream error:", redactSecrets(message));
+        writeEvent(res, { type: "error", message: clientError(message, "The local model failed while answering.") });
         continue;
       }
       const piece = payload.message?.content || "";
@@ -2675,6 +2677,7 @@ function syncSuggestions() {
         title: `Reply to ${speakTitle(file.title)}`,
         source: spokenWhen(file.mtime),
         detail: speakTitle(file.title),
+        at: file.mtime,
       }));
     desk.mergeSuggestions(items);
   } catch (err) {
@@ -3031,6 +3034,12 @@ function redactSecrets(text) {
     .replace(/apikey_[A-Za-z0-9_]+/g, "apikey-hidden");
 }
 
+/** A short line for the browser. The full detail stays in the server log. */
+function clientError(text, fallback) {
+  const clean = redactSecrets(text).replace(/\s+/g, " ").trim().slice(0, 240);
+  return clean || fallback;
+}
+
 function readSavedFolders() {
   try {
     const data = JSON.parse(fsSync.readFileSync(FOLDERS_FILE, "utf8"));
@@ -3166,10 +3175,10 @@ async function addDocuments(generation, roots) {
 }
 
 app.get("/health", (_req, res) => {
+  // Note count and the default model only. Folder paths stay on /folders, which the page already asks for.
   res.json({
     ok: true,
     notes: notes.length,
-    wiki: selected,
     defaultModel: DEFAULT_MODEL,
     defaultReasoning: DEFAULT_REASONING,
   });
@@ -3590,9 +3599,9 @@ app.post("/gemini-session", async (req, res) => {
     });
     const data = await response.json();
     if (!response.ok) {
-      const geminiError = redactSecrets(data.error?.message || "Gemini refused the token.");
-      console.error("Gemini refused the token:", geminiError);
-      return res.status(502).json({ error: geminiError });
+      const geminiError = data.error?.message || "Gemini refused the token.";
+      console.error("Gemini refused the token:", redactSecrets(geminiError));
+      return res.status(502).json({ error: clientError(geminiError, "Gemini refused the token.") });
     }
     res.json({ token: data.name, setup });
   } catch (err) {
@@ -3846,7 +3855,7 @@ app.post("/stop-models", async (_req, res) => {
     res.json(await stopAllOllamaModels());
   } catch (err) {
     console.error("Failed while stopping local models:", err?.message || err);
-    res.status(502).json({ error: err?.message || "Could not stop the local models." });
+    res.status(502).json({ error: clientError(err?.message, "Could not stop the local models.") });
   }
 });
 
@@ -3859,7 +3868,7 @@ app.post("/stop-model", async (req, res) => {
     res.json({ ...result, label: model.label });
   } catch (err) {
     console.error("Failed while stopping a local model:", err?.message || err);
-    res.status(502).json({ error: err?.message || "Could not stop the previous model." });
+    res.status(502).json({ error: clientError(err?.message, "Could not stop the previous model.") });
   }
 });
 
@@ -4342,6 +4351,56 @@ app.post("/lecture/save", async (req, res) => {
   res.json({ path: path.join(folder, name), title, presenter, photos: photoCount });
 });
 
+const FFMPEG = "/opt/homebrew/bin/ffmpeg";
+
+/** Opus from the page to AAC .m4a, mono 48 kbps (~22 MB an hour): small, and QuickTime plays it. */
+async function toM4a(input, output) {
+  const args = (codec) => ["-y", "-loglevel", "error", "-i", input, "-vn", "-ac", "1", "-c:a", codec, "-b:a", "48k", output];
+  try {
+    // Apple's AAC encoder sounds better than ffmpeg's at low bitrates.
+    await runCommand(FFMPEG, args("aac_at"));
+  } catch {
+    await runCommand(FFMPEG, args("aac"));
+  }
+}
+
+/**
+ * The audio of a meeting or lecture, saved beside its notes with the same name (.m4a),
+ * and linked from the notes. X-Notes-Path is the notes file the page just saved.
+ */
+app.post("/recording", express.raw({ type: "*/*", limit: "400mb" }), async (req, res) => {
+  let notesPath = "";
+  try {
+    notesPath = path.resolve(decodeURIComponent(String(req.get("x-notes-path") || "")));
+  } catch {
+    return res.status(400).json({ error: "The notes path could not be read." });
+  }
+  if (!/\.md$/i.test(notesPath) || !fsSync.existsSync(notesPath)) {
+    return res.status(400).json({ error: "Save the notes first." });
+  }
+  if (!folderIsAllowed(path.dirname(notesPath))) {
+    return res.status(400).json({ error: "Pick a folder inside your home folder." });
+  }
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: "The recording is empty." });
+  const output = notesPath.replace(/\.md$/i, ".m4a");
+  const temp = path.join(os.tmpdir(), `brain-recording-${process.pid}-${Date.now()}.webm`);
+  try {
+    await fs.writeFile(temp, req.body);
+    await toM4a(temp, output);
+    const name = path.basename(output);
+    const notes = await fs.readFile(notesPath, "utf8");
+    if (!notes.includes(`(<${name}>)`)) await fs.appendFile(notesPath, `\n## Recording\n\n[${name}](<${name}>)\n`, "utf8");
+    const bytes = (await fs.stat(output)).size;
+    console.log(`Saved a recording (${(bytes / 1048576).toFixed(1)} MB)`);
+    res.json({ path: output, bytes });
+  } catch (err) {
+    console.error("Failed while saving a recording:", err?.message || err);
+    res.status(500).json({ error: "Could not save the recording." });
+  } finally {
+    fs.rm(temp, { force: true }).catch(() => {});
+  }
+});
+
 /** Ask macOS for a folder. Returns an empty path if the user cancels. */
 app.post("/meeting/folder", async (req, res) => {
   const prompt = req.body?.kind === "lecture"
@@ -4535,7 +4594,7 @@ async function streamSpokenPrompt(req, res, prompt, firstEvent) {
     console.error("Failed while summarizing the meeting:", err?.message || err);
     writeEvent(res, {
       type: "error",
-      message: err?.message || "Could not summarize the meeting.",
+      message: clientError(err?.message, "Could not summarize the meeting."),
     });
     res.end();
   }
@@ -4818,7 +4877,7 @@ app.post("/ask", async (req, res) => {
     console.error("Failed while answering:", err?.message || err);
     writeEvent(res, {
       type: "error",
-      message: err?.message || "Something went wrong while answering.",
+      message: clientError(err?.message, "Something went wrong while answering."),
     });
     res.end();
   }
@@ -5064,7 +5123,7 @@ app.post("/brain/summarize", async (req, res) => {
     res.json({ day, result: await summarizeBrainDay(day) });
   } catch (err) {
     console.error("Failed while writing brain.md:", err?.message || err);
-    res.status(500).json({ error: err?.message || "Could not write brain.md." });
+    res.status(500).json({ error: clientError(err?.message, "Could not write brain.md.") });
   }
 });
 
@@ -5096,7 +5155,7 @@ app.post("/document", express.raw({ type: "*/*", limit: "60mb" }), async (req, r
     console.log(`Saved an uploaded document and its wiki page (${path.extname(doc.copyPath)})`);
     res.json({ title: doc.title, summary: doc.summary, wiki: doc.wikiPath, copy: doc.copyPath });
   } catch (err) {
-    if (err?.status === 400) return res.status(400).json({ error: err.message });
+    if (err?.status === 400) return res.status(400).json({ error: clientError(err.message, "That document could not be saved.") });
     console.error("Failed while saving an uploaded document:", err?.message || err);
     res.status(500).json({ error: "Could not save that document." });
   }

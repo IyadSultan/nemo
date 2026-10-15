@@ -97,6 +97,7 @@ fn every_call_and_the_file_match_node() {
                         title: x["title"].as_str().unwrap().into(),
                         source: x["source"].as_str().unwrap().into(),
                         detail: x["detail"].as_str().unwrap().into(),
+                        at: x["at"].as_f64(),
                     })
                     .collect();
                 json!(desk.merge_suggestions(&items))

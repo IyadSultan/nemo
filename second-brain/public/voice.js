@@ -31,8 +31,7 @@ let deskOpen = localStorage.getItem("deskOpen") !== "closed";
 const remoteAudio = document.getElementById("remoteAudio");
 const folderList = document.getElementById("folderList");
 const skillList = document.getElementById("skillList");
-const skillFile = document.getElementById("skillFile");
-const uploadSkillBtn = document.getElementById("uploadSkillBtn");
+const slashMenu = document.getElementById("slashMenu");
 const folderPath = document.getElementById("folderPath");
 const addFolderBtn = document.getElementById("addFolderBtn");
 const modelSelect = document.getElementById("modelSelect");
@@ -93,6 +92,9 @@ let meetingLines = [];
 let capturePhotos = [];
 // Copied when Meeting or Lecture turns off, so a new recording does not erase them.
 let photosToSave = [];
+// The whole meeting or lecture as audio, saved next to the notes as a small .m4a.
+let meetingRecording = null; // Promise<MediaRecorder | null> while capturing
+let recordingToSave = null; // Promise<Blob | null> from the capture that just ended
 // The newest photo from a normal talk, sent with the next question about it.
 let latestShot = "";
 let latestShotAt = 0;
@@ -340,21 +342,37 @@ typeForm.addEventListener("submit", (event) => {
 });
 
 async function askTyped(raw) {
-  const question = String(raw || "").trim();
+  let question = String(raw || "").trim();
   if (!question) {
     typeInput.focus();
     return;
   }
   typeInput.value = "";
+  closeSlashMenu();
+  // "/name what to do": turn that skill on, then ask. "/name" alone just turns it on.
+  const slash = question.match(/^\/(\S+)\s*([\s\S]*)$/);
+  if (slash) {
+    const wanted = slash[1].toLowerCase();
+    const skill = skillCatalog.find((item) => item.id === wanted)
+      || skillCatalog.find((item) => item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") === wanted);
+    if (!skill) {
+      setStatus(`There is no skill called /${slash[1]}. Type / to see them.`);
+      return;
+    }
+    setActiveSkill(skill.id);
+    question = slash[2].trim();
+    if (!question) {
+      setStatus(`/${skill.id} is on. Type or say what to do with it.`);
+      return;
+    }
+  }
   if (lectureFormOpen) {
     setStatus("Type the presenter's name and edit the title, then press Write summary.");
     return;
   }
   if (meetingOn) {
-    addMeetingLine(question);
-    const where = captureKind === "lecture" ? "lecture" : "meeting";
-    setStatus(`Added to the ${where}. I'm still only listening.`);
-    setCapsuleState(captureRole());
+    // A typed question is for the brain, not part of the meeting. Answer it on screen.
+    answerDuringMeeting(question);
     return;
   }
   questionEndedAt = performance.now();
@@ -1585,6 +1603,109 @@ function captureMeetingLine(stream) {
 }
 
 /**
+ * A question typed during a meeting or lecture. The answer is shown, not spoken,
+ * so the room is not interrupted, and what was said so far is part of the context.
+ * Writing the meeting down goes on as before.
+ */
+async function answerDuringMeeting(question) {
+  addBubble("user", question, false);
+  const bubble = addBubble("assistant", "…", true);
+  const text = bubble.querySelector(".text");
+  const kind = captureKind === "lecture" ? "lecture" : "meeting";
+  const sofar = [...meetingLines, meetingPartial.trim()].filter(Boolean).join("\n");
+  let answer = "";
+  try {
+    const response = await fetch("/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question,
+        history: chatTurns,
+        memory: chatMemory,
+        meetingNotes: [savedMeeting, sofar].filter(Boolean).join("\n"),
+        notesKind: kind,
+        skill: activeSkillId,
+        model: modelSelect.value,
+        reasoning: reasoningSelect.value,
+        spoken: false,
+      }),
+    });
+    if (!response.ok || !response.body) throw new Error("The brain did not answer.");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffered = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffered += decoder.decode(value, { stream: true });
+      const events = buffered.split("\n\n");
+      buffered = events.pop();
+      for (const block of events) {
+        const line = block.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+        const event = JSON.parse(line.slice(6));
+        if (event.type === "delta") {
+          answer += event.text || "";
+          text.textContent = answer;
+          transcriptEl.scrollTop = transcriptEl.scrollHeight;
+        } else if (event.type === "error") {
+          throw new Error(event.message || "The selected model failed.");
+        }
+      }
+    }
+    bubble.classList.remove("partial");
+    if (!answer.trim()) text.textContent = "I have no answer for that.";
+    rememberTurn(question, answer);
+  } catch (err) {
+    console.error("Failed while answering during the meeting:", err);
+    bubble.classList.remove("partial");
+    text.textContent = err.message || "I could not answer that.";
+  }
+  setStatus(`Answered on screen. I'm still writing down the ${kind}.`);
+}
+
+/** Record the meeting on its own microphone stream: Opus at 32 kbps, about 14 MB an hour. */
+async function startMeetingRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/mp4";
+    const rec = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32000 });
+    const chunks = [];
+    rec.ondataavailable = (event) => {
+      if (event.data.size) chunks.push(event.data);
+    };
+    rec.finished = new Promise((resolve) => {
+      rec.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        resolve(chunks.length ? new Blob(chunks, { type: mime }) : null);
+      };
+    });
+    // Ten-second pieces, so a long lecture is never one huge buffer.
+    rec.start(10000);
+    return rec;
+  } catch (err) {
+    console.error("Failed while starting the meeting recording:", err);
+    return null;
+  }
+}
+
+/** Stop the recording (and free the microphone). Resolves with the audio, or null. */
+function finishMeetingRecording() {
+  const started = meetingRecording;
+  meetingRecording = null;
+  if (!started) return Promise.resolve(null);
+  return started.then((rec) => {
+    if (!rec) return null;
+    try {
+      rec.stop();
+    } catch {
+      return null;
+    }
+    return rec.finished;
+  });
+}
+
+/**
  * Turn Meeting or Lecture on in the middle of a call.
  * Any answer that is playing stops. From here, speech is only written down.
  */
@@ -1596,6 +1717,7 @@ function beginMeeting(kind = "meeting") {
   meetingSummaryBusy = false;
   meetingOn = true;
   meetingStartedAt = Date.now();
+  meetingRecording = startMeetingRecording();
   meetingLines = [];
   capturePhotos = [];
   meetingPartial = "";
@@ -1637,6 +1759,7 @@ function endMeeting() {
   meetingLines = [];
   photosToSave = capturePhotos.slice();
   capturePhotos = [];
+  recordingToSave = finishMeetingRecording();
   closeMeetingAfterClip = true;
   stopSpeaking();
   setStatus(captureKind === "lecture" ? "Lecture off. Add the presenter and a title." : "Meeting off. Writing the minutes…");
@@ -2083,7 +2206,7 @@ function summarizeWithLiveModel() {
 }
 
 /** Save the minutes or lecture notes as a Markdown file. With pick, macOS asks for the folder first. */
-async function saveMinutes(meeting, pick, row) {
+async function saveMinutes(meeting, pick, row, recording) {
   const buttons = row.querySelectorAll("button");
   const status = row.querySelector(".minutes-saved");
   const lecture = meeting.kind === "lecture";
@@ -2108,9 +2231,20 @@ async function saveMinutes(meeting, pick, row) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || (lecture ? "Could not save the lecture." : "Could not save the minutes."));
     const shots = Number(data.photos) || 0;
-    status.textContent = shots
-      ? `Saved: ${data.path} (${shots === 1 ? "1 photo" : `${shots} photos`})`
-      : `Saved: ${data.path}`;
+    const extras = shots ? [shots === 1 ? "1 photo" : `${shots} photos`] : [];
+    const audio = recording ? await recording : null;
+    if (audio?.size) {
+      status.textContent = `Saved: ${data.path}. Saving the recording…`;
+      // Sent as raw bytes; the server saves it beside the notes as .m4a.
+      const sent = await fetch("/recording", {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream", "X-Notes-Path": encodeURIComponent(data.path) },
+        body: audio,
+      });
+      const kept = await sent.json().catch(() => ({}));
+      extras.push(sent.ok ? `recording ${(kept.bytes / 1048576).toFixed(1)} MB` : "the recording could not be saved");
+    }
+    status.textContent = extras.length ? `Saved: ${data.path} (${extras.join(", ")})` : `Saved: ${data.path}`;
     flashSaved();
   } catch (err) {
     console.error(lecture ? "Failed while saving the lecture:" : "Failed while saving the minutes:", err);
@@ -2137,8 +2271,10 @@ function attachMinutesButtons(bubble, meeting) {
   elsewhere.title = "Choose another folder";
   const status = document.createElement("span");
   status.className = "minutes-saved";
-  save.addEventListener("click", () => saveMinutes(meeting, false, row));
-  elsewhere.addEventListener("click", () => saveMinutes(meeting, true, row));
+  const recording = recordingToSave;
+  recordingToSave = null;
+  save.addEventListener("click", () => saveMinutes(meeting, false, row, recording));
+  elsewhere.addEventListener("click", () => saveMinutes(meeting, true, row, recording));
   row.append(save, elsewhere, status);
   bubble.append(row);
   meetingSaveRow = row;
@@ -3061,6 +3197,8 @@ async function hangUp({ keepStatus = false } = {}) {
     }
   }
   meetingOn = false;
+  finishMeetingRecording();
+  recordingToSave = null;
   captureKind = "";
   lectureFormOpen = false;
   meetingLines = [];
@@ -3654,8 +3792,9 @@ async function answerWithBrain(question, extras) {
             original: event.original || "",
           };
         } else if (event.type === "skill") {
-          // The server grabbed a skill, or put one away. Highlight the list.
-          setActiveSkill(event.id || "");
+          // The server grabbed a skill, or put one away. One the brain chose
+          // by itself (auto) is used for this answer only.
+          if (!event.auto) setActiveSkill(event.id || "");
           skillLabel = event.name || "";
         } else if (event.type === "delta") {
           rawAnswer += event.text || "";
@@ -4333,7 +4472,7 @@ function renderDesk() {
     article.className = "work-card";
     const kicker = document.createElement("p");
     kicker.className = "work-kicker";
-    kicker.textContent = `Idea · ${item.source || "recent email"}`;
+    kicker.textContent = `Idea · ${item.at ? numericStamp(item.at) : item.source || "recent email"}`;
     const title = document.createElement("h3");
     title.textContent = item.title;
     article.append(kicker, title);
@@ -4402,46 +4541,114 @@ async function loadDesk() {
 
 const deskReady = loadDesk();
 
-/** Highlight the skill that is on. Click a row to turn it on or off. */
+/** "2026-10-15 18:58": a card's date in numbers. The voice still says it in words. */
+function numericStamp(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** The skill that stays on for later questions, until turned off. */
 function setActiveSkill(id) {
   activeSkillId = id || "";
   renderSkills();
 }
 
+/** Show which skill is on, with a button to turn it off. Type / to choose one. */
 function renderSkills() {
   if (!skillList) return;
   skillList.replaceChildren();
-  if (!skillCatalog.length) {
-    const empty = document.createElement("p");
-    empty.className = "skill-empty";
-    empty.textContent = "No skills yet. Upload a markdown file.";
-    skillList.append(empty);
+  const skill = skillCatalog.find((item) => item.id === activeSkillId);
+  if (!skill) {
+    skillList.textContent = skillCatalog.length
+      ? `${skillCatalog.length} skills. Type / in the question box.`
+      : "No skills yet. Add one to ~/.claude/skills.";
     return;
   }
-  for (const skill of skillCatalog) {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "skill-row";
-    const on = skill.id === activeSkillId;
-    if (on) row.classList.add("is-on");
-    row.setAttribute("aria-pressed", on ? "true" : "false");
-    const title = document.createElement("strong");
-    title.textContent = skill.name;
-    const about = document.createElement("span");
-    about.textContent = skill.description || "No description";
-    row.append(title, about);
-    row.addEventListener("click", () => {
-      if (activeSkillId === skill.id) {
-        setActiveSkill("");
-        setStatus("Skill off.");
-      } else {
-        setActiveSkill(skill.id);
-        setStatus(`${skill.name} is on. Say Hey, then tell me what to do with it.`);
-      }
-    });
-    skillList.append(row);
-  }
+  const label = document.createElement("span");
+  const name = document.createElement("strong");
+  name.textContent = `/${skill.id}`;
+  label.append("On: ", name);
+  const off = document.createElement("button");
+  off.type = "button";
+  off.className = "ghost-btn small";
+  off.textContent = "Turn off";
+  off.addEventListener("click", () => {
+    setActiveSkill("");
+    setStatus("Skill off.");
+  });
+  skillList.append(label, off);
 }
+
+/** Skills whose /name or name starts with (or contains) what was typed after the slash. */
+function slashMatches(typed) {
+  const q = typed.toLowerCase();
+  const starts = skillCatalog.filter((s) => s.id.startsWith(q) || s.name.toLowerCase().startsWith(q));
+  const contains = skillCatalog.filter((s) => !starts.includes(s) && (s.id.includes(q) || s.name.toLowerCase().includes(q)));
+  return [...starts, ...contains].slice(0, 8);
+}
+
+let slashPick = 0;
+
+function closeSlashMenu() {
+  slashMenu.hidden = true;
+  slashMenu.replaceChildren();
+}
+
+function chooseSlash(skill) {
+  typeInput.value = `/${skill.id} `;
+  closeSlashMenu();
+  typeInput.focus();
+}
+
+/** While the question box holds "/name" (no space yet), list the matching skills. */
+function renderSlashMenu() {
+  const match = typeInput.value.match(/^\/(\S*)$/);
+  if (!match) return closeSlashMenu();
+  const found = slashMatches(match[1]);
+  if (!found.length) return closeSlashMenu();
+  slashPick = Math.min(slashPick, found.length - 1);
+  slashMenu.replaceChildren(...found.map((skill, index) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `slash-item${index === slashPick ? " is-on" : ""}`;
+    item.setAttribute("role", "option");
+    item.setAttribute("aria-selected", index === slashPick ? "true" : "false");
+    const title = document.createElement("strong");
+    title.textContent = `/${skill.id}`;
+    const about = document.createElement("span");
+    about.textContent = skill.description || skill.name;
+    item.append(title, about);
+    // mousedown, so the box does not lose focus before the click lands.
+    item.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      chooseSlash(skill);
+    });
+    return item;
+  }));
+  slashMenu.hidden = false;
+}
+
+typeInput.addEventListener("input", () => {
+  slashPick = 0;
+  renderSlashMenu();
+});
+typeInput.addEventListener("keydown", (event) => {
+  if (slashMenu.hidden) return;
+  const count = slashMenu.children.length;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    slashPick = (slashPick + (event.key === "ArrowDown" ? 1 : count - 1)) % count;
+    renderSlashMenu();
+  } else if (event.key === "Enter" || event.key === "Tab") {
+    event.preventDefault();
+    const typed = typeInput.value.slice(1);
+    chooseSlash(slashMatches(typed)[slashPick]);
+  } else if (event.key === "Escape") {
+    closeSlashMenu();
+  }
+});
+typeInput.addEventListener("blur", () => setTimeout(closeSlashMenu, 150));
 
 /** Read the skill files the server keeps, and show their names. */
 async function loadSkills() {
@@ -4458,30 +4665,6 @@ async function loadSkills() {
     console.error("Failed while loading skills:", err);
   }
 }
-
-uploadSkillBtn?.addEventListener("click", () => skillFile?.click());
-skillFile?.addEventListener("change", async () => {
-  const file = skillFile.files?.[0];
-  skillFile.value = "";
-  if (!file) return;
-  setStatus("Adding that skill…");
-  try {
-    const text = await file.text();
-    const response = await fetch("/skills", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: file.name.replace(/\.(md|txt)$/i, ""), text }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Could not add that skill.");
-    await loadSkills();
-    setActiveSkill(data.id || "");
-    setStatus(`${data.name || "That skill"} is on. Say Hey, then tell me what to do with it.`);
-  } catch (err) {
-    console.error("Failed while uploading a skill:", err);
-    setStatus(err.message || "Could not add that skill.");
-  }
-});
 
 loadSkills();
 
