@@ -1,3 +1,4 @@
+pub mod clock;
 pub mod desk;
 pub mod docs;
 pub mod emailsearch;
@@ -7,3 +8,4 @@ pub mod learnings;
 pub mod medgem;
 pub mod openfile;
 pub mod pricing;
+pub mod skills;
