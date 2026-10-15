@@ -7,6 +7,7 @@ edition = "2021"
 axum = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "process", "time"] }
 tower-http = { version = "0.6", features = ["fs"] }
+tower = { version = "0.5", features = ["util"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "multipart", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
@@ -19,7 +20,9 @@ regex = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 url = "2"
 getrandom = "0.3"
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 
 [dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
+futures-core = "0.3"
+tokio-stream = "0.1"
 http-body-util = "0.1"
