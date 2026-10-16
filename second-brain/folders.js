@@ -5,6 +5,7 @@
 
 import { FOLDERS_FILE, SKIP_DIRS, WIKI_PATH } from "./config.js";
 import { syncSuggestions } from "./deskjobs.js";
+import { brainNotes } from "./brain.js";
 import { loadDocs } from "./docs.js";
 import { indexRawMail } from "./mail.js";
 import { loadWiki, semantic } from "./notes.js";
@@ -130,6 +131,8 @@ export async function reloadNotes() {
     loaded.push(...(await loadWiki(root)));
     if (nextPresent.get(root)) nextGuides.set(root, await readCode(root));
   }
+  // brain.md sections are notes too, so older days can be found by search.
+  loaded.push(...brainNotes());
   setNotes(loaded);
   semantic.build(notes).catch((err) => console.error("Failed while building the meaning index:", err?.message || err));
   setGuides(nextGuides);
@@ -213,4 +216,10 @@ export function registerFolders(app) {
     }
     res.json(folderState());
   });
+}
+
+/** brain.md changed (nightly summary or Clear & save): swap its sections in the notes. */
+export function refreshBrainNotes() {
+  setNotes([...notes.filter((note) => !note.rel.startsWith("brain.md#")), ...brainNotes()]);
+  semantic.build(notes).catch((err) => console.error("Failed while building the meaning index:", err?.message || err));
 }

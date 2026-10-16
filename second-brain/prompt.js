@@ -3,7 +3,7 @@
  * folder's code.md, and the prompt built from notes, web pages and the chat so far.
  */
 
-import { brainBlock } from "./brain.js";
+import { brainBlock, inBrainBlock } from "./brain.js";
 import { isVaultQuestion, wantsEmail, wantsFile, wantsNews } from "./intents.js";
 import { learningsBlock } from "./learnings.js";
 import { replyDraftNote, sendDraftNote } from "./mail.js";
@@ -13,7 +13,9 @@ import { guides, selected } from "./state.js";
 import path from "node:path";
 
 export function buildPrompt(question, hits, pages = [], history = [], memory = "", meetingNotes = "", notesKind = "") {
-  const blocks = hits.map((hit) => {
+  const learned = brainBlock();
+  // A brain.md day that is already in the block below is not repeated as a note.
+  const blocks = hits.filter((hit) => !inBrainBlock(hit.note.rel, learned)).map((hit) => {
     const { note, terms } = hit;
     return [
       `Note: ${note.title}`,
@@ -84,7 +86,7 @@ export function buildPrompt(question, hits, pages = [], history = [], memory = "
     // here_and_now already ran. The model must copy these words, not invent a clock time.
     `Here and now: ${hereAndNow()}`,
     learningsBlock(),
-    brainBlock(),
+    learned,
     memoryBlock,
     meetingBlock,
     "Earlier in this conversation:",

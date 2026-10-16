@@ -168,6 +168,31 @@ export async function saveConversation(text, ask, when = new Date()) {
   return heading;
 }
 
+/**
+ * brain.md as notes, one per "## " section, so days older than the prompt window
+ * can still be found by keyword and meaning search like any wiki page.
+ */
+export function brainNotes() {
+  const notes = [];
+  for (const part of readText(BRAIN_FILE).split(/\n(?=## )/)) {
+    const match = part.match(/^## (.+)\n([\s\S]*)$/);
+    if (!match) continue;
+    const heading = match[1].trim();
+    const body = match[2].trim();
+    if (!heading || !body) continue;
+    const title = `Memory from ${heading}`;
+    const text = `${title}\n${body}`;
+    notes.push({ rel: `brain.md#${heading}`, title, text, lower: text.toLowerCase() });
+  }
+  return notes;
+}
+
+/** True when this brain.md section is already inside brainBlock(), so a search hit would repeat it. */
+export function inBrainBlock(rel, block) {
+  if (!rel.startsWith("brain.md#")) return false;
+  return block.includes(`\n## ${rel.slice("brain.md#".length)}\n`);
+}
+
 /** The newest days of brain.md, for the prompt. */
 export function brainBlock() {
   let text = readText(BRAIN_FILE);

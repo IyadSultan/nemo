@@ -24,7 +24,7 @@ import { controlClients, registerControl, sendControl } from "./control.js";
 import * as desk from "./desk.js";
 import { checkWatches, deliverReminders, registerDeskjobs, runDeskCommand, syncSuggestions } from "./deskjobs.js";
 import { emailSearchJob, runEmailSearch } from "./emailsearch.js";
-import { readSavedFolders, registerFolders, reloadNotes } from "./folders.js";
+import { readSavedFolders, refreshBrainNotes, registerFolders, reloadNotes } from "./folders.js";
 import { imessageHandle, registerIMessage, runTextMe, sendIMessage, textMeJob } from "./imessage.js";
 import { asksForOutlookCalendar, calendarRead, isChatQuestion, isNoise, meetingJob, memoJob, wantsEmail } from "./intents.js";
 import { judgeSpeech, warmJudge } from "./jev.js";
@@ -668,6 +668,7 @@ async function summarizeBrainDay(day) {
   const result = await summarizeDay(day, folders, (instruction, text) =>
     askModelOnce(model, instruction, text, process.env.OPENAI_API_KEY, 2000, 240000));
   console.log(`brain.md for ${day}: ${result}`);
+  if (result === "saved") refreshBrainNotes();
   return result;
 }
 
@@ -724,6 +725,7 @@ app.post("/brain/conversation", async (req, res) => {
       askModelOnce(getModel(DEFAULT_MODEL), instruction, input, process.env.OPENAI_API_KEY, 2000, 240000));
     // Never log the conversation itself. It can name a patient.
     console.log(`brain.md: saved ${heading}`);
+    refreshBrainNotes();
     res.json({ ok: true, heading });
   } catch (err) {
     console.error("Failed while saving the conversation to brain.md:", err?.message || err);

@@ -137,6 +137,56 @@ local function restartVoice()
     end)
 end
 
+-- Watchdog: every minute ask /health through the Rust front on 3001.
+-- The brain goes red when the server is down, when Node answers without the Rust
+-- front (no x-served-by header), or when a check is still waiting after a minute,
+-- which is how a hung server looks (2026-10-16: it listened but never answered).
+local HEALTH_URL = "http://127.0.0.1:" .. PORT .. "/health"
+local healthAskedAt = nil
+
+local function showHealth(ok, why)
+    if not menu then return end
+    if ok then
+        menu:setTitle("🧠")
+        menu:setTooltip("Second brain is up")
+    else
+        menu:setTitle("🧠🔴")
+        menu:setTooltip("Second brain: " .. why)
+    end
+end
+
+local function checkHealth()
+    local now = hs.timer.secondsSinceEpoch()
+    if healthAskedAt then
+        showHealth(false, "the server is not answering")
+        -- A request stuck for two minutes is given up on, so a recovery is noticed.
+        if now - healthAskedAt < 120 then return end
+    end
+    healthAskedAt = now
+    hs.http.asyncGet(HEALTH_URL, nil, function(status, _body, headers)
+        healthAskedAt = nil
+        if status ~= 200 then
+            showHealth(false, "the server is down (status " .. tostring(status) .. ")")
+            return
+        end
+        local served = ""
+        for name, value in pairs(headers or {}) do
+            if name:lower() == "x-served-by" then served = tostring(value) end
+        end
+        if served == "" then
+            showHealth(false, "Node answered without the Rust front")
+            return
+        end
+        showHealth(true, "")
+    end)
+end
+
+if _G.heyMyBrainHealthTimer then
+    _G.heyMyBrainHealthTimer:stop()
+    _G.heyMyBrainHealthTimer = nil
+end
+_G.heyMyBrainHealthTimer = hs.timer.doEvery(60, checkHealth)
+
 if menu then
     menu:setTitle("🧠")
     -- Left click the brain: open or focus. Right click: show the menu.
@@ -145,7 +195,9 @@ if menu then
         { title = "Open voice control", fn = openVoice },
         { title = "Start listening (⌘⌃)", fn = startListening },
         { title = "Restart voice app", fn = restartVoice },
+        { title = "Check health now", fn = checkHealth },
     })
+    checkHealth()
 end
 
 -- Cmd+Opt+S from any app: stop the answer that is playing.
