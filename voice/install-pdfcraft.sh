@@ -1,7 +1,8 @@
 #!/bin/sh
 # Installs PDFCraft's tools (github.com/PDFCraftTool/pdfcraft, AGPL-3.0) for second-brain/pdftools.js:
 # bundles its pdf-lib processors (voice/pdfcraft-entry.ts) into second-brain/vendor/pdfcraft-tools.mjs.
-# Fetches only src/lib/pdf, src/lib/utils and src/types at a pinned commit. Needs git and npx.
+# Fetches only src/lib/pdf, src/lib/utils and src/types at a pinned commit. Also installs pdf2docx
+# (PDF to Word) in voice/pdf2docx-venv. Needs git, npx and python3.
 set -eu
 COMMIT="a99a52d60f5a9c30ba0f5c0d8d8fc1b69ecb6793"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,3 +20,8 @@ npx --yes esbuild@0.24.0 "$ROOT/voice/pdfcraft-entry.ts" --bundle --platform=nod
   --log-level=warning --outfile="$VENDOR/pdfcraft-tools.mjs"
 echo "Built $VENDOR/pdfcraft-tools.mjs"
 
+
+# PDF to Word (pdf2docx, the converter PDFCraft runs in the browser) in its own Python environment.
+python3 -m venv "$ROOT/voice/pdf2docx-venv"
+"$ROOT/voice/pdf2docx-venv/bin/pip" install -q pdf2docx
+echo "Installed pdf2docx in $ROOT/voice/pdf2docx-venv"

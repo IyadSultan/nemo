@@ -202,6 +202,20 @@ async function toImages(item) {
   return { outputs: [], note: `The pages are pictures in a new folder in Downloads: ${path.basename(folder)}.` };
 }
 
+const WORD_PYTHON = path.join(__dirname, "..", "voice", "pdf2docx-venv", "bin", "python");
+const WORD_SCRIPT = path.join(__dirname, "..", "voice", "pdf_to_word.py");
+
+/** A Word copy (pdf2docx) in Downloads, shown in the Finder. */
+async function toWord(item) {
+  if (!fsSync.existsSync(WORD_PYTHON)) throw new Error("PDF to Word is not installed. Run voice/install-pdfcraft.sh.");
+  const downloads = path.join(os.homedir(), "Downloads");
+  let target = path.join(downloads, `${stem(item.name)}.docx`);
+  for (let n = 2; fsSync.existsSync(target); n += 1) target = path.join(downloads, `${stem(item.name)} ${n}.docx`);
+  await run(WORD_PYTHON, ["-I", WORD_SCRIPT, item.file, target], 600_000);
+  run("open", ["-R", target]).catch(() => {});
+  return { outputs: [], note: `Saved ${path.basename(target)} in Downloads.` };
+}
+
 const STAMPS = ["approved", "rejected", "draft", "confidential", "final", "copy"];
 
 /** Pages to work on: the ones given, else page 1 (or every page when all is true). */
@@ -216,6 +230,7 @@ async function runPlan(plan, files) {
   if (plan.tool === "ocr") return ocr(files[0]);
   if (plan.tool === "password" || plan.tool === "unlock") return password(files[0], plan);
   if (plan.tool === "images") return toImages(files[0]);
+  if (plan.tool === "word") return toWord(files[0]);
   const t = await pdfcraft();
   const file = await asFile(files[0]);
   const count = plan.tool === "merge" ? 0 : (await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true })).getPageCount();
@@ -421,6 +436,64 @@ function sendError(res, err, what) {
   res.status(400).json({ error: err?.message && !err.code ? err.message : `Could not ${what}.` });
 }
 
+// ---- Q/A: a PDF's text joins the questions until the page ends it ----
+
+const QA_DIR = path.join(__dirname, "tmp", "pdfqa");
+const QA_CHARS = 60_000;
+const QA_INSTRUCTION = [
+  "You summarize a PDF for the user, who will then ask questions about it.",
+  "Write 4 to 6 plain sentences: what the document is, its main points, and the numbers, dates or decisions that matter.",
+  "No markdown, no lists, no symbols. Write in the language of the document. End with: Ask me anything about it.",
+].join(" ");
+
+/** The PDF's text, one "[Page n]" part per page. A scan is read with OCR (first 40 pages). Cached. */
+async function pdfText(item) {
+  const cached = path.join(QA_DIR, `${item.id}.txt`);
+  const kept = await fs.readFile(cached, "utf8").catch(() => null);
+  if (kept != null) return kept;
+  let pages = (await run("/opt/homebrew/bin/pdftotext", ["-enc", "UTF-8", item.file, "-"], 120_000).catch(() => "")).split("\f");
+  if (pages.join("").replace(/\s+/g, "").length < 40 * Math.max(1, pages.length - 1)) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "brain-qa-"));
+    try {
+      await run(PDFTOPPM, ["-r", "200", "-l", "40", "-png", item.file, path.join(dir, "p")]);
+      const images = (await fs.readdir(dir)).filter((name) => name.endsWith(".png")).sort();
+      pages = [];
+      for (const image of images) pages.push(await run(TESSERACT, [path.join(dir, image), "-", "-l", "eng"], 120_000).catch(() => ""));
+    } finally {
+      fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+  const text = pages
+    .map((page, i) => [i, page.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim()])
+    .filter(([, page]) => page)
+    .map(([i, page]) => `[Page ${i + 1}]\n${page}`)
+    .join("\n\n");
+  await fs.mkdir(QA_DIR, { recursive: true });
+  await fs.writeFile(cached, text, "utf8");
+  return text;
+}
+
+/**
+ * The prompt part for the PDFs the page has in Q/A (ids), or "".
+ * server.js adds it to every question while Q/A is on.
+ */
+export async function qaBlock(ids) {
+  const list = (Array.isArray(ids) ? ids : []).slice(0, 3);
+  const parts = [];
+  for (const id of list) {
+    const item = await editItem(id);
+    if (!item) continue;
+    const text = await pdfText(item);
+    if (text) parts.push(`PDF: ${item.name}\n${text.slice(0, QA_CHARS)}${text.length > QA_CHARS ? "\n[The rest of this PDF is cut off.]" : ""}`);
+  }
+  if (!parts.length) return "";
+  return [
+    "",
+    "The user is asking about these PDFs (Q/A). Answer from their text first and say the page number when it helps. If the answer is not in them, say so before using the notes or the web.",
+    ...parts,
+  ].join("\n\n");
+}
+
 /**
  * PDFs to edit on the page, in boxes (pdfedit.js). Nothing goes to the notes or a model.
  * POST /pdfedit/upload          raw PDF bytes, name in X-File-Name → { id, name, url, pages }
@@ -463,6 +536,22 @@ export function registerPdfTools(app) {
       res.sendFile(`${out}.png`);
     } catch {
       res.status(404).end();
+    }
+  });
+
+  app.post("/pdfedit/:id/qa", async (req, res) => {
+    const item = await editItem(req.params.id);
+    if (!item) return res.status(404).json({ error: "That PDF is gone." });
+    try {
+      const text = await pdfText(item);
+      if (!text) return res.status(400).json({ error: "I could not find any text in it." });
+      const model = getModel(process.env.PDF_QA_MODEL) || getModel("claude-sonnet");
+      const started = Date.now();
+      const summary = (await askModelOnce(model, QA_INSTRUCTION, `PDF: ${item.name}\n\n${text.slice(0, QA_CHARS)}`, process.env.OPENAI_API_KEY, 900, 180_000)).trim();
+      console.log(`PDF Q/A summary: ${text.length} chars, ${Date.now() - started} ms`);
+      res.json({ summary, pages: (text.match(/^\[Page \d+\]$/gm) || []).length });
+    } catch (err) {
+      sendError(res, err, "read that PDF");
     }
   });
 

@@ -32,3 +32,4 @@ __pycache__/
 
 # PDFCraft tools bundle and web app (voice/install-pdfcraft.sh)
 second-brain/vendor/
+voice/pdf2docx-venv/

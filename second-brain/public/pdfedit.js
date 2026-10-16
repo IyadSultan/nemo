@@ -4,7 +4,8 @@
  * Each box has its own tools (PDFCraft's, run by the server in pdftools.js); a result
  * comes back as a new box next to it. The last box has Combine, which merges every box
  * in the order shown. Split asks where to cut (or opens a window of pages), Sign and
- * Bookmarks open their own windows. More shows the rest of the tools.
+ * Bookmarks open their own windows. Q/A summarizes a PDF in the chat and sends its text
+ * with every question until it is ended. More shows the rest of the tools.
  */
 (() => {
   const desk = document.getElementById("pdfDesk");
@@ -23,6 +24,8 @@
     { tool: "split", label: "Split", fields: [{ key: "where", placeholder: "Cut after pages: 3, 7 (or ranges 1-3, 4-9)" }], build: (v, box) => ({ pages: splitRanges(v.where, Number(box.dataset.pages)) }), extra: "split" },
     { tool: "sign", label: "Sign…", open: "sign" },
     { tool: "bookmarks", label: "Bookmarks…", open: "bookmarks" },
+    { tool: "word", label: "To Word", title: "A Word copy in Downloads" },
+    { tool: "qa", label: "Q/A", open: "qa", title: "Summarize it, then answer your questions about it" },
   ];
   const MORE = [
     { tool: "numbers", label: "Page numbers" },
@@ -114,7 +117,7 @@
     head.append(
       button("‹", "pdfbox-move", () => box.previousElementSibling?.before(box) || null, "Move left"),
       button("›", "pdfbox-move", () => box.nextElementSibling?.after(box) || null, "Move right"),
-      button("×", "pdfbox-x", () => { box.remove(); refresh(); }, "Remove this box (the file stays saved)"),
+      button("×", "pdfbox-x", () => { endQa(box); box.remove(); refresh(); }, "Remove this box (the file stays saved)"),
     );
     head.querySelectorAll(".pdfbox-move").forEach((b) => b.addEventListener("click", refresh));
 
@@ -132,6 +135,7 @@
     const pick = (t) => {
       if (t.open === "sign") openSign(box, item);
       else if (t.open === "bookmarks") openBookmarks(box, item);
+      else if (t.open === "qa") startQa(box, item);
       else if (t.fields) ask(box, item, t);
       else runTool(box, item, { tool: t.tool });
     };
@@ -242,6 +246,38 @@
     } finally {
       busy(box, false);
     }
+  }
+
+  // ---- Q/A: the PDF's text goes with every question until Q/A is ended (voice.js sends qaIds) ----
+
+  const qa = new Set();
+
+  async function startQa(box, item) {
+    if (qa.has(item.id)) return setStatus(box, "Q/A is already on. Ask your question.");
+    busy(box, true);
+    setStatus(box, "Reading it…");
+    try {
+      const data = await post(`/pdfedit/${encodeURIComponent(item.id)}/qa`);
+      if (qa.size >= 3) qa.delete(qa.values().next().value);
+      qa.add(item.id);
+      boxes.querySelectorAll(".pdfbox").forEach((b) => b.classList.toggle("qa", qa.has(b.dataset.id)));
+      const status = box.querySelector(".pdfbox-status");
+      status.replaceChildren(document.createTextNode("Q/A on: ask about it. "), button("End Q/A", "", () => endQa(box)));
+      // voice.js: show the summary in the chat and keep it as a turn.
+      const said = `${item.name}: ${data.summary}`;
+      if (typeof addBubble === "function") addBubble("assistant", said);
+      if (typeof rememberTurn === "function") rememberTurn(`Summarize the PDF "${item.name}" and get ready to answer questions about it.`, said);
+    } catch (err) {
+      setStatus(box, err.message);
+    } finally {
+      busy(box, false);
+    }
+  }
+
+  function endQa(box) {
+    if (!qa.delete(box.dataset.id)) return;
+    box.classList.remove("qa");
+    setStatus(box, "Q/A ended.");
   }
 
   async function combine(event) {
@@ -631,7 +667,7 @@
   });
   document.getElementById("pdfEditBtn")?.addEventListener("click", () => picker.click());
   document.getElementById("pdfAddBtn")?.addEventListener("click", () => picker.click());
-  document.getElementById("pdfClearBtn")?.addEventListener("click", () => { boxes.replaceChildren(); refresh(); });
+  document.getElementById("pdfClearBtn")?.addEventListener("click", () => { qa.clear(); boxes.replaceChildren(); refresh(); });
 
   // Dropping PDFs anywhere on the window uploads them for editing.
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
@@ -650,5 +686,5 @@
     upload(e.dataTransfer.files);
   });
 
-  window.brainPdfEdit = { pick: () => picker.click(), upload };
+  window.brainPdfEdit = { pick: () => picker.click(), upload, qaIds: () => [...qa] };
 })();

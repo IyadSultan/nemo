@@ -3826,6 +3826,7 @@ async function answerWithBrain(question, extras) {
         presenter: extras?.presenter || "",
         title: extras?.title || "",
         photo: writingNotes ? "" : photoForQuestion(question),
+        qaPdfs: writingNotes ? [] : window.brainPdfEdit?.qaIds() || [],
         tinyMove,
         skill: activeSkillId,
         model: modelSelect.value,

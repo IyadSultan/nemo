@@ -40,7 +40,7 @@ import { findOnMacJob, openFileJob, runFindOnMac, runOpenFile } from "./openfile
 import { openOutlookDraft } from "./outlook.js";
 import { registerDeck, rememberDocument } from "./deck.js";
 import { pdfCatcher, registerPdf } from "./pdf.js";
-import { answerPdfTool, registerPdfTools, rememberPdf, wantsPdfTool } from "./pdftools.js";
+import { answerPdfTool, qaBlock, registerPdfTools, rememberPdf, wantsPdfTool } from "./pdftools.js";
 import { ingestDocument } from "./upload.js";
 import { MODELS, REASONING_LEVELS, VOICE_MODELS, getModel } from "./pricing.js";
 import { TINY_LINES, buildPrompt, cleanHistory, cleanMemory } from "./prompt.js";
@@ -551,6 +551,8 @@ app.post("/ask", async (req, res) => {
     }
     const notesKind = req.body?.notesKind === "lecture" ? "lecture" : "";
     let prompt = buildPrompt(question, hits, pages, history, cleanMemory(req.body?.memory), recordedMeeting, notesKind);
+    // PDFs in Q/A on the page (pdfedit.js): their text goes with every question.
+    prompt += await qaBlock(req.body?.qaPdfs);
     const photo = photoDataUrl(req.body?.photo);
     if (photo && (model.local || model.subscription)) {
       prompt += "\n\nThe user attached a photo. You cannot see pictures. If they ask what the photo shows, say you cannot see it. Do not invent what is in it.";
