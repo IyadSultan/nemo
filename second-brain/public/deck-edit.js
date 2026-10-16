@@ -1,5 +1,6 @@
 // "Edit with brain": the deck in a window-sized editor, one slide at a time.
-// Type or say what to change on the slide shown; the brain rewrites only that slide.
+// Type, or say "Hey" and what to change on the slide shown; the brain rewrites only that
+// slide, then waits for the next instruction.
 // Enhance rewrites the whole deck: more attractive, online data, or a document's data.
 import { loadThemes, renderSlide, themeOf, themeVars } from "/deck.js";
 
@@ -69,7 +70,7 @@ function draw() {
   const room = ed.main.parentElement;
   const width = Math.max(320, Math.min(room.clientWidth - 40, ((room.clientHeight - 130) * 960) / 540));
   ed.main.replaceChildren(slideAt(ed.deck.slides[ed.index], theme, width));
-  ed.input.placeholder = `Tell the brain what to change on slide ${ed.index + 1} — or just say it`;
+  ed.input.placeholder = `What to change on slide ${ed.index + 1}? (or say "Hey, …")`;
   const notes = ed.deck.slides[ed.index]?.notes;
   ed.root.querySelector(".de-notes").textContent = notes ? `Notes: ${notes}` : "";
 }
@@ -95,7 +96,7 @@ async function change(request) {
   try {
     const data = await post(`/deck/${encodeURIComponent(ed.id)}/slide`, JSON.stringify({ index: ed.index, request: words, model: model() }));
     ed.deck = data.deck;
-    setBusy(false, `Slide ${ed.index + 1} changed. Undo puts it back.`);
+    setBusy(false, `Slide ${ed.index + 1} changed. Waiting for your next change (Undo puts it back).`);
     draw();
   } catch (err) {
     setBusy(false, err.message);
@@ -231,7 +232,7 @@ export async function openEditor(id, index = 0, start = null) {
   Object.assign(ed, { id, deck: data.deck, index });
   localStorage.setItem("lastDeck", id);
   draw();
-  status("Say or type a change for this slide. Say next or back to move.");
+  status("Type a change, or say Hey and the change. Hey next / Hey back moves.");
   if (typeof connected !== "undefined" && !connected) document.getElementById("talkBtn")?.click();
   if (start) enhance(start.mode, start.request || "");
 }
@@ -250,8 +251,23 @@ export function editorOpen() {
 
 const NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
 
-/** Speech while the editor is open: move between slides, or change the one shown. */
-export function editorHear(said) {
+let lastHeard = { words: "", at: 0 };
+
+/**
+ * Speech while the editor is open. Only sentences that start with Hey count, one at a
+ * time: anything else (talk, noise, whisper's made-up "thank you") is ignored, and so is
+ * speech while a change is still running or the same words heard again within 30 s.
+ */
+export function editorHear(raw) {
+  const said = window.questionAfterWake ? window.questionAfterWake(raw) : String(raw || "").trim();
+  if (said === null || ed.busy) return;
+  if (!said) {
+    status("Listening: say the change.");
+    return;
+  }
+  const key = said.toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, "").trim();
+  if (key === lastHeard.words && Date.now() - lastHeard.at < 30_000) return;
+  lastHeard = { words: key, at: Date.now() };
   const s = said.toLowerCase().replace(/[.,!?]+/g, " ").replace(/\s+/g, " ").trim();
   if (/^(next|next slide|forward)( please)?$/.test(s)) go(Math.min(ed.deck.slides.length - 1, ed.index + 1));
   else if (/^(back|go back|previous|previous slide)( please)?$/.test(s)) go(Math.max(0, ed.index - 1));

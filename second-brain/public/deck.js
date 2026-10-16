@@ -221,7 +221,7 @@ function chartSvg(chart, theme) {
 }
 
 export function renderSlide(slide, theme, draft = false) {
-  const node = el("div", `d-slide d-${slide.kind}${draft ? " d-draft" : ""}`);
+  const node = el("div", `d-slide d-k-${slide.kind}${draft ? " d-draft" : ""}`);
   const kind = slide.kind;
   if (kind === "title" || kind === "closing") {
     node.append(
@@ -758,12 +758,13 @@ async function drain() {
 function hear(text) {
   const editing = editMod?.editorOpen();
   if (!show.root && !editing) return false;
-  const said = String(text || "").replace(/^(hey|okay|ok)[, ]+/i, "").trim();
-  if (!said) return true;
   if (editing) {
-    editMod.editorHear(said);
+    // The editor wants "Hey" first, so it hears instructions, not talk or noise.
+    editMod.editorHear(String(text || ""));
     return true;
   }
+  const said = String(text || "").replace(/^(hey|okay|ok)[, ]+/i, "").trim();
+  if (!said) return true;
   wake();
   if (navigate(said)) return true;
   if (!show.live) return true;
