@@ -6,6 +6,9 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP="/Applications/Second Brain.app"
+# Cursor sometimes points Cargo at a temporary folder. The app must be built
+# into this project's target directory, which is the file copied below.
+unset CARGO_TARGET_DIR
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 

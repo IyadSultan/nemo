@@ -627,8 +627,8 @@ function fullscreen(on) {
   else if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
 }
 
-/** Open deck id full screen. */
-async function present(id, { live = false, index = 0 } = {}) {
+/** Open deck id full screen. onClose(id) runs when the show ends. */
+async function present(id, { live = false, index = 0, onClose = null } = {}) {
   const response = await fetch(`/deck/${encodeURIComponent(id)}`);
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "That deck is gone.");
@@ -638,6 +638,7 @@ async function present(id, { live = false, index = 0 } = {}) {
   show.deck = data.deck;
   show.live = live;
   show.queue = [];
+  show.onClose = onClose;
   localStorage.setItem("lastDeck", id);
   applyTheme(themeOf(show.deck));
   fullscreen(true);
@@ -659,12 +660,14 @@ function close() {
   document.removeEventListener("keydown", onKey, true);
   window.removeEventListener("resize", fit);
   show.root.remove();
-  Object.assign(show, { root: null, stage: null, slideEl: null, hud: null, live: false, busy: false, queue: [], pending: [] });
+  const { id, onClose } = show;
+  Object.assign(show, { root: null, stage: null, slideEl: null, hud: null, live: false, busy: false, queue: [], pending: [], onClose: null });
   fullscreen(false);
+  onClose?.(id);
 }
 
 /** A new live deck titled from the topic, opened full screen in live mode. */
-async function startLive(topic) {
+async function startLive(topic, { onClose = null } = {}) {
   const title = String(topic || "").replace(/[.?!]+$/, "").trim();
   const response = await fetch("/deck/new", {
     method: "POST",
@@ -673,7 +676,7 @@ async function startLive(topic) {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Could not start a deck.");
-  await present(data.id, { live: true });
+  await present(data.id, { live: true, onClose });
 }
 
 // ---------- voice ----------

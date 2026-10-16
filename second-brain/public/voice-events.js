@@ -3,7 +3,7 @@
  * Part of the voice window; loaded after the files before it in voice.html (see voice.js).
  */
 
-async function hangUp({ keepStatus = false } = {}) {
+async function hangUp({ keepStatus = false, keepMeeting = false } = {}) {
   // Stop the answer first, so Ollama is free to unload the model.
   keyboardWake = false;
   listenEpoch += 1;
@@ -42,39 +42,42 @@ async function hangUp({ keepStatus = false } = {}) {
   modelSelect.disabled = false;
   reasoningSelect.disabled = false;
   paused = false;
-  finishMeetingLine();
-  const pending = [
-    ...(Array.isArray(linesToSummarize) ? linesToSummarize : []),
-    ...meetingLines,
-  ];
-  if (pending.length) {
-    const extra = pending.join("\n");
-    if (!savedMeeting.includes(extra)) {
-      savedMeeting = savedMeeting ? `${savedMeeting}\n${extra}` : extra;
+  // A meeting that was already going stays on if Start talking never connected.
+  if (!keepMeeting) {
+    finishMeetingLine();
+    const pending = [
+      ...(Array.isArray(linesToSummarize) ? linesToSummarize : []),
+      ...meetingLines,
+    ];
+    if (pending.length) {
+      const extra = pending.join("\n");
+      if (!savedMeeting.includes(extra)) {
+        savedMeeting = savedMeeting ? `${savedMeeting}\n${extra}` : extra;
+      }
+      if (meetingOn) {
+        if (captureKind === "lecture") savedNotesKind = "lecture";
+        const name = captureName();
+        const bubble = addBubble(captureRole(), `${name} kept. Ask me about it the next time you start talking.`, false);
+        bubble.querySelector(".who").textContent = name;
+      }
     }
-    if (meetingOn) {
-      if (captureKind === "lecture") savedNotesKind = "lecture";
-      const name = captureName();
-      const bubble = addBubble(captureRole(), `${name} kept. Ask me about it the next time you start talking.`, false);
-      bubble.querySelector(".who").textContent = name;
-    }
+    meetingOn = false;
+    finishMeetingRecording();
+    recordingToSave = null;
+    captureKind = "";
+    lectureFormOpen = false;
+    meetingLines = [];
+    closeMeetingAfterClip = false;
+    linesToSummarize = null;
   }
-  meetingOn = false;
-  finishMeetingRecording();
-  recordingToSave = null;
-  captureKind = "";
-  lectureFormOpen = false;
-  meetingLines = [];
-  closeMeetingAfterClip = false;
-  linesToSummarize = null;
   localEars = false;
   recordingClip = false;
   paintMeetingButton();
-  muteBtn.disabled = true;
+  muteBtn.disabled = !keepMeeting;
   muteBtn.textContent = "Mute mic";
   muteBtn.classList.remove("is-muted");
   syncCallButtons();
-  setCapsuleState("idle");
+  setCapsuleState(keepMeeting && meetingOn ? (muted ? "muted" : captureRole()) : "idle");
   setBusy(false);
   if (!keepStatus) setStatus("Call ended");
 }

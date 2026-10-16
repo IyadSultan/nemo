@@ -13,8 +13,22 @@ import crypto from "node:crypto";
  * Live voice session. Same model as Nemo: gpt-realtime-2.1-mini.
  * It receives microphone audio, so it can hear the user.
  */
-// Gemini has its own voices. Pick the closest one to the voice chosen on the page.
+// Gemini has its own voices. A Gemini name is used as-is. An older page that
+// still sends an OpenAI name is mapped to the closest Gemini voice.
 export const GEMINI_VOICES = { marin: "Aoede", cedar: "Charon", alloy: "Puck", ash: "Orus", coral: "Kore", sage: "Leda" };
+const GEMINI_NAMES = new Set(["Aoede", "Charon", "Fenrir", "Kore", "Puck", "Leda", "Orus", "Zephyr"]);
+
+export function geminiVoiceName(query) {
+  if (GEMINI_NAMES.has(query)) return query;
+  return GEMINI_VOICES[query] || "Aoede";
+}
+
+// OpenAI rejects a voice it does not know, so anything else stays Marin.
+const OPENAI_VOICES = new Set(["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar"]);
+
+export function openaiVoiceName(query, fallback) {
+  return OPENAI_VOICES.has(query) ? query : fallback;
+}
 
 export function registerLive(app) {
   /**
@@ -32,7 +46,7 @@ export function registerLive(app) {
       model: `models/${model.id}`,
       generationConfig: {
         responseModalities: ["AUDIO"],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: GEMINI_VOICES[req.query.voice] || "Aoede" } } },
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: geminiVoiceName(req.query.voice) } } },
       },
       // Gemini answers every turn; the Hey rule would only make it go quiet.
       systemInstruction: { parts: [{ text: voiceInstructions().replace(/^Stay silent unless.*\n/m, "") }] },
@@ -97,7 +111,7 @@ export function registerLive(app) {
       return res.status(400).json({ error: "Expected an SDP offer in the request body." });
     }
 
-    const voice = typeof req.query.voice === "string" ? req.query.voice : DEFAULT_VOICE;
+    const voice = openaiVoiceName(req.query.voice, DEFAULT_VOICE);
     const speakOnly = req.query.speak === "1";
     const chosen = getAnyModel(req.query.model) || getAnyModel(VOICE_MODEL);
     let reasoning = typeof req.query.reasoning === "string" ? req.query.reasoning : chosen.reasoning[0];

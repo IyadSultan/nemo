@@ -191,11 +191,16 @@ function showRates() {
     return;
   }
   const audio = model.local
-    ? " The written answer is free on this Mac. Listening is free too. The Kokoro voice speaks it on this Mac, so nothing goes to OpenAI."
+    ? " The written answer is free on this Mac. Listening is free too. A voice on this Mac speaks it, so nothing goes to OpenAI."
     : model.audioInputPerMillion
     ? ` Audio is ${formatRate(model.audioInputPerMillion)} in and ${formatRate(model.audioOutputPerMillion)} out per million tokens.`
     : " Listening stays on this Mac, so that part is free. Voice control only speaks the answer.";
-  ratesEl.textContent = `${model.label}: text ${formatRate(model.inputPerMillion)} in and ${formatRate(model.outputPerMillion)} out per million tokens.${audio} ${model.blurb} Change the model or thinking before you press Start talking. That choice stays for the whole chat.`;
+  const voiceNote = model.local
+    ? " The Voice menu lists the voices on this Mac."
+    : model.gemini
+    ? " The Voice menu lists Gemini's voices."
+    : " The Voice menu chooses the OpenAI voice that reads the answer.";
+  ratesEl.textContent = `${model.label}: text ${formatRate(model.inputPerMillion)} in and ${formatRate(model.outputPerMillion)} out per million tokens.${audio}${voiceNote} ${model.blurb} Change the model, thinking, or voice before you press Start talking. That choice stays for the whole chat.`;
 }
 
 function fillReasoning() {
@@ -232,6 +237,7 @@ function fillModels() {
   }
   chosenModelId = modelSelect.value;
   fillReasoning();
+  fillVoices();
   showRates();
 }
 
@@ -822,6 +828,7 @@ modelSelect.addEventListener("change", () => {
   const previousId = chosenModelId;
   chosenModelId = modelSelect.value;
   fillReasoning();
+  fillVoices();
   showRates();
   releasePreviousLocalModel(previousId);
 });

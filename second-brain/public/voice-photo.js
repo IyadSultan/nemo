@@ -168,19 +168,15 @@ function keepPhoto(dataUrl) {
   setStatus("Photo added. Ask what it shows.");
 }
 
-const photoCard = document.querySelector(".photo-card");
+/** True while the iPhone camera was asked for and macOS's own window is showing. */
+let phoneWaiting = false;
 
-/** Show the preview and the Mac's Take photo button again. */
-function showMacCamera() {
-  photoCard?.classList.remove("phone-wait");
-}
 
 /** Close the camera window without keeping a picture. */
 function closePhotoSheet() {
   photoEpoch += 1;
   photoSheet.hidden = true;
   photoBusy = false;
-  showMacCamera();
   stopPhotoCamera();
   if (photoHint) photoHint.textContent = "Your iPhone is used when it is unlocked and nearby. Otherwise this Mac’s camera is used.";
 }
@@ -191,19 +187,18 @@ function closePhotoSheet() {
  */
 function askIphoneShutter() {
   if (photoBusy) return;
-  photoBusy = true;
   photoError.hidden = true;
   photoError.textContent = "";
   stopPhotoCamera();
-  photoCard?.classList.add("phone-wait");
-  photoSheet.hidden = false;
-  if (photoHint) photoHint.textContent = "On your iPhone, press the shutter button, then tap Use Photo.";
+  // macOS shows its own Take Photo window with Cancel, so ours stays closed.
+  phoneWaiting = true;
   setStatus("Look at your iPhone. Press the shutter, then tap Use Photo.");
   window.ipc.postMessage("iphone-photo");
 }
 
 /** The window app calls this with the picture from the iPhone. */
 window.receivePhonePhoto = (dataUrl) => {
+  phoneWaiting = false;
   if (!dataUrl || !String(dataUrl).startsWith("data:image/jpeg")) return;
   keepPhoto(dataUrl);
   closePhotoSheet();
@@ -211,10 +206,14 @@ window.receivePhonePhoto = (dataUrl) => {
 
 /** The window app calls this when the iPhone camera is not available. */
 window.phonePhotoUnavailable = () => {
-  if (photoSheet.hidden) return;
-  showMacCamera();
+  if (!phoneWaiting) return;
+  phoneWaiting = false;
+  photoSheet.hidden = false;
   photoBusy = false;
-  startPhotoSheet();
+  startPhotoSheet().then(() => {
+    if (photoSheet.hidden) return;
+    if (photoHint) photoHint.textContent = "The iPhone did not connect, so this is the Mac camera. Unlock the phone, keep it nearby, then press Photo again.";
+  });
 };
 
 /** The camera that is showing now. */
@@ -334,20 +333,35 @@ documentFile.addEventListener("change", async () => {
   documentBtn.textContent = "Reading…";
   setStatus(`Reading ${file.name}. Long documents take a minute.`);
   try {
-    const response = await fetch("/document", {
-      method: "POST",
-      headers: {
-        // Raw bytes, so the server does not try to read a text file as a form.
-        "Content-Type": "application/octet-stream",
-        "X-File-Name": encodeURIComponent(file.name),
-        "X-Model": chosenModelId || "",
-      },
-      body: file,
-    });
+    const during = meetingOn;
+    const duringKind = captureKind;
+    const epoch = captureEpoch;
+    const headers = {
+      // Raw bytes, so the server does not try to read a text file as a form.
+      "Content-Type": "application/octet-stream",
+      "X-File-Name": encodeURIComponent(file.name),
+      "X-Model": chosenModelId || "",
+    };
+    // During a meeting or lecture the file joins that folder, with the summary and the recording.
+    if (during) {
+      headers["X-Open-Capture"] = "1";
+      headers["X-Kind"] = duringKind === "lecture" ? "lecture" : "meeting";
+      if (captureDir) headers["X-Capture-Folder"] = encodeURIComponent(captureDir);
+    }
+    const response = await fetch("/document", { method: "POST", headers, body: file });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "Could not read that document.");
+    // Keep the file with this capture even if the button was turned off while it was reading.
+    if (data.folder && during && epoch === captureEpoch) {
+      if (meetingOn) captureDir = data.folder;
+      else if (meetingToSave && !meetingToSave.captureDir) meetingToSave.captureDir = data.folder;
+      else if (!dirToSave) dirToSave = data.folder;
+    }
     const said = `I read ${data.title}. ${data.summary}`;
-    addBubble("assistant", `${said}\n\nA copy and a wiki page are in the meeting folder. Ask me anything about it.`);
+    const where = during
+      ? (duringKind === "lecture" ? "It is saved with this lecture." : "It is saved with this meeting.")
+      : "A copy and a wiki page are in their own folder under meetings.";
+    addBubble("assistant", `${said}\n\n${where} Ask me anything about it.`);
     rememberTurn(`I uploaded the document "${file.name}". What is in it?`, said);
     setStatus("Document saved. Ask me about it.");
   } catch (err) {

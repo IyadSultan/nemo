@@ -33,8 +33,8 @@ import { learningJob, siteShortcut } from "./learnings.js";
 import { registerLive } from "./live.js";
 import { cleanMailAddress, findRawEmails, indexRawMail, polishReply, replyWithOriginal } from "./mail.js";
 import { cleanMedical, warmMedgem } from "./medgem.js";
-import { cleanMeetingNotes, lectureSummaryPrompt, meetingSummaryPrompt, oneLine, photoDataUrl, registerMeetings } from "./meetings.js";
-import { lectureFolder, meetingFolder, memoFolder, memosForPrompt, runMemoryJob, spokenSavedMemo } from "./memos.js";
+import { cleanMeetingNotes, lectureSummaryPrompt, meetingSummaryPrompt, oneLine, openCaptureFolder, photoDataUrl, registerMeetings } from "./meetings.js";
+import { lectureFolder, meetingFolder, memoFolder, memosForPrompt, runMemoryJob, spokenSavedMemo, vaultRoot } from "./memos.js";
 import { askModelOnce, clientError, finishPdf, ollamaNamesMatch, replyNow, safeJson, stopAllOllamaModels, stopOllamaModel, streamAnswer, streamClaudeAnswer, streamLocalAnswer, writeEvent } from "./models.js";
 import { excerpt, notesForQuestion, parseNote, semantic } from "./notes.js";
 import { findOnMacJob, openFileJob, runFindOnMac, runOpenFile } from "./openfile.js";
@@ -42,7 +42,7 @@ import { openOutlookDraft } from "./outlook.js";
 import { registerDeck, rememberDocument } from "./deck.js";
 import { pdfCatcher, registerPdf } from "./pdf.js";
 import { answerPdfTool, qaBlock, registerPdfTools, rememberPdf, wantsPdfTool } from "./pdftools.js";
-import { ingestDocument } from "./upload.js";
+import { saveUploadedDocument } from "./upload.js";
 import { registerWordcraft } from "./wordcraft.js";
 import { registerDeckweb } from "./deckweb.js";
 import { MODELS, REASONING_LEVELS, VOICE_MODELS, getModel } from "./pricing.js";
@@ -738,8 +738,10 @@ app.post("/brain/summarize", async (req, res) => {
 });
 
 /**
- * Upload a document from the voice page: a copy and a wiki page go to the meeting folder,
- * and the wiki page joins the notes at once so questions can find it.
+ * Upload a document from the voice page.
+ * During a meeting or lecture it joins that event's folder (X-Open-Capture / X-Capture-Folder).
+ * On its own it gets a folder raw/meetings/yyyymmdd_title with the file and a wiki page.
+ * The wiki page joins the notes at once so questions can find it.
  * The page sends the file as raw bytes, its name in X-File-Name.
  */
 app.post("/document", express.raw({ type: "*/*", limit: "60mb" }), async (req, res) => {
@@ -749,23 +751,29 @@ app.post("/document", express.raw({ type: "*/*", limit: "60mb" }), async (req, r
   } catch {
     return res.status(400).json({ error: "The file name could not be read." });
   }
-  const folder = meetingFolder();
+  const kind = req.get("x-kind") === "lecture" ? "lecture" : "meeting";
+  const open = req.get("x-open-capture") === "1" || Boolean(req.get("x-capture-folder"));
+  let into = "";
+  if (open) {
+    const held = await openCaptureFolder(req.get("x-capture-folder") || "", kind);
+    if (held.error) return res.status(400).json({ error: held.error });
+    into = held.folder;
+  }
   const model = getModel(req.get("x-model")) || getModel(DEFAULT_MODEL);
   try {
-    const doc = await ingestDocument({
+    const doc = await saveUploadedDocument({
       name,
       bytes: Buffer.isBuffer(req.body) ? req.body : null,
-      folder,
+      parent: meetingFolder(),
+      into,
       ask: (instruction, text) => askModelOnce(model, instruction, text, process.env.OPENAI_API_KEY, 3000, 240000),
     });
-    // The meeting folder is <root>/raw/meetings, so the note is relative to that root.
-    const root = path.dirname(path.dirname(folder));
-    setNotes([...notes, parseNote(path.relative(root, doc.wikiPath), doc.wikiText)]);
+    setNotes([...notes, parseNote(path.relative(vaultRoot(), doc.wikiPath), doc.wikiText)]);
     semantic.build(notes).catch((err) => console.error("Failed while building the meaning index:", err?.message || err));
     rememberDocument(doc.copyPath);
     rememberPdf(doc.copyPath);
     console.log(`Saved an uploaded document and its wiki page (${path.extname(doc.copyPath)})`);
-    res.json({ title: doc.title, summary: doc.summary, wiki: doc.wikiPath, copy: doc.copyPath });
+    res.json({ title: doc.title, summary: doc.summary, wiki: doc.wikiPath, copy: doc.copyPath, folder: doc.folder });
   } catch (err) {
     if (err?.status === 400) return res.status(400).json({ error: clientError(err.message, "That document could not be saved.") });
     console.error("Failed while saving an uploaded document:", err?.message || err);

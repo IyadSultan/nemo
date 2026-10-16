@@ -10,7 +10,9 @@
  * File names and text are never logged (they may name patients).
  */
 
+import { eventFolderName, freeChildPath } from "./savedir.js";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 
@@ -172,4 +174,33 @@ export async function ingestDocument({ name, bytes, folder, ask, when = new Date
   const wikiPath = path.join(folder, `${stem}.md`);
   await fs.writeFile(wikiPath, wikiText, "utf8");
   return { title, summary: summaryOf(body), wikiPath, copyPath, wikiText };
+}
+
+/**
+ * Save a document into its own folder, or into a meeting/lecture folder that is already open.
+ * into: that open folder, when the user attached the file during a meeting or lecture.
+ * Otherwise the folder is yyyymmdd_title under parent (raw/meetings). parent is created if needed.
+ */
+export async function saveUploadedDocument({ name, bytes, ask, when = new Date(), parent, into = "" }) {
+  if (into) {
+    await fs.mkdir(into, { recursive: true });
+    const doc = await ingestDocument({ name, bytes, folder: into, ask, when });
+    return { ...doc, folder: into };
+  }
+  const staging = await fs.mkdtemp(path.join(os.tmpdir(), "brain-doc-"));
+  try {
+    const doc = await ingestDocument({ name, bytes, folder: staging, ask, when });
+    await fs.mkdir(parent, { recursive: true });
+    const dest = freeChildPath(parent, eventFolderName(when, doc.title, "document"));
+    await fs.rename(staging, dest);
+    return {
+      ...doc,
+      folder: dest,
+      wikiPath: path.join(dest, path.basename(doc.wikiPath)),
+      copyPath: path.join(dest, path.basename(doc.copyPath)),
+    };
+  } catch (err) {
+    await fs.rm(staging, { recursive: true, force: true }).catch(() => {});
+    throw err;
+  }
 }

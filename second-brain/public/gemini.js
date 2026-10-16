@@ -64,7 +64,7 @@ async function startGeminiCall() {
   const session = await response.json();
   if (!response.ok) throw new Error(session.error || "Gemini did not start.");
 
-  micStream = await openMic();
+  micStream = await ensureMic();
   const micCtx = new AudioContext({ sampleRate: 16000 });
   await micCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([PCM_WORKLET], { type: "text/javascript" })));
   const worklet = new AudioWorkletNode(micCtx, "pcm16");
@@ -119,8 +119,11 @@ async function startGeminiCall() {
   syncCallButtons();
   talkBtn.setAttribute("aria-pressed", "true");
   talkLabel.textContent = "End call";
-  setStatus("Listening. Talk over Gemini to cut it off.");
-  setCapsuleState("listening");
+  if (meetingOn) showMeetingStatus();
+  else {
+    setStatus("Listening. Talk over Gemini to cut it off.");
+    setCapsuleState("listening");
+  }
 }
 
 /** Point Gemini at a new microphone without starting the call again. */

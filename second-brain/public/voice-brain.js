@@ -8,6 +8,8 @@ async function answerWithBrain(question, extras) {
   const writingMinutes = Boolean(extras?.summarizeMeeting);
   const writingLecture = Boolean(extras?.summarizeLecture);
   const writingNotes = writingMinutes || writingLecture;
+  // Start talking was not pressed: show the summary, and do not read it aloud.
+  const quietNotes = writingNotes && !connected && !summaryAloud;
   await deskReady;
   // "/brain" still shows the table during a meeting. Other questions wait.
   const commandTable = isCommandTableAsk(question);
@@ -32,9 +34,10 @@ async function answerWithBrain(question, extras) {
   setStatus(`Thinking with ${selectedModel()?.label || "the selected model"}…`);
   setCapsuleState("thinking");
   // Local models (Bonsai) always use the Kokoro voice on this Mac: free, no OpenAI.
+  // A quiet summary never opens a voice, so nothing is read aloud.
   const macOnly = Boolean(selectedModel()?.local);
-  const speakerReady = macOnly ? null : ensureSpeaker();
-  speakerReady?.catch(() => {});
+  const speakerReady = quietNotes || macOnly ? null : ensureSpeaker();
+  if (!quietNotes) speakerReady?.catch(() => {});
   let speech = null;
   // Keep the beeps that started when they stopped talking. A typed question starts them now.
   armThinkCue();
@@ -97,7 +100,7 @@ async function answerWithBrain(question, extras) {
         if (!speech && !voiceBlocked && !macOnly) {
           try {
             speech = speakStream(await speakerReady);
-            setStatus("Voice control is reading the answer…");
+            setStatus(`Speaking as ${voiceLabel()}…`);
             setCapsuleState("speaking");
           } catch (err) {
             if (!voiceBlocked) throw err;
@@ -201,7 +204,7 @@ async function answerWithBrain(question, extras) {
         }
         else if (event.type === "error") throw new Error(event.message || "The selected model failed.");
       }
-      await speakReady(false);
+      if (!quietNotes) await speakReady(false);
     }
 
     if (cancelAnswer) return;
@@ -239,9 +242,11 @@ async function answerWithBrain(question, extras) {
     rememberTurn(question, answer);
     remembered = true;
     compressWhileSpeaking();
-    await speakReady(true);
-    speech?.end();
-    await speech?.done;
+    if (!quietNotes) {
+      await speakReady(true);
+      speech?.end();
+      await speech?.done;
+    }
     // The server confirms a saved memo or an opened meeting with these words.
     if (/^I (?:saved that memo|opened that meeting)/.test(spoken)) flashSaved();
     if (connected && !localStop) {
@@ -257,7 +262,11 @@ async function answerWithBrain(question, extras) {
         : WAKE_STATUS);
     } else if (!connected && !localStop) {
       setCapsuleState("idle");
-      setStatus("Type another question, or press Start talking.");
+      setStatus(writingLecture
+        ? (summaryAloud ? "The talk summary is written." : "The talk summary is on the screen.")
+        : writingMinutes
+        ? (summaryAloud ? "The minutes are written." : "The minutes are on the screen.")
+        : "Type another question, or press Start talking.");
     }
   } catch (err) {
     speech?.stop();
@@ -272,7 +281,8 @@ async function answerWithBrain(question, extras) {
     if (keepMemory && !remembered) rememberTurn(question, answer);
     if (activeReader === reader) activeReader = null;
     brainBusy = false;
-    if (!connected) setBusy(false);
+    // Start talking is still connecting. Leave its button locked until that finishes.
+    if (!connected && !summaryAloud) setBusy(false);
     syncCallButtons();
   }
 }

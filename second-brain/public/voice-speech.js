@@ -48,7 +48,7 @@ function openSpeaker() {
     await peer.setLocalDescription(offer);
     await waitForIceGathering(peer, 1500);
     const sdpResponse = await fetch(
-      `/session?voice=${OPENAI_VOICE}&model=gpt-realtime-2.1-mini&speak=1`,
+      `/session?voice=${encodeURIComponent(speakingVoice())}&model=gpt-realtime-2.1-mini&speak=1`,
       {
         method: "POST",
         body: peer.localDescription?.sdp || offer.sdp,
@@ -251,11 +251,132 @@ let kokoroSpeech = null;
 
 const ARABIC = /[\u0600-\u06FF]/;
 
-// The Voice list picks the Kokoro voice. Voice control (OpenAI) always speaks as Marin.
-const OPENAI_VOICE = "marin";
-voiceSelect.value = localStorage.getItem("kokoroVoice") || "af_heart";
-if (!voiceSelect.value) voiceSelect.value = "af_heart";
-voiceSelect.addEventListener("change", () => localStorage.setItem("kokoroVoice", voiceSelect.value));
+// Each model has its own speaker, and each speaker has its own voices.
+// Claude and GPT speak with OpenAI. Models on this Mac speak with Kokoro.
+// Gemini speaks with Google. The Voice menu lists only the voices that speaker can use.
+const VOICES = {
+  openai: {
+    label: "OpenAI voice",
+    fallback: "marin",
+    groups: [[
+      "",
+      [
+        ["marin", "Marin"],
+        ["cedar", "Cedar"],
+        ["alloy", "Alloy"],
+        ["ash", "Ash"],
+        ["ballad", "Ballad"],
+        ["coral", "Coral"],
+        ["echo", "Echo"],
+        ["sage", "Sage"],
+        ["shimmer", "Shimmer"],
+        ["verse", "Verse"],
+      ],
+    ]],
+  },
+  kokoro: {
+    label: "Voice on this Mac",
+    fallback: "af_heart",
+    groups: [
+      ["American", [
+        ["af_heart", "Heart"],
+        ["af_bella", "Bella"],
+        ["af_nicole", "Nicole"],
+        ["af_nova", "Nova"],
+        ["af_sarah", "Sarah"],
+        ["af_sky", "Sky"],
+        ["am_adam", "Adam"],
+        ["am_michael", "Michael"],
+        ["am_puck", "Puck"],
+      ]],
+      ["British", [
+        ["bf_emma", "Emma"],
+        ["bf_isabella", "Isabella"],
+        ["bm_george", "George"],
+        ["bm_fable", "Fable"],
+      ]],
+    ],
+  },
+  gemini: {
+    label: "Gemini voice",
+    fallback: "Aoede",
+    groups: [[
+      "",
+      [
+        ["Aoede", "Aoede"],
+        ["Charon", "Charon"],
+        ["Fenrir", "Fenrir"],
+        ["Kore", "Kore"],
+        ["Puck", "Puck"],
+        ["Leda", "Leda"],
+        ["Orus", "Orus"],
+        ["Zephyr", "Zephyr"],
+      ],
+    ]],
+  },
+};
+
+// Older pages stored only the Mac voice. Keep that choice for Kokoro.
+if (!localStorage.getItem("voice:kokoro") && localStorage.getItem("kokoroVoice")) {
+  localStorage.setItem("voice:kokoro", localStorage.getItem("kokoroVoice"));
+}
+
+/** Which speaker will read the answer for the model picked right now. */
+function speakerKind() {
+  const model = typeof selectedModel === "function" ? selectedModel() : null;
+  if (model?.gemini) return "gemini";
+  if (model?.local) return "kokoro";
+  return "openai";
+}
+
+/** The name shown in the Voice menu, such as Cedar or Heart. */
+function voiceLabel() {
+  const value = speakingVoice();
+  for (const book of Object.values(VOICES)) {
+    for (const [, options] of book.groups) {
+      const found = options.find(([id]) => id === value);
+      if (found) return found[1];
+    }
+  }
+  return value;
+}
+
+/** The voice name to send. Always one the current speaker knows. */
+function speakingVoice() {
+  const kind = speakerKind();
+  const book = VOICES[kind];
+  const chosen = voiceSelect.value;
+  const known = book.groups.some(([, options]) => options.some(([value]) => value === chosen));
+  return known ? chosen : (localStorage.getItem(`voice:${kind}`) || book.fallback);
+}
+
+/** Rebuild the Voice menu for the model that is picked, and restore that speaker's last choice. */
+function fillVoices() {
+  const kind = speakerKind();
+  const book = VOICES[kind];
+  const saved = localStorage.getItem(`voice:${kind}`) || book.fallback;
+  voiceSelect.replaceChildren();
+  for (const [group, options] of book.groups) {
+    const parent = group ? document.createElement("optgroup") : voiceSelect;
+    if (group) parent.label = group;
+    for (const [value, label] of options) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      parent.append(option);
+    }
+    if (group) voiceSelect.append(parent);
+  }
+  voiceSelect.value = saved;
+  if (!voiceSelect.value) voiceSelect.value = book.fallback;
+  voiceSelect.setAttribute("aria-label", book.label);
+  voiceSelect.title = "End the call before you change this. The next answer uses the voice you pick.";
+  localStorage.setItem(`voice:${kind}`, voiceSelect.value);
+}
+
+voiceSelect.addEventListener("change", () => {
+  localStorage.setItem(`voice:${speakerKind()}`, voiceSelect.value);
+});
 
 function kokoroVoice() {
   let chain = Promise.resolve();
@@ -273,7 +394,7 @@ function kokoroVoice() {
       const clip = arabic ? Promise.reject(new Error("Kokoro reads English only")) : fetch("/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voice: voiceSelect.value }),
+        body: JSON.stringify({ text, voice: speakingVoice() }),
       }).then((response) => {
         if (!response.ok) throw new Error(`Kokoro returned ${response.status}`);
         return response.blob();
@@ -288,7 +409,7 @@ function kokoroVoice() {
           playing.onplaying = () => {
             if (!markWait) return;
             markAnswerStarted();
-            setStatus("Speaking with the Kokoro voice.");
+            setStatus(`Speaking as ${voiceLabel()}.`);
             setCapsuleState("speaking");
           };
           await new Promise((resolve) => {

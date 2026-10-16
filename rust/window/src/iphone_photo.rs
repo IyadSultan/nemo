@@ -6,8 +6,11 @@
 
 use std::cell::{Cell, RefCell};
 use std::ffi::c_float;
+use std::io::Write;
 use std::sync::Mutex;
+use std::time::Duration;
 
+use dispatch2::{DispatchQueue, DispatchTime};
 use objc2::rc::{Allocated, Retained};
 use objc2::runtime::{AnyObject, Bool, ProtocolObject};
 use objc2::{define_class, msg_send, AnyThread, MainThreadMarker, MainThreadOnly};
@@ -35,8 +38,16 @@ static LIVE: Mutex<Option<Live>> = Mutex::new(None);
 thread_local! {
     /// True only while Photo is opening the phone camera, so a normal File menu click is left alone.
     static ARMED: Cell<bool> = const { Cell::new(false) };
-    /// The Take Photo item found while the menu was opening.
-    static CHOSEN: RefCell<Option<(Retained<NSMenu>, isize)>> = const { RefCell::new(None) };
+    /// The shutter command was sent while the menu was open.
+    static FIRED: Cell<bool> = const { Cell::new(false) };
+    /// Ignore a second open of the same menu.
+    static SCHEDULED: Cell<bool> = const { Cell::new(false) };
+    /// Stops the iPhone command from bouncing between this object and the app forever.
+    static FORWARDING: Cell<bool> = const { Cell::new(false) };
+    /// Who had the keyboard before Photo, given back when the picture arrives.
+    static BEFORE: RefCell<Option<(Retained<NSWindow>, Option<Retained<NSResponder>>)>> = const { RefCell::new(None) };
+    /// The menu already closed, so a late command must not run.
+    static CLOSED: Cell<bool> = const { Cell::new(false) };
 }
 
 define_class!(
@@ -55,6 +66,32 @@ define_class!(
             unsafe { msg_send![super(this), init] }
         }
 
+        /// The window can only focus this object if we say yes.
+        #[unsafe(method(acceptsFirstResponder))]
+        fn accepts_first_responder(&self) -> Bool {
+            true.into()
+        }
+
+        #[unsafe(method(becomeFirstResponder))]
+        fn become_first_responder(&self) -> Bool {
+            true.into()
+        }
+
+        /// macOS sends the iPhone command straight to this object and crashes if it is missing.
+        /// The real work is done by the app object, so pass it on once.
+        #[unsafe(method(importFromDevice:))]
+        fn import_from_device(&self, sender: Option<&AnyObject>) {
+            if FORWARDING.with(|flag| flag.replace(true)) {
+                log_line("iPhone command came back again, stopping here");
+                return;
+            }
+            log_line("iPhone command received, passing it to the app");
+            let mtm = MainThreadMarker::from(self);
+            let app = NSApplication::sharedApplication(mtm);
+            let _: () = unsafe { msg_send![&*app, importFromDevice: sender] };
+            FORWARDING.with(|flag| flag.set(false));
+        }
+
         /// macOS asks every responder what it can receive. We accept pictures.
         #[unsafe(method(validRequestorForSendType:returnType:))]
         fn valid_requestor(&self, send_type: Option<&NSString>, return_type: Option<&NSString>) -> *mut AnyObject {
@@ -70,6 +107,11 @@ define_class!(
         /// The picture from the iPhone arrives here, on the pasteboard.
         #[unsafe(method(readSelectionFromPasteboard:))]
         fn read_selection(&self, pasteboard: &NSPasteboard) -> Bool {
+            log_line("picture arrived from the iPhone");
+            // Give the keyboard back to the page now that the picture is here.
+            if let Some((win, previous)) = BEFORE.with(|slot| slot.borrow_mut().take()) {
+                win.makeFirstResponder(previous.as_deref());
+            }
             let Some(image) = NSImage::initWithPasteboard(NSImage::alloc(), pasteboard) else {
                 return false.into();
             };
@@ -99,13 +141,43 @@ define_class!(
         #[unsafe(method(menuWillOpen:))]
         #[allow(non_snake_case)]
         fn menuWillOpen(&self, menu: &NSMenu) {
-            if !ARMED.with(Cell::get) {
+            // A normal click on File should just show the menu.
+            if !ARMED.with(Cell::get) || SCHEDULED.with(Cell::get) {
                 return;
             }
-            if let Some(found) = find_shutter(menu) {
-                CHOSEN.with(|slot| *slot.borrow_mut() = Some(found));
-            }
-            menu.cancelTracking();
+            SCHEDULED.with(|flag| flag.set(true));
+            log_line(&format!("menu opened:\n{}", menu_tree(menu)));
+            let Some(item) = find_shutter(menu) else {
+                log_line("Take Photo was not in the menu");
+                menu.cancelTrackingWithoutAnimation();
+                return;
+            };
+            // Send the command on the next turn, while this menu is still open.
+            // Sending it after the menu closes does not reach the iPhone.
+            let item_ptr = hold(&*item);
+            let menu_ptr = hold(menu);
+            let safety_ptr = hold(menu);
+            DispatchQueue::main().exec_async(move || {
+                let item = take_hold::<NSMenuItem>(item_ptr);
+                let menu = take_hold::<NSMenu>(menu_ptr);
+                if CLOSED.with(Cell::get) {
+                    log_line("shutter command arrived after the menu closed");
+                    return;
+                }
+                let ok = invoke(&item);
+                FIRED.with(|flag| flag.set(ok));
+                menu.cancelTrackingWithoutAnimation();
+            });
+            let when = DispatchTime::try_from(Duration::from_millis(800)).unwrap_or(DispatchTime::NOW);
+            let _ = DispatchQueue::main().after(when, move || {
+                let menu = take_hold::<NSMenu>(safety_ptr);
+                if FIRED.with(Cell::get) {
+                    return;
+                }
+                CLOSED.with(|flag| flag.set(true));
+                log_line("iPhone menu did not answer, closing it");
+                menu.cancelTrackingWithoutAnimation();
+            });
         }
     }
 
@@ -181,32 +253,37 @@ pub fn take() -> bool {
     let menu = unsafe { &*(live.menu as *const NSMenu) };
 
     let previous = window.firstResponder();
-    window.makeFirstResponder(Some(catcher));
+    let focused = window.makeFirstResponder(Some(catcher));
+    log_line(&format!("photo handler focused={focused}"));
     ARMED.with(|flag| flag.set(true));
-    CHOSEN.with(|slot| *slot.borrow_mut() = None);
+    FIRED.with(|flag| flag.set(false));
+    SCHEDULED.with(|flag| flag.set(false));
+    CLOSED.with(|flag| flag.set(false));
+    let _ = std::fs::write(LOG, "");
+    log_line("opening the iPhone camera");
 
+    // The phone is offered only while this menu is open, and only if we can receive a picture.
     menu.update();
-    if CHOSEN.with(|slot| slot.borrow().is_none()) {
-        if let Some(found) = find_shutter(menu) {
-            CHOSEN.with(|slot| *slot.borrow_mut() = Some(found));
-        }
+    if let Some(event) = mouse_down(window) {
+        NSMenu::popUpContextMenu_withEvent_forView(menu, &event, view);
+    } else {
+        log_line("could not open the menu");
     }
-    if CHOSEN.with(|slot| slot.borrow().is_none()) {
-        if let Some(event) = mouse_down(window) {
-            NSMenu::popUpContextMenu_withEvent_forView(menu, &event, view);
-        }
-    }
+    CLOSED.with(|flag| flag.set(true));
     ARMED.with(|flag| flag.set(false));
 
-    let chosen = CHOSEN.with(|slot| slot.borrow_mut().take());
-    let started = if let Some((menu, index)) = chosen {
-        menu.performActionForItemAtIndex(index);
-        true
+    let started = FIRED.with(Cell::get);
+    if !started {
+        log_line(&format!("iPhone shutter was not started. Menu was:\n{}", menu_tree(menu)));
+    }
+    if started {
+        let kept = unsafe { Retained::retain(window as *const NSWindow as *mut NSWindow) }.expect("window");
+        BEFORE.with(|slot| *slot.borrow_mut() = Some((kept, previous)));
     } else {
-        eprintln!("iPhone shutter was not offered. Menu was: {}", menu_titles(menu));
-        false
-    };
-    window.makeFirstResponder(previous.as_deref());
+        window.makeFirstResponder(previous.as_deref());
+    }
+    // When started, this object stays focused: the picture arrives seconds later
+    // and only goes to whatever is focused then. A click on the page takes focus back.
     let _ = mtm;
     started
 }
@@ -250,43 +327,112 @@ fn mouse_down(window: &NSWindow) -> Option<Retained<NSEvent>> {
     )
 }
 
-/// The enabled "Take Photo" row, not "Scan Documents" and not our placeholder.
-fn find_shutter(menu: &NSMenu) -> Option<(Retained<NSMenu>, isize)> {
+const LOG: &str = "/tmp/second-brain-photo.log";
+
+fn log_line(line: &str) {
+    eprintln!("{line}");
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(LOG) {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+/// Keep an extra hold so the object is still alive when the next turn runs.
+fn hold<T: objc2::Message>(obj: &T) -> usize {
+    let kept = unsafe { Retained::retain(obj as *const T as *mut T) }.expect("retain");
+    let ptr = Retained::as_ptr(&kept) as usize;
+    std::mem::forget(kept);
+    ptr
+}
+
+fn take_hold<T: objc2::Message>(ptr: usize) -> Retained<T> {
+    unsafe { Retained::from_raw(ptr as *mut T) }.expect("held object")
+}
+
+/// Tell the open menu to start the iPhone camera.
+fn invoke(item: &NSMenuItem) -> bool {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return false;
+    };
+    let action = item.action().map(|sel| sel.name().to_string_lossy().into_owned()).unwrap_or_else(|| "-".into());
+    let target = item
+        .target()
+        .map(|obj| obj.class().name().to_string_lossy().into_owned())
+        .unwrap_or_else(|| "nil".into());
+    log_line(&format!("shutter item \"{}\" action={action} target={target} enabled={}", item.title(), item.isEnabled()));
+    let Some(menu) = (unsafe { item.menu() }) else {
+        log_line("shutter item has no menu");
+        return false;
+    };
+    let index = menu.indexOfItem(item);
+    if index < 0 {
+        log_line("shutter item is not in its menu");
+        return false;
+    }
+    if let Some(win) = NSApplication::sharedApplication(mtm).keyWindow() {
+        if let Some(addr) = LIVE.lock().ok().and_then(|live| live.as_ref().map(|live| live.catcher)) {
+            let catcher = unsafe { &*(addr as *const PhotoCatcher) };
+            let focused = win.makeFirstResponder(Some(catcher));
+            let who = win
+                .firstResponder()
+                .map(|obj| obj.class().name().to_string_lossy().into_owned())
+                .unwrap_or_else(|| "nil".into());
+            log_line(&format!("focused={focused} first={who}"));
+        }
+    }
+    menu.performActionForItemAtIndex(index);
+    true
+}
+
+/// The enabled "Take Photo" row. Skip anything that only opens another menu.
+fn find_shutter(menu: &NSMenu) -> Option<Retained<NSMenuItem>> {
     let items = menu.itemArray();
     for i in 0..items.count() {
         let item = items.objectAtIndex(i);
-        let title = item.title().to_string().to_lowercase();
-        if item.isEnabled() && is_shutter(&title) && item.action().is_some() {
-            let kept = unsafe { Retained::retain(menu as *const NSMenu as *mut NSMenu) }?;
-            return Some((kept, i as isize));
-        }
         if let Some(sub) = item.submenu() {
             sub.update();
             if let Some(found) = find_shutter(&sub) {
                 return Some(found);
             }
+            continue;
+        }
+        if is_shutter(&item) {
+            return Some(item);
         }
     }
     None
 }
 
-fn is_shutter(title: &str) -> bool {
+fn is_shutter(item: &NSMenuItem) -> bool {
+    if item.submenu().is_some() || item.isHidden() || !item.isEnabled() || item.action().is_none() {
+        return false;
+    }
+    let title = item.title().to_string().to_lowercase();
     !title.contains("scan") && (title.contains("take photo") || title.contains("take picture"))
 }
 
-fn menu_titles(menu: &NSMenu) -> String {
+fn menu_tree(menu: &NSMenu) -> String {
     let mut lines = Vec::new();
-    collect_titles(menu, 0, &mut lines);
-    lines.join(" | ")
+    collect_tree(menu, 0, &mut lines);
+    if lines.is_empty() { "(empty)".to_string() } else { lines.join("\n") }
 }
 
-fn collect_titles(menu: &NSMenu, depth: usize, out: &mut Vec<String>) {
+fn collect_tree(menu: &NSMenu, depth: usize, out: &mut Vec<String>) {
     let items = menu.itemArray();
     for i in 0..items.count() {
         let item = items.objectAtIndex(i);
-        out.push(format!("{}{}", " ".repeat(depth), item.title()));
+        let action = item.action().map(|sel| sel.name().to_string_lossy().into_owned()).unwrap_or_else(|| "-".into());
+        let target = item
+            .target()
+            .map(|obj| obj.class().name().to_string_lossy().into_owned())
+            .unwrap_or_else(|| "nil".into());
+        out.push(format!(
+            "{}{} enabled={} action={action} target={target}",
+            "  ".repeat(depth),
+            item.title(),
+            item.isEnabled()
+        ));
         if let Some(sub) = item.submenu() {
-            collect_titles(&sub, depth + 1, out);
+            collect_tree(&sub, depth + 1, out);
         }
     }
 }

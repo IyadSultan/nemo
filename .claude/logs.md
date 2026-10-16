@@ -981,3 +981,28 @@ Removed the openVoice() call at the end of voice/hammerspoon.lua. Menu icon, Cmd
 ## 2026-10-16 18:08 — talk_to_your_brain
 
 **Prompt:** it's intended, commit and push
+**Commit:** [REDACTED-DIGITS] Split voice.js into modules, add app manual, DeckCraft web editor, iPhone photo
+**Response:** Nothing to push: `rust-port` is level with `origin/rust-port`. Every commit is already on the remote. I haven't committed the uncommitted work, because it looks like something else is changing it right now: - **The working tree changed while I was checking.** Files like `second-brain/public/wordedit.js` were untracked when the session started and now show up in the diff as tracked. - **`second-bra […]
+
+## 2026-10-16 18:29 — talk_to_your_brain
+
+**Prompt:** another agent tried to fix the photo app where pressing photo shutter on the iPhone takes a photo, but it did not work. Can you check?
+- iPhone photo: removed the no-op importFromDevice: override in iphone_photo.rs (it blocked NSApplication from starting Continuity Camera); rebuilt app. Awaiting a test with the phone.
+**Response:** Status: the photo command now reaches macOS, and macOS shows a dialog. Checking whether the "Take a photo" message you see comes from macOS or from our page.
+
+## 2026-10-16 18:47 — talk_to_your_brain
+
+**Prompt:** working but why 2 pop screens
+- iPhone photo now works end to end: catcher forwards importFromDevice: and stays focused until the picture arrives. Removed our duplicate "Take a photo" panel; macOS's own dialog is the only one now (ours opens only as the Mac-camera fallback).
+**Response:** Removing the leftover "waiting for iPhone" styling, which nothing uses anymore:
+
+## 2026-10-16 18:54 — talk_to_your_brain
+
+**Prompt:** I want to make start a live presentation also an option when slides app is opened locally. When finished, return to the slides app in hte app so one can edit the slides on the app directly as well
+
+- 2026-10-16 23:05 — Slides panel: ● Live option (menu with topic, or "start a live presentation about …" typed/said while Slides is open). deck.js present/startLive take onClose(id); on close the new deck's .pptx opens in Slides. DeckCraft iframe is unloaded (about:blank) during the live show: with it running, a sentence arriving as the presenter went full screen crashed the page (headless Chrome, reproducible). Verified: live from panel → dictated slide → "end the presentation" → back in Slides with 2 slides. Test decks deleted; user decks 63aba64c, 493ab1f3 kept.
+**Response:** You can now start a live presentation from inside the Slides editor. When the show ends, the slides you dictated open in Slides, ready to edit. **Try it:** 1. Reload the app, then click **Slides**. 2. Click **●** in the toolbar, type a topic (or leave it blank), and press **Start live presentation**. You can also type or say "Hey, start a live presentation about …". 3. Speak your slides, then pres […]
+
+## 2026-10-16 23:59 — talk_to_your_brain
+
+**Prompt:** push

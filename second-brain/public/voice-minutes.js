@@ -62,6 +62,7 @@ async function saveMinutes(meeting, pick, row, recording) {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || (lecture ? "Could not save the lecture." : "Could not save the minutes."));
+    if (data.path) meeting.captureDir = data.path.replace(/\/[^/]+$/, "");
     const shots = Number(data.photos) || 0;
     const extras = shots ? [shots === 1 ? "1 photo" : `${shots} photos`] : [];
     const audio = recording ? await recording : null;
@@ -95,7 +96,9 @@ function attachMinutesButtons(bubble, meeting) {
   save.type = "button";
   save.className = "ghost-btn small";
   save.textContent = lecture ? "Save lecture" : "Save minutes";
-  save.title = lecture ? "Save as a Markdown file in raw/lectures" : "Save as a Markdown file in raw/meetings";
+  save.title = lecture
+    ? "Save in raw/lectures, in a folder named with the date and title"
+    : "Save in raw/meetings, in a folder named with the date and title";
   const elsewhere = document.createElement("button");
   elsewhere.type = "button";
   elsewhere.className = "ghost-btn small";
@@ -204,7 +207,7 @@ function askLectureDetails(notes) {
 }
 
 /** Write the talk summary, say it, and keep the exact words for later questions. */
-async function summarizeLecture(lines, photos = []) {
+async function summarizeLecture(lines, photos = [], savedDir = "") {
   savedMeeting = lines.join("\n");
   savedNotesKind = "lecture";
   lectureFormOpen = true;
@@ -224,6 +227,7 @@ async function summarizeLecture(lines, photos = []) {
         presenter: "",
         title: "Lecture",
         photos,
+        captureDir: savedDir || dirToSave,
       };
       const note = addBubble("lecture", "The summary was skipped. The photos can still be saved.", false);
       attachMinutesButtons(note, meetingToSave);
@@ -243,13 +247,14 @@ async function summarizeLecture(lines, photos = []) {
     presenter: details.presenter,
     title: details.title,
     photos,
+    captureDir: savedDir || dirToSave,
   };
   const count = lines.length === 1 ? "1 line" : `${lines.length} lines`;
   const photoNote = photos.length === 1 ? " and 1 photo" : photos.length ? ` and ${photos.length} photos` : "";
   const note = addBubble("lecture", `Wrote down ${count}${photoNote}. Writing the talk summary now.`, false);
   attachMinutesButtons(note, meetingToSave);
   while (brainBusy) await sleep(40);
-  if (meetingOn || !connected) return;
+  if (meetingOn) return;
   paused = false;
   addBubble("user", "Write the summary of this talk.", false);
   await answerWithBrain("Write the summary of the talk that was just written down.", {
@@ -266,24 +271,32 @@ async function speakMeetingSummary() {
   let lines = Array.isArray(linesToSummarize) ? linesToSummarize : meetingLines.slice();
   const photos = photosToSave.slice();
   photosToSave = [];
+  const savedDir = dirToSave;
+  dirToSave = "";
   linesToSummarize = null;
   meetingLines = [];
-  if (!lines.length && photos.length) lines = ["A photo was taken. No words were written down."];
+  if (!lines.length && (photos.length || savedDir)) {
+    lines = [photos.length
+      ? "A photo was taken. No words were written down."
+      : "A document was added. No words were written down."];
+  }
   if (!lines.length) {
     captureKind = "";
     paintMeetingButton();
     const name = kind === "lecture" ? "Lecture" : "Meeting";
     setStatus(connected ? `${name} off. I did not catch any words. Say Hey when you have a question.` : `${name} off. I did not catch any words.`);
     setCapsuleState(connected ? (muted ? "muted" : "listening") : "idle");
+    summaryAloud = false;
     return;
   }
   if (kind === "lecture") {
     meetingSummaryBusy = true;
     syncCallButtons();
     try {
-      await summarizeLecture(lines, photos);
+      await summarizeLecture(lines, photos, savedDir);
     } finally {
       meetingSummaryBusy = false;
+      summaryAloud = false;
       lectureFormOpen = false;
       captureKind = "";
       syncCallButtons();
@@ -297,19 +310,20 @@ async function speakMeetingSummary() {
   const photoNote = photos.length === 1 ? " and 1 photo" : photos.length ? ` and ${photos.length} photos` : "";
   const note = addBubble("meeting", `Wrote down ${count}${photoNote}. Writing the minutes now.`, false);
   note.querySelector(".who").textContent = "Meeting";
-  meetingToSave = { lines: savedMeeting, startedAt: meetingStartedAt, endedAt: meetingEndedAt, minutes: "", photos };
+  meetingToSave = { lines: savedMeeting, startedAt: meetingStartedAt, endedAt: meetingEndedAt, minutes: "", photos, captureDir: savedDir };
   attachMinutesButtons(note, meetingToSave);
   meetingSummaryBusy = true;
   syncCallButtons();
   try {
     if (summarizeWithLiveModel()) return;
     while (brainBusy) await sleep(40);
-    if (meetingOn || !connected) return;
+    if (meetingOn) return;
     paused = false;
     addBubble("user", "Write the minutes of this meeting.", false);
     await answerWithBrain("Write the minutes of the meeting that was just written down.", { summarizeMeeting: true });
   } finally {
     meetingSummaryBusy = false;
+    summaryAloud = false;
     syncCallButtons();
   }
 }

@@ -9,7 +9,7 @@
 async function startLocalListen() {
   localStop = false;
   localEars = true;
-  micStream = await openMic();
+  micStream = await ensureMic();
   connected = true;
   voiceSelect.disabled = true;
   modelSelect.disabled = true;
@@ -19,8 +19,11 @@ async function startLocalListen() {
   talkBtn.setAttribute("aria-pressed", "true");
   talkLabel.textContent = "End call";
   const macOnly = Boolean(selectedModel()?.local);
-  setStatus(listenStatus());
-  setCapsuleState("listening");
+  if (meetingOn) showMeetingStatus();
+  else {
+    setStatus(listenStatus());
+    setCapsuleState("listening");
+  }
   setBusy(false);
   warmJudge();
   // Open voice control now, while you talk, so the first answer starts sooner.

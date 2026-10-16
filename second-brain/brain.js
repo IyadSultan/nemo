@@ -55,7 +55,10 @@ function readText(file) {
   }
 }
 
-/** Files in a folder whose names start with the day, such as 2026-10-15-0930-budget.md. */
+/**
+ * Notes from one day. Older files are named 2026-10-15-….
+ * A meeting or lecture is a folder named 20261015_title, with summary.md inside.
+ */
 function filesOfDay(folder, day) {
   let names = [];
   try {
@@ -63,11 +66,28 @@ function filesOfDay(folder, day) {
   } catch {
     return "";
   }
-  return names
-    .filter((name) => name.startsWith(day) && name.endsWith(".md"))
-    .sort()
-    .map((name) => `### ${name}\n${readText(path.join(folder, name)).trim()}`)
-    .join("\n\n");
+  const compact = day.replace(/-/g, "");
+  const parts = [];
+  for (const name of names.sort()) {
+    const full = path.join(folder, name);
+    if (name.startsWith(day) && name.endsWith(".md")) {
+      parts.push(`### ${name}\n${readText(full).trim()}`);
+      continue;
+    }
+    let info;
+    try {
+      info = fs.statSync(full);
+    } catch {
+      continue;
+    }
+    if (!info.isDirectory() || !name.startsWith(`${compact}_`)) continue;
+    const inside = fs.readdirSync(full).filter((item) => item.endsWith(".md")).sort();
+    inside.sort((a, b) => Number(a === "summary.md") - Number(b === "summary.md"));
+    for (const item of inside) {
+      parts.push(`### ${name}/${item}\n${readText(path.join(full, item)).trim()}`);
+    }
+  }
+  return parts.join("\n\n");
 }
 
 /** Wiki entries headed with the day ("### 2026-10-15 ..."), from every agent page. */

@@ -17,7 +17,9 @@ function captureRole() {
 
 /** The line under the orb while words are only being written down. */
 function quietCaptureStatus() {
-  return `${captureName()}. I'm writing down every word and staying quiet.`;
+  const base = `${captureName()}. I'm writing down every word and staying quiet.`;
+  // No call yet: the summary is shown later, and it is not read aloud.
+  return connected ? base : `${base} The summary stays on the screen.`;
 }
 
 /** Close the presenter form if the call ends before it is submitted. */
@@ -35,8 +37,9 @@ const MEETING_LINE_MS = 18000;
 function paintMeetingButton() {
   const lecture = meetingOn && captureKind === "lecture";
   const meeting = meetingOn && captureKind !== "lecture";
-  meetingBtn.disabled = !connected || meetingSummaryBusy || lecture;
-  lectureBtn.disabled = !connected || meetingSummaryBusy || meeting;
+  // Both work before Start talking. They wait only while a summary is being written.
+  meetingBtn.disabled = meetingSummaryBusy || lecture;
+  lectureBtn.disabled = meetingSummaryBusy || meeting;
   meetingBtn.setAttribute("aria-pressed", meeting ? "true" : "false");
   lectureBtn.setAttribute("aria-pressed", lecture ? "true" : "false");
   meetingBtn.classList.toggle("is-on", meeting);
@@ -86,9 +89,10 @@ function finishMeetingLine() {
 }
 
 function showMeetingStatus() {
-  setStatus(captureKind === "lecture"
+  const base = captureKind === "lecture"
     ? "Lecture. I am writing the words as they are said, in Arabic or English."
-    : MEETING_STATUS);
+    : MEETING_STATUS;
+  setStatus(connected ? base : `${base} The summary stays on the screen.`);
   setCapsuleState(muted ? "muted" : captureRole());
 }
 
@@ -235,7 +239,7 @@ function captureMeetingLine(stream) {
     }
 
     const timer = setInterval(() => {
-      if (epoch !== listenEpoch || !connected || localStop || !meetingOn) {
+      if (epoch !== listenEpoch || localStop || !meetingOn || (!connected && !quietCapture)) {
         stopRec();
         return;
       }
@@ -364,20 +368,105 @@ function finishMeetingRecording() {
 }
 
 /**
- * Turn Meeting or Lecture on in the middle of a call.
+ * Let go of the microphone Meeting or Lecture opened before Start talking.
+ * The call then uses that same microphone. The summary is still written.
+ */
+async function releaseQuietMic() {
+  if (!quietCapture && !quietMicBody) return;
+  quietHandoff = true;
+  quietCapture = false;
+  listenEpoch += 1;
+  while (recordingClip) await sleep(40);
+  if (quietMicBody) await quietMicBody;
+  quietHandoff = false;
+}
+
+/**
+ * Listen and write the words down without starting a call.
+ * Start talking is what turns the voice on for the summary. This path does not.
+ */
+function startQuietMic() {
+  if (quietCapture || quietMicBody) return;
+  quietCapture = true;
+  localStop = false;
+  const pending = runQuietMicBody().then((summarize) => {
+    // Start talking waits for this whole promise, including the summary,
+    // so the call does not listen over the summary.
+    if (summarize) return speakMeetingSummary();
+  }).catch((err) => {
+    console.error("Failed while writing without the call:", err);
+  });
+  quietMicBody = pending;
+  pending.finally(() => {
+    if (quietMicBody === pending) quietMicBody = null;
+  });
+}
+
+/** The microphone loop for a meeting or lecture that started before Start talking. */
+async function runQuietMicBody() {
+  let summarize = false;
+  try {
+    if (!micStream) micStream = await openMic();
+    muteBtn.disabled = false;
+    while (quietCapture && !connected && meetingOn) {
+      showMeetingStatus();
+      const heard = await captureMeetingLine(micStream);
+      const ending = closeMeetingAfterClip && !meetingOn;
+      const list = ending && Array.isArray(linesToSummarize) ? linesToSummarize : meetingLines;
+      freezeMeetingDraft(heard, list);
+      if (ending) summarize = true;
+      if (quietHandoff || connected || ending || !quietCapture || !meetingOn) break;
+      showMeetingStatus();
+    }
+    if (!summarize && closeMeetingAfterClip && !meetingOn) summarize = true;
+  } catch (err) {
+    console.error("Failed while opening the microphone for the meeting:", err);
+    setStatus(err.message || "The microphone did not open.");
+    if (meetingOn) {
+      meetingOn = false;
+      captureKind = "";
+      closeMeetingAfterClip = false;
+      finishMeetingRecording();
+      paintMeetingButton();
+      setCapsuleState("idle");
+    }
+    summarize = false;
+  } finally {
+    quietCapture = false;
+    // Start talking keeps this microphone. Ending the meeting releases it.
+    if (!quietHandoff && !connected && micStream) {
+      micStream.getTracks().forEach((track) => track.stop());
+      micStream = null;
+      muted = false;
+      muteBtn.disabled = true;
+      muteBtn.textContent = "Mute mic";
+      muteBtn.classList.remove("is-muted");
+    }
+  }
+  if (summarize) closeMeetingAfterClip = false;
+  return summarize;
+}
+
+/**
+ * Turn Meeting or Lecture on. This works before Start talking.
  * Any answer that is playing stops. From here, speech is only written down.
  */
 function beginMeeting(kind = "meeting") {
-  if (!connected || meetingOn || lectureFormOpen) return;
+  if (meetingOn || lectureFormOpen || meetingSummaryBusy) return;
+  // Start talking is still connecting. Wait, so two microphones do not open.
+  if (!connected && talkBtn.disabled) return;
+  summaryAloud = false;
   captureKind = kind === "lecture" ? "lecture" : "meeting";
   closeMeetingAfterClip = false;
   linesToSummarize = null;
   meetingSummaryBusy = false;
   meetingOn = true;
+  captureEpoch += 1;
   meetingStartedAt = Date.now();
   meetingRecording = startMeetingRecording();
   meetingLines = [];
   capturePhotos = [];
+  captureDir = "";
   meetingPartial = "";
   if (meetingPartialBubble) {
     meetingPartialBubble.remove();
@@ -394,12 +483,16 @@ function beginMeeting(kind = "meeting") {
     queuedQuestion = "";
   }
   const offWord = captureName();
-  const bubble = addBubble(captureRole(), `Listening. Arabic and English are written as they are said. I will stay quiet until you turn ${offWord} off.`, false);
+  const aloud = connected
+    ? ""
+    : " The summary stays on the screen, because Start talking is off.";
+  const bubble = addBubble(captureRole(), `Listening. Arabic and English are written as they are said. I will stay quiet until you turn ${offWord} off.${aloud}`, false);
   bubble.querySelector(".who").textContent = offWord;
   // Load the listener that can write both languages before the first words arrive.
   fetch("/transcribe/warm", { method: "POST" }).catch(() => {});
   showMeetingStatus();
   syncCallButtons();
+  if (!connected) startQuietMic();
 }
 
 /**
@@ -417,25 +510,34 @@ function endMeeting() {
   meetingLines = [];
   photosToSave = capturePhotos.slice();
   capturePhotos = [];
+  dirToSave = captureDir;
+  captureDir = "";
   recordingToSave = finishMeetingRecording();
   closeMeetingAfterClip = true;
   stopSpeaking();
-  setStatus(captureKind === "lecture" ? "Lecture off. Add the presenter and a title." : "Meeting off. Writing the minutes…");
+  setStatus(captureKind === "lecture"
+    ? "Lecture off. Add the presenter and a title."
+    : connected || summaryAloud
+      ? "Meeting off. Writing the minutes…"
+      : "Meeting off. Writing the minutes on the screen…");
   setCapsuleState("thinking");
   if (recordingClip) listenEpoch += 1;
-  if (localEars) return;
+  // The listening loop writes the summary after the last sentence is in.
+  if (localEars || quietCapture) return;
   closeMeetingAfterClip = false;
   speakMeetingSummary();
 }
 
 meetingBtn.addEventListener("click", () => {
-  if (!connected || meetingSummaryBusy || lectureFormOpen) return;
+  if (meetingSummaryBusy || lectureFormOpen) return;
+  if (!connected && !meetingOn && talkBtn.disabled) return;
   if (meetingOn && captureKind !== "lecture") endMeeting();
   else if (!meetingOn) beginMeeting("meeting");
 });
 
 lectureBtn.addEventListener("click", () => {
-  if (!connected || meetingSummaryBusy || lectureFormOpen) return;
+  if (meetingSummaryBusy || lectureFormOpen) return;
+  if (!connected && !meetingOn && talkBtn.disabled) return;
   if (meetingOn && captureKind === "lecture") endMeeting();
   else if (!meetingOn) beginMeeting("lecture");
 });
@@ -478,4 +580,6 @@ recapBtn.addEventListener("click", async () => {
     if (lines.length) focusRecap(bubble);
   }
 });
+
+paintMeetingButton();
 

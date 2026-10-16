@@ -97,8 +97,8 @@
     status(`Opened ${name}. Ask about it, or say what to change on this slide or the whole deck.`);
   }
 
-  async function openUrl(url, name, filePath = "") {
-    if (!(await leaveOk())) return;
+  async function openUrl(url, name, filePath = "", { force = false } = {}) {
+    if (!force && !(await leaveOk())) return;
     setBusy(true, `Opening ${name}…`);
     try {
       const response = await fetch(url);
@@ -271,6 +271,8 @@
   async function ask(request) {
     request = String(request || "").trim();
     if (!request || sl.busy) return;
+    const live = request.replace(/[.!?]+$/, "").match(LIVE_ASK);
+    if (live) return startLive(live[1] || "");
     addTurn("you", request);
     setBusy(true, "Thinking…");
     try {
@@ -298,7 +300,7 @@
 
   /** The slide on screen, so "this slide" is clear. */
   async function pollState() {
-    if (!sl.root || sl.root.hidden || sl.busy || sl.showing) return;
+    if (!sl.root || sl.root.hidden || sl.busy || sl.showing || sl.parked) return;
     try {
       const state = await call("bridge.state");
       sl.info.textContent = state.hasDocument ? `Slide ${state.slide + 1} of ${state.slides}${state.dirty ? " · not saved" : ""}` : "";
@@ -403,6 +405,7 @@
       tool("💾", "Save (back to its file, or in Documents)", () => save()),
       dropdown("⤓", "Save as PowerPoint or DeckCraft…", saveAsMenu),
       tool("▶", "Present full screen from this slide (Esc ends)", present),
+      dropdown("●", "Live presentation: dictate new slides full screen, then edit them here", liveMenu),
       el("span", "we-sep"),
     );
     for (const [icon, tip, request] of QUICK) bar.append(tool(icon, tip, () => ask(request), "we-ai"));
@@ -410,7 +413,6 @@
     sl.log = el("div", "we-log");
     sl.status = el("div", "we-status");
     sl.frame = el("iframe", "we-frame sl-frame");
-    sl.frame.src = "/deckcraft/index.html?blank";
     sl.frame.title = "DeckCraft";
     sl.frame.allow = "fullscreen";
     root.append(bar, sl.log, sl.status, sl.frame);
@@ -421,8 +423,7 @@
     });
     sl.root = root;
     showTitle();
-    sl.ready = waitForBridge();
-    sl.ready.catch((err) => status(err.message));
+    loadFrame("/deckcraft/index.html?blank");
   }
 
   function show(on) {
@@ -453,11 +454,65 @@
   }
 
   /** A deck the brain made (its card's DeckCraft button): its .pptx opens here. */
-  async function openDeck(id, title = "Presentation") {
+  async function openDeck(id, title = "Presentation", { force = false } = {}) {
     if (!(await open())) return;
     const name = `${String(title).replace(/[\/\\:]+/g, "-").trim().slice(0, 80) || "Presentation"}.pptx`;
-    await openUrl(`/deck/${encodeURIComponent(id)}/pptx`, name);
+    await openUrl(`/deck/${encodeURIComponent(id)}/pptx`, name, "", { force });
   }
+
+  // ---- a live presentation started from here ----
+
+  /**
+   * Full screen in live mode: every sentence said becomes a slide (deck.js). The panel stays
+   * behind the presenter, "parked" so speech goes to the presenter, with DeckCraft unloaded:
+   * its GPU canvas resizing while the presenter goes full screen and animates crashed the page.
+   * When the show ends DeckCraft loads again and the new deck opens here, ready to edit.
+   */
+  function loadFrame(src) {
+    sl.frame.src = src;
+    sl.ready = src.startsWith("/deckcraft/") ? waitForBridge() : new Promise(() => {});
+    sl.ready.catch((err) => status(err.message));
+  }
+
+  async function startLive(topic = "") {
+    if (sl.busy || !window.brainDeck?.startLive) return;
+    if (!(await leaveOk())) return;
+    sl.parked = true;
+    loadFrame("about:blank");
+    status("Live presentation running. It opens here when it ends.");
+    try {
+      await window.brainDeck.startLive(topic, { onClose: (id) => backFromLive(id) });
+    } catch (err) {
+      backFromLive("");
+      status(err.message);
+    }
+  }
+
+  async function backFromLive(id) {
+    sl.parked = false;
+    loadFrame("/deckcraft/index.html?blank");
+    if (!id) return;
+    const data = await fetch(`/deck/${encodeURIComponent(id)}`).then((r) => r.json()).catch(() => ({}));
+    await openDeck(id, data.deck?.title || "Live presentation", { force: true });
+    status(`Back from the live presentation: ${data.deck?.slides?.length ?? 0} slides. Edit them here, or say Hey and the change.`);
+  }
+
+  function liveMenu(menu) {
+    const topic = el("input", "we-name");
+    topic.placeholder = "What is it about? (optional)";
+    const go = button("Start live presentation", "Full screen; every sentence you say adds a slide. Esc ends and brings the slides back here.", () => {
+      menu.classList.remove("we-open");
+      startLive(topic.value.trim());
+    });
+    topic.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") go.click();
+    });
+    menu.replaceChildren(el("div", "we-menu-note", "Live presentation: dictate it slide by slide"), topic, go);
+    topic.focus();
+  }
+
+  // "start a live presentation about …" while the panel is open.
+  const LIVE_ASK = /^(?:please |can you |let'?s )?(?:start|begin|open|do|make)(?: a| the)? live (?:presentation|deck|slides?|show)(?:\s+(?:about|on|for|called|titled)\s+(.+))?$/i;
 
   /** A sentence heard while the panel is open: only "Hey, …" counts, one request at a time. */
   let lastHeard = { words: "", at: 0 };
@@ -499,7 +554,7 @@
   btn?.addEventListener("click", () => (sl.root && !sl.root.hidden ? close() : open()));
   window.brainSlides = {
     get open() {
-      return Boolean(sl.root && !sl.root.hidden);
+      return Boolean(sl.root && !sl.root.hidden && !sl.parked);
     },
     openEditor: open,
     openDeck,

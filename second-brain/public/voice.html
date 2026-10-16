@@ -81,7 +81,7 @@
         </div>
 
         <span class="state-pill" aria-hidden="true"></span>
-        <p class="status" id="statusText">Ready. Say Hey, or press Command and Control together, then your question.</p>
+        <p class="status" id="statusText">Ready. Meeting and Lecture work now. Start talking only if you want the summary read aloud.</p>
 
         <form class="type-ask" id="typeForm">
           <label for="typeInput">Or type a question</label>
@@ -107,9 +107,8 @@
               type="button"
               class="ghost-btn meeting-knob"
               id="meetingBtn"
-              disabled
               aria-pressed="false"
-              title="On: write down the meeting and stay quiet. Off: summarize it, then answer questions about it."
+              title="Write down a meeting without answering. Turn it off to write the minutes. They are read aloud only if Start talking is already on."
             >
               Meeting
             </button>
@@ -117,9 +116,8 @@
               type="button"
               class="ghost-btn meeting-knob lecture-knob"
               id="lectureBtn"
-              disabled
               aria-pressed="false"
-              title="On: write down the talk and stay quiet. Off: ask who presented, suggest a title, then summarize the talk."
+              title="Write down a talk without answering. Turn it off to name the presenter and write the summary. It is read aloud only if Start talking is already on."
             >
               Lecture
             </button>
@@ -192,24 +190,17 @@
             </label>
             <label class="field">
               <span>Voice</span>
-              <select id="voiceSelect" aria-label="Kokoro voice">
-                <optgroup label="American">
-                  <option value="af_heart" selected>Heart</option>
-                  <option value="af_bella">Bella</option>
-                  <option value="af_nicole">Nicole</option>
-                  <option value="af_nova">Nova</option>
-                  <option value="af_sarah">Sarah</option>
-                  <option value="af_sky">Sky</option>
-                  <option value="am_adam">Adam</option>
-                  <option value="am_michael">Michael</option>
-                  <option value="am_puck">Puck</option>
-                </optgroup>
-                <optgroup label="British">
-                  <option value="bf_emma">Emma</option>
-                  <option value="bf_isabella">Isabella</option>
-                  <option value="bm_george">George</option>
-                  <option value="bm_fable">Fable</option>
-                </optgroup>
+              <select id="voiceSelect" aria-label="Voice that speaks the answer">
+                <option value="marin" selected>Marin</option>
+                <option value="cedar">Cedar</option>
+                <option value="alloy">Alloy</option>
+                <option value="ash">Ash</option>
+                <option value="ballad">Ballad</option>
+                <option value="coral">Coral</option>
+                <option value="echo">Echo</option>
+                <option value="sage">Sage</option>
+                <option value="shimmer">Shimmer</option>
+                <option value="verse">Verse</option>
               </select>
             </label>
             <label class="field">

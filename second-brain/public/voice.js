@@ -83,6 +83,14 @@ let listenEpoch = 0;
 let activeReader = null;
 // Meeting or lecture: write down every sentence and do not answer until it is turned off.
 let meetingOn = false;
+// True while Meeting or Lecture is listening on its own, before Start talking.
+let quietCapture = false;
+// True while Start talking is taking over that microphone, so the quiet loop lets go of it.
+let quietHandoff = false;
+// The quiet listening loop. Start talking waits for this, not for the summary.
+let quietMicBody = null;
+// Start talking was pressed before the summary, so the summary is read aloud.
+let summaryAloud = false;
 // "meeting" or "lecture" while that button is on, and until its summary is finished.
 let captureKind = "";
 // True while the presenter and title form is on screen, so speech is not answered.
@@ -96,6 +104,12 @@ let meetingLines = [];
 let capturePhotos = [];
 // Copied when Meeting or Lecture turns off, so a new recording does not erase them.
 let photosToSave = [];
+// Folder already holding documents for the meeting or lecture that is on.
+let captureDir = "";
+// Copied when it turns off, so Save writes the summary into that same folder.
+let dirToSave = "";
+// Goes up each time Meeting or Lecture is turned on, so a slow upload does not join the next one.
+let captureEpoch = 0;
 // The whole meeting or lecture as audio, saved next to the notes as a small .m4a.
 let meetingRecording = null; // Promise<MediaRecorder | null> while capturing
 let recordingToSave = null; // Promise<Blob | null> from the capture that just ended
@@ -511,14 +525,12 @@ muteBtn.addEventListener("click", () => {
   for (const track of micStream.getAudioTracks()) track.enabled = !muted;
   muteBtn.textContent = muted ? "Unmute mic" : "Mute mic";
   muteBtn.classList.toggle("is-muted", muted);
-  if (connected) {
-    if (meetingOn && !muted) {
-      setStatus(quietCaptureStatus());
-      setCapsuleState(captureRole());
-    } else {
-      setStatus(muted ? "Mic muted" : "Listening…");
-      setCapsuleState(muted ? "idle" : "listening");
-    }
+  if (meetingOn) {
+    setStatus(muted ? "Muted" : quietCaptureStatus());
+    setCapsuleState(muted ? "muted" : captureRole());
+  } else if (connected) {
+    setStatus(muted ? "Mic muted" : "Listening…");
+    setCapsuleState(muted ? "idle" : "listening");
   }
 });
 
@@ -635,6 +647,11 @@ async function startCall() {
   setStatus("Connecting…");
   setCapsuleState("connecting");
   talkLabel.textContent = "Connecting…";
+  // A meeting started before the call keeps its microphone. The summary is read aloud.
+  if (quietCapture || quietMicBody) {
+    summaryAloud = true;
+    await releaseQuietMic();
+  }
   chat = emptyChat();
   countedResponses.clear();
   renderChat();
@@ -649,10 +666,7 @@ async function startCall() {
       await startLocalListen();
     } catch (err) {
       console.error("Failed while starting medical listening:", err);
-      setStatus(humanError(err));
-      setCapsuleState("idle");
-      await hangUp({ keepStatus: true });
-      setBusy(false);
+      await failStart(err);
     }
     return;
   }
@@ -663,9 +677,7 @@ async function startCall() {
       await startGeminiCall();
     } catch (err) {
       console.error("Failed while starting Gemini Live:", err);
-      setStatus(humanError(err));
-      setCapsuleState("idle");
-      await hangUp({ keepStatus: true });
+      await failStart(err);
     }
     setBusy(false);
     return;
@@ -677,16 +689,13 @@ async function startCall() {
       await startLocalListen();
     } catch (err) {
       console.error("Failed while starting local listening:", err);
-      setStatus(humanError(err));
-      setCapsuleState("idle");
-      await hangUp({ keepStatus: true });
-      setBusy(false);
+      await failStart(err);
     }
     return;
   }
 
   try {
-    micStream = await openMic();
+    micStream = await ensureMic();
 
     pc = new RTCPeerConnection();
     pc.ontrack = (event) => {
@@ -705,7 +714,7 @@ async function startCall() {
     await waitForIceGathering(pc, 1500);
 
     const sdpResponse = await fetch(
-      `/session?voice=${OPENAI_VOICE}&model=${encodeURIComponent(modelSelect.value)}&reasoning=${encodeURIComponent(reasoningSelect.value)}`,
+      `/session?voice=${encodeURIComponent(speakingVoice())}&model=${encodeURIComponent(modelSelect.value)}&reasoning=${encodeURIComponent(reasoningSelect.value)}`,
       {
       method: "POST",
       body: pc.localDescription?.sdp || offer.sdp,
@@ -732,8 +741,11 @@ async function startCall() {
     syncCallButtons();
     talkBtn.setAttribute("aria-pressed", "true");
     talkLabel.textContent = "End call";
-    setStatus(listenStatus());
-    setCapsuleState("listening");
+    if (meetingOn) showMeetingStatus();
+    else {
+      setStatus(listenStatus());
+      setCapsuleState("listening");
+    }
     setBusy(false);
     if (pendingReplay) {
       const again = pendingReplay;
@@ -743,11 +755,18 @@ async function startCall() {
     }
   } catch (err) {
     console.error("Failed while starting the call:", err);
-    setStatus(humanError(err));
-    setCapsuleState("idle");
-    await hangUp({ keepStatus: true });
-    setBusy(false);
+    await failStart(err);
   }
+}
+
+/** Start talking did not connect. A meeting that was already on keeps listening. */
+async function failStart(err) {
+  const keepMeeting = meetingOn;
+  summaryAloud = false;
+  setStatus(humanError(err));
+  await hangUp({ keepStatus: true, keepMeeting });
+  if (keepMeeting && meetingOn) startQuietMic();
+  setBusy(false);
 }
 
 function sleep(ms) {

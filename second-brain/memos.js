@@ -7,8 +7,7 @@ import { WIKI_PATH } from "./config.js";
 import { closestIndex, runLearningJob } from "./learnings.js";
 import { askModelOnce } from "./models.js";
 import { memoStamp, numberWord, spokenDay } from "./spoken.js";
-import { selected } from "./state.js";
-import fsSync from "node:fs";
+import { folders, selected } from "./state.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -28,19 +27,19 @@ export function memoBody(question) {
   return body;
 }
 
-/** The raw/notes folder inside the chosen second-brain vault. */
+/**
+ * Where new meetings, lectures, photos, and documents are written.
+ * The top folder in the list that is turned on. If none are turned on, the first folder.
+ * A raw folder is created there the first time something is saved.
+ */
+export function vaultRoot() {
+  const first = folders.find((item) => selected.includes(item)) || selected[0] || folders[0];
+  return path.resolve(first || path.dirname(WIKI_PATH));
+}
+
+/** raw/notes under that folder. */
 export function memoFolder() {
-  for (const root of selected) {
-    const rawDir = path.join(root, "raw");
-    try {
-      fsSync.accessSync(rawDir);
-      return path.join(rawDir, "notes");
-    } catch {
-      // This chosen folder has no raw mail folder.
-    }
-  }
-  const root = selected[0] || path.dirname(WIKI_PATH);
-  return path.join(root, "raw", "notes");
+  return path.join(vaultRoot(), "raw", "notes");
 }
 
 /** Rewrite a memo so it is clearer, without adding new facts. */
@@ -193,10 +192,10 @@ export async function spokenSavedMemo(question, model, apiKey) {
 
 /** Saved minutes go to raw/meetings, next to raw/notes. */
 export function meetingFolder() {
-  return path.join(path.dirname(memoFolder()), "meetings");
+  return path.join(vaultRoot(), "raw", "meetings");
 }
 
 /** Saved lecture notes go to raw/lectures, next to raw/meetings. */
 export function lectureFolder() {
-  return path.join(path.dirname(memoFolder()), "lectures");
+  return path.join(vaultRoot(), "raw", "lectures");
 }

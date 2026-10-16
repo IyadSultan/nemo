@@ -519,6 +519,14 @@ async function openMic() {
   return stream;
 }
 
+/** Use the microphone that is already open, or open the one the user picked. */
+async function ensureMic() {
+  const live = micStream?.getAudioTracks().some((track) => track.readyState === "live");
+  if (live) return micStream;
+  micStream = await openMic();
+  return micStream;
+}
+
 /** Swap the live call onto the microphone picked in the menu. */
 async function useChosenMic() {
   const stream = await openMic();

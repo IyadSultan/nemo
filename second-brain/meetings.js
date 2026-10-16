@@ -1,16 +1,16 @@
 /**
  * Meetings and lectures written down in a call: minutes, recaps, titles, photos,
- * the audio recording, and saving all of it beside the notes.
+ * documents, and the audio recording. Each one is its own folder.
  */
 
 import { calendarInviteAt, calendarMeetingAt } from "./calendar.js";
 import { DEFAULT_MODEL } from "./config.js";
 import { folderIsAllowed } from "./folders.js";
 import { lectureFolder, meetingFolder } from "./memos.js";
+import { eventFolderName, freeChildPath } from "./savedir.js";
 import { askModelOnce } from "./models.js";
 import { getModel } from "./pricing.js";
 import { runCommand } from "./shell.js";
-import { memoStamp } from "./spoken.js";
 import express from "express";
 import fsSync from "node:fs";
 import os from "node:os";
@@ -123,19 +123,127 @@ export function photoDataUrl(raw) {
 }
 
 /**
- * Save camera photos beside the notes and add a Photos section.
- * `stem` is the notes file name without .md, so the pictures sort next to it.
+ * Save camera photos in the meeting or lecture folder and add a Photos section.
+ * The files are photo-1.jpg, photo-2.jpg, and so on.
  */
-export async function withPhotos(text, folder, stem, raw) {
+export async function withPhotos(text, folder, raw) {
   const photos = jpegPhotos(raw);
   if (!photos.length) return { text, count: 0 };
   const lines = ["## Photos", ""];
   for (let i = 0; i < photos.length; i += 1) {
-    const file = `${stem}-${i + 1}.jpg`;
+    const file = `photo-${i + 1}.jpg`;
     await fs.writeFile(path.join(folder, file), photos[i]);
     lines.push(`![Photo ${i + 1}](${file})`, "");
   }
   return { text: `${String(text).trimEnd()}\n\n${lines.join("\n")}`, count: photos.length };
+}
+
+/**
+ * A document uploaded while this meeting or lecture was still on.
+ * Only a folder we created under raw/meetings or raw/lectures can be moved.
+ */
+function movableCaptureDir(captureDir) {
+  if (typeof captureDir !== "string" || !captureDir.trim()) return "";
+  const from = path.resolve(captureDir.trim());
+  if (!folderIsAllowed(from)) return "";
+  try {
+    if (!fsSync.statSync(from).isDirectory()) return "";
+  } catch {
+    return "";
+  }
+  const homes = [path.resolve(meetingFolder()), path.resolve(lectureFolder())];
+  return homes.some((home) => from.startsWith(`${home}${path.sep}`)) ? from : "";
+}
+
+/**
+ * The folder for one meeting or lecture: yyyymmdd_title, under parent.
+ * parent is raw/meetings, raw/lectures, or a folder the user picked.
+ * If documents were already saved in captureDir, that folder is renamed to the title.
+ * raw is created here when it does not exist yet.
+ */
+export async function placeEventDir(parent, date, title, fallback, captureDir) {
+  const parentDir = path.resolve(parent);
+  await fs.mkdir(parentDir, { recursive: true });
+  const wanted = eventFolderName(date, title, fallback);
+  const from = movableCaptureDir(captureDir);
+  if (from) {
+    const dest = path.join(parentDir, wanted);
+    if (from === dest) return dest;
+    const target = fsSync.existsSync(dest) ? freeChildPath(parentDir, wanted) : dest;
+    try {
+      await fs.rename(from, target);
+    } catch (err) {
+      // A picked folder on another disk cannot be renamed in one step, so copy then remove.
+      if (err?.code !== "EXDEV") throw err;
+      await fs.cp(from, target, { recursive: true });
+      await fs.rm(from, { recursive: true, force: true });
+    }
+    return target;
+  }
+  const dir = freeChildPath(parentDir, wanted);
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+/** Point "the document I uploaded" at the files now sitting in this folder. */
+async function rememberEventFiles(folder) {
+  let names = [];
+  try {
+    names = await fs.readdir(folder);
+  } catch {
+    return;
+  }
+  const { rememberDocument } = await import("./deck.js");
+  const { rememberPdf } = await import("./pdftools.js");
+  for (const name of names) {
+    if (name.startsWith(".")) continue;
+    const ext = path.extname(name).toLowerCase();
+    if (!ext || ext === ".md" || ext === ".jpg" || ext === ".m4a") continue;
+    const full = path.join(folder, name);
+    rememberDocument(full);
+    rememberPdf(full);
+  }
+}
+
+/**
+ * The folder a document joins while a meeting or lecture is still on.
+ * The first document creates yyyymmdd_meeting (or yyyymmdd_lecture). Later documents use that same folder.
+ * Saving the minutes renames it to yyyymmdd_ plus the real title.
+ */
+export async function openCaptureFolder(rawHeader, kind) {
+  const parent = kind === "lecture" ? lectureFolder() : meetingFolder();
+  const label = kind === "lecture" ? "lecture" : "meeting";
+  if (rawHeader) {
+    let capture = "";
+    try {
+      capture = path.resolve(decodeURIComponent(String(rawHeader)));
+    } catch {
+      return { error: "That folder could not be read." };
+    }
+    if (!folderIsAllowed(capture)) return { error: "Pick a folder inside your home folder." };
+    const home = path.resolve(parent);
+    if (!capture.startsWith(`${home}${path.sep}`)) return { error: "That folder is not this meeting." };
+    try {
+      if (!fsSync.statSync(capture).isDirectory()) return { error: "That meeting folder was not found." };
+    } catch {
+      return { error: "That meeting folder was not found." };
+    }
+    return { folder: capture };
+  }
+  const folder = freeChildPath(parent, eventFolderName(new Date(), label, label));
+  await fs.mkdir(folder, { recursive: true });
+  return { folder };
+}
+
+/** The parent folder: the usual one, or the folder the user picked with Save to…. */
+function chosenParent(body, usual) {
+  if (typeof body?.folder !== "string" || !body.folder.trim()) return { parent: usual };
+  const folder = path.resolve(body.folder.trim());
+  if (!fsSync.existsSync(folder) || !fsSync.statSync(folder).isDirectory()) {
+    return { error: "That folder does not exist." };
+  }
+  if (!folderIsAllowed(folder)) return { error: "Pick a folder inside your home folder." };
+  return { parent: folder };
 }
 
 /** The minutes as a Markdown file: date, time, title, and attendees first. */
@@ -199,16 +307,8 @@ export function registerMeetings(app) {
     const end = new Date(Number(req.body?.endedAt) || Date.now());
     let minutes = typeof req.body?.minutes === "string" ? req.body.minutes.trim() : "";
 
-    let folder = meetingFolder();
-    if (typeof req.body?.folder === "string" && req.body.folder.trim()) {
-      folder = path.resolve(req.body.folder.trim());
-      if (!fsSync.existsSync(folder) || !fsSync.statSync(folder).isDirectory()) {
-        return res.status(400).json({ error: "That folder does not exist." });
-      }
-      if (!folderIsAllowed(folder)) {
-        return res.status(400).json({ error: "Pick a folder inside your home folder." });
-      }
-    }
+    const picked = chosenParent(req.body, meetingFolder());
+    if (picked.error) return res.status(400).json({ error: picked.error });
 
     const invite = await calendarInviteAt(start.getTime(), end.getTime());
     const event = invite?.subject ? invite : calendarMeetingAt(start.getTime(), end.getTime());
@@ -235,21 +335,21 @@ export function registerMeetings(app) {
     const attendees = invite?.attendees?.length ? invite.attendees : parsed.attendees;
     const text = minutesMarkdown({ title, titleFrom, attendees, start, end, minutes });
 
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "meeting";
-    const name = `${memoStamp(start)}-${slug}.md`;
-    let savedText = text;
+    const name = "summary.md";
     let photoCount = 0;
+    let folder = "";
     try {
-      await fs.mkdir(folder, { recursive: true });
-      const packed = await withPhotos(text, folder, name.replace(/\.md$/i, ""), req.body?.photos);
-      savedText = packed.text;
+      // yyyymmdd_title. Documents uploaded during the meeting already live in captureDir.
+      folder = await placeEventDir(picked.parent, start, title, "meeting", req.body?.captureDir);
+      const packed = await withPhotos(text, folder, req.body?.photos);
       photoCount = packed.count;
-      await fs.writeFile(path.join(folder, name), savedText, "utf8");
+      await fs.writeFile(path.join(folder, name), packed.text, "utf8");
+      await rememberEventFiles(folder);
     } catch (err) {
       console.error("Failed while saving the minutes:", err?.message || err);
       return res.status(500).json({ error: "Could not write the minutes file." });
     }
-    console.log(`Saved meeting minutes ${name}`);
+    console.log("Saved meeting minutes");
     res.json({ path: path.join(folder, name), title, attendees, photos: photoCount });
   });
 
@@ -326,16 +426,8 @@ export function registerMeetings(app) {
     const title = oneLine(req.body?.title, 120) || "Lecture";
     let summary = typeof req.body?.minutes === "string" ? req.body.minutes.trim() : "";
 
-    let folder = lectureFolder();
-    if (typeof req.body?.folder === "string" && req.body.folder.trim()) {
-      folder = path.resolve(req.body.folder.trim());
-      if (!fsSync.existsSync(folder) || !fsSync.statSync(folder).isDirectory()) {
-        return res.status(400).json({ error: "That folder does not exist." });
-      }
-      if (!folderIsAllowed(folder)) {
-        return res.status(400).json({ error: "Pick a folder inside your home folder." });
-      }
-    }
+    const picked = chosenParent(req.body, lectureFolder());
+    if (picked.error) return res.status(400).json({ error: picked.error });
 
     if (!summary) {
       const model = getModel(req.body?.model) || getModel(DEFAULT_MODEL);
@@ -353,25 +445,26 @@ export function registerMeetings(app) {
     }
     summary ||= "The talk summary could not be written.";
     const text = lectureMarkdown({ title, presenter, start, end, summary });
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "lecture";
-    const name = `${memoStamp(start)}-${slug}.md`;
+    const name = "summary.md";
     let photoCount = 0;
+    let folder = "";
     try {
-      await fs.mkdir(folder, { recursive: true });
-      const packed = await withPhotos(text, folder, name.replace(/\.md$/i, ""), req.body?.photos);
+      folder = await placeEventDir(picked.parent, start, title, "lecture", req.body?.captureDir);
+      const packed = await withPhotos(text, folder, req.body?.photos);
       photoCount = packed.count;
       await fs.writeFile(path.join(folder, name), packed.text, "utf8");
+      await rememberEventFiles(folder);
     } catch (err) {
       console.error("Failed while saving the lecture:", err?.message || err);
       return res.status(500).json({ error: "Could not write the lecture file." });
     }
-    console.log(`Saved lecture notes ${name}`);
+    console.log("Saved lecture notes");
     res.json({ path: path.join(folder, name), title, presenter, photos: photoCount });
   });
 
   /**
-   * The audio of a meeting or lecture, saved beside its notes with the same name (.m4a),
-   * and linked from the notes. X-Notes-Path is the notes file the page just saved.
+   * The audio of a meeting or lecture, saved in the same folder as summary.md,
+   * as recording.m4a, and linked from the notes. X-Notes-Path is the notes file the page just saved.
    */
   app.post("/recording", express.raw({ type: "*/*", limit: "400mb" }), async (req, res) => {
     let notesPath = "";
@@ -387,7 +480,7 @@ export function registerMeetings(app) {
       return res.status(400).json({ error: "Pick a folder inside your home folder." });
     }
     if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: "The recording is empty." });
-    const output = notesPath.replace(/\.md$/i, ".m4a");
+    const output = path.join(path.dirname(notesPath), "recording.m4a");
     const temp = path.join(os.tmpdir(), `brain-recording-${process.pid}-${Date.now()}.webm`);
     try {
       await fs.writeFile(temp, req.body);

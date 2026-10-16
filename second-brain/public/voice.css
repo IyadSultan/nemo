@@ -1108,16 +1108,6 @@ summary:focus-visible {
   gap: 0.4rem;
 }
 
-/* Waiting for the shutter on the iPhone. The preview and the Mac button stay hidden. */
-.photo-card.phone-wait video,
-.photo-card.phone-wait .field,
-.photo-card.phone-wait #shutterBtn {
-  display: none;
-}
-.photo-card.phone-wait .photo-actions {
-  grid-template-columns: 1fr;
-}
-
 /* A recap during the meeting. Shown only, never part of the minutes. */
 .bubble.recap {
   align-self: stretch;
