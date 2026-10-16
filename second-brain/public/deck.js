@@ -474,10 +474,13 @@ function updateHud() {
   show.hud.querySelector(".d-count").textContent = `${show.index + 1} / ${show.deck.slides.length}`;
   show.root.classList.toggle("d-live", show.live);
   show.hud.querySelector(".d-livebtn").textContent = show.live ? "● Live" : "Live";
+  const mic = show.hud.querySelector(".d-micbtn");
+  mic.textContent = micOn() ? "Mic on" : "Mic off";
+  mic.classList.toggle("d-on", micOn());
   const slide = show.deck.slides[show.index];
   show.notesEl.textContent = slide?.notes || "";
   if (!show.busy) {
-    setStatus(!show.live ? "" : micOn() ? "Live: say what the next slide is about" : "Mic is off: press Start talking (or unmute), then speak");
+    setStatus(!show.live ? "" : micOn() ? "Live: say what the next slide is about" : "Mic is off: click Mic or press M");
   }
 }
 
@@ -525,6 +528,13 @@ function ensureMic() {
   if (typeof connected !== "undefined" && !connected) document.getElementById("talkBtn")?.click();
 }
 
+/** The presenter's own mic button: the same as Start talking / Stop under the deck. */
+function toggleMic() {
+  if (typeof connected !== "undefined" && connected && typeof muted !== "undefined" && muted) document.getElementById("muteBtn")?.click();
+  else document.getElementById("talkBtn")?.click();
+  setTimeout(updateHud, 1500);
+}
+
 function setLive(on) {
   show.live = on;
   if (on) ensureMic();
@@ -541,6 +551,7 @@ function onKey(event) {
   else if (key === "Escape") close();
   else if (key === "b" || key === "B" || key === ".") toggleBlank();
   else if (key === "l" || key === "L") setLive(!show.live);
+  else if (key === "m" || key === "M") toggleMic();
   else if (key === "n" || key === "N") show.root.classList.toggle("d-notes-on");
   else return;
   event.preventDefault();
@@ -564,6 +575,7 @@ function buildRoot() {
     button("‹", "Previous slide (←)", prev),
     el("span", "d-count"),
     button("›", "Next (→ or Space)", next),
+    button("Mic off", "Start or stop listening (M)", toggleMic, "d-micbtn"),
     button("Live", "Live: every sentence you say becomes a slide (L)", () => setLive(!show.live), "d-livebtn"),
     status,
     el("span", "d-gap"),

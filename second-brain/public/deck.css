@@ -135,10 +135,11 @@
 .d-status { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.85; padding: 0 6px; }
 .d-gap { flex: 1; min-width: 8px; }
 .deckshow.d-live .d-livebtn { color: #ff6b6b; }
+.d-micbtn.d-on { color: #4ade80; }
 
 /* Live mode keeps a small red dot and the status visible even when the bar hides. */
 .deckshow.d-live.d-idle .d-hud { opacity: 1; transform: translateX(-50%); pointer-events: auto; background: transparent; border-color: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
-.deckshow.d-live.d-idle .d-hud > :not(.d-livebtn):not(.d-status) { visibility: hidden; }
+.deckshow.d-live.d-idle .d-hud > :not(.d-livebtn):not(.d-micbtn):not(.d-status) { visibility: hidden; }
 
 .d-heard {
   position: fixed;
