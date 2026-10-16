@@ -38,6 +38,7 @@ import { askModelOnce, clientError, finishPdf, ollamaNamesMatch, replyNow, safeJ
 import { excerpt, notesForQuestion, parseNote, semantic } from "./notes.js";
 import { findOnMacJob, openFileJob, runFindOnMac, runOpenFile } from "./openfile.js";
 import { openOutlookDraft } from "./outlook.js";
+import { registerDeck } from "./deck.js";
 import { pdfCatcher, registerPdf } from "./pdf.js";
 import { ingestDocument } from "./upload.js";
 import { MODELS, REASONING_LEVELS, VOICE_MODELS, getModel } from "./pricing.js";
@@ -587,6 +588,7 @@ async function askBrain(question, history = []) {
 registerIMessage(app, askBrain);
 
 registerPdf(app);
+registerDeck(app);
 registerDeskjobs(app);
 
 /**

@@ -4,6 +4,7 @@
  */
 
 import { brainBlock, inBrainBlock } from "./brain.js";
+import { DECK_ABILITY } from "./deck.js";
 import { isVaultQuestion, wantsEmail, wantsFile, wantsNews } from "./intents.js";
 import { learningsBlock } from "./learnings.js";
 import { replyDraftNote, sendDraftNote } from "./mail.js";
@@ -181,12 +182,13 @@ export const INSTRUCTIONS = [
   "The here_and_now tool already ran. Its words are the Here and now line. Use that line for the time, the date, and the place. Do not guess, and do not look those up on the web.",
   "When the user asks for today's emails, leave out those from donotreply@khcc.jo. Say how many emails there are and who they are from, then summarize each one.",
   PDF_ABILITY,
+  DECK_ABILITY,
 ].join(" ");
 
 // The voice reads every word exactly as it is written. It does not turn abbreviations into speech.
 export const SPOKEN_STYLE = [
   "Your answer will be read aloud by a voice assistant. The voice reads the words literally. Write only what you want heard.",
-  "These spoken rules cover only the words before a PDF_BODY marker. After PDF_BODY, write HTML.",
+  "These spoken rules cover only the words before a PDF_BODY or DECK_BODY marker. After PDF_BODY, write HTML; after DECK_BODY, write the JSON deck.",
   "Use plain spoken sentences only.",
   "No markdown: no headings, bullet points, numbered lists, bold, italics, tables, file size, or code.",
   "No asterisks, hashes, backticks, underscores, slashes, brackets, emoji, links, web addresses, file paths, or HTML tags.",

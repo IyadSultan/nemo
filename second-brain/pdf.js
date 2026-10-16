@@ -18,12 +18,13 @@ const CHROME = process.env.CHROME_BIN
   || "";
 
 /**
- * Splits a streamed answer at PDF_BODY. feed(text) returns the words that may go
- * to the voice now; everything after the marker is kept as the page body.
- * A half-arrived marker is held back so the voice never says "PDF".
+ * Splits a streamed answer at PDF_BODY (or DECK_BODY, a presentation; see deck.js).
+ * feed(text) returns the words that may go to the voice now; everything after the
+ * marker is kept as the body. A half-arrived marker is held back so the voice never
+ * says "PDF". marker says which one came.
  */
-export function pdfCatcher() {
-  let seen = false;
+export function pdfCatcher(markers = [MARKER, "DECK_BODY"]) {
+  let seen = "";
   let held = "";
   let body = "";
   return {
@@ -33,19 +34,22 @@ export function pdfCatcher() {
         return "";
       }
       held += text;
-      const at = held.indexOf(MARKER);
-      if (at >= 0) {
-        seen = true;
-        body = held.slice(at + MARKER.length);
+      for (const marker of markers) {
+        const at = held.indexOf(marker);
+        if (at < 0) continue;
+        seen = marker;
+        body = held.slice(at + marker.length);
         const spoken = held.slice(0, at);
         held = "";
         return spoken;
       }
       let keep = 0;
-      for (let size = Math.min(MARKER.length - 1, held.length); size > 0; size -= 1) {
-        if (MARKER.startsWith(held.slice(-size))) {
-          keep = size;
-          break;
+      for (const marker of markers) {
+        for (let size = Math.min(marker.length - 1, held.length); size > keep; size -= 1) {
+          if (marker.startsWith(held.slice(-size))) {
+            keep = size;
+            break;
+          }
         }
       }
       const out = held.slice(0, held.length - keep);
@@ -59,6 +63,9 @@ export function pdfCatcher() {
       return out;
     },
     get seen() {
+      return Boolean(seen);
+    },
+    get marker() {
       return seen;
     },
     get body() {

@@ -1,0 +1,192 @@
+/* Full-screen presenter (deck.js). Slides are laid out in 960 × 540 points, the
+   DeckCraft/PowerPoint slide size, then scaled to the screen with --k. */
+.deckshow {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: #000;
+  display: grid;
+  place-items: center;
+  cursor: default;
+  color-scheme: dark;
+}
+.deckshow.d-idle { cursor: none; }
+.d-stage {
+  position: relative;
+  overflow: hidden;
+  background: var(--d-bg);
+}
+.d-slide {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 960px;
+  height: 540px;
+  transform: scale(var(--k, 1));
+  transform-origin: 0 0;
+  background: var(--d-bg);
+  color: var(--d-text);
+  font-family: var(--d-body);
+}
+.d-stage .d-slide { will-change: transform, opacity; }
+.d-box {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 3.6px 7.2px;
+  box-sizing: border-box;
+  line-height: 1.15;
+}
+.d-box.d-bottom { justify-content: flex-end; }
+.d-box.d-mid { justify-content: center; }
+.d-box.d-center { text-align: center; align-items: center; }
+.d-title { font-family: var(--d-head); font-weight: 700; font-size: 36px; letter-spacing: -0.01em; }
+.d-hero { font-size: 54px; }
+.d-section-t { font-size: 48px; }
+.d-sub { font-size: 24px; color: var(--d-accent2); }
+.d-bar { background: var(--d-accent); padding: 0; border-radius: 1px; }
+.d-list ul { margin: 0; padding: 0 0 0 0; list-style: none; }
+.d-list li {
+  position: relative;
+  font-size: 26px;
+  line-height: 1.25;
+  padding-left: 24px;
+  margin: 0 0 12px;
+}
+.d-list li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.52em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--d-accent);
+}
+.d-list li[dir="rtl"] { padding-left: 0; padding-right: 24px; }
+.d-list li[dir="rtl"]::before { left: auto; right: 2px; }
+.d-list.d-small li { font-size: 24px; }
+.d-head { font-size: 24px; font-weight: 700; }
+.d-head.d-left { color: var(--d-accent); }
+.d-head.d-right { color: var(--d-accent2); }
+.d-stat { font-family: var(--d-head); font-weight: 700; font-size: 120px; color: var(--d-accent); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.d-label-t { font-size: 28px; }
+.d-quote { font-family: var(--d-head); font-size: 38px; line-height: 1.25; }
+.d-by { font-size: 22px; color: var(--d-accent); }
+.d-chartbox { padding: 0; }
+.d-chart { width: 100%; height: 100%; overflow: visible; }
+.d-chart .d-label { fill: var(--d-text); opacity: 0.8; font: 16px var(--d-body); }
+.d-chart .d-value { opacity: 1; font-weight: 600; }
+.d-chart .d-axis { stroke: var(--d-muted); stroke-opacity: 0.4; stroke-width: 1.5; }
+
+/* The draft slide: shown the moment a sentence is heard, until the real one arrives. */
+.d-draft .d-title { opacity: 0.85; }
+.d-shimmer { gap: 22px; }
+.d-shimmer i {
+  display: block;
+  height: 22px;
+  border-radius: 11px;
+  background: linear-gradient(90deg, rgba(127, 127, 127, 0.16) 0%, rgba(127, 127, 127, 0.34) 50%, rgba(127, 127, 127, 0.16) 100%);
+  background-size: 200% 100%;
+  animation: d-shimmer 1.2s linear infinite;
+}
+.d-shimmer i:nth-child(1) { width: 78%; }
+.d-shimmer i:nth-child(2) { width: 64%; }
+.d-shimmer i:nth-child(3) { width: 70%; }
+@keyframes d-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.d-draft-tag { font-size: 14px; color: var(--d-accent); letter-spacing: 0.08em; text-transform: uppercase; }
+
+/* Heads-up display: shows on mouse movement, hides after 2.5 s. */
+.d-hud {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100vw - 36px);
+  padding: 6px 8px;
+  border-radius: 14px;
+  background: rgba(16, 18, 24, 0.78);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e8ebf2;
+  font: 13px/1 -apple-system, "Inter", sans-serif;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.deckshow.d-idle .d-hud { opacity: 0; transform: translate(-50%, 12px); pointer-events: none; }
+.d-btn {
+  appearance: none;
+  border: 0;
+  border-radius: 9px;
+  padding: 7px 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.d-btn:hover { background: rgba(255, 255, 255, 0.1); }
+.d-btn:disabled { opacity: 0.5; cursor: default; }
+.d-count { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; opacity: 0.8; }
+.d-status { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.85; padding: 0 6px; }
+.d-gap { flex: 1; min-width: 8px; }
+.deckshow.d-live .d-livebtn { color: #ff6b6b; }
+
+/* Live mode keeps a small red dot and the status visible even when the bar hides. */
+.deckshow.d-live.d-idle .d-hud { opacity: 1; transform: translateX(-50%); pointer-events: auto; background: transparent; border-color: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.deckshow.d-live.d-idle .d-hud > :not(.d-livebtn):not(.d-status) { visibility: hidden; }
+
+.d-heard {
+  position: fixed;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  max-width: min(760px, 80vw);
+  color: rgba(255, 255, 255, 0.7);
+  font: 15px/1.4 -apple-system, "Inter", sans-serif;
+  text-align: center;
+  pointer-events: none;
+}
+.deckshow:not(.d-live) .d-heard { display: none; }
+.d-notes {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  max-width: min(820px, 86vw);
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(16, 18, 24, 0.85);
+  color: #e8ebf2;
+  font: 16px/1.45 -apple-system, "Inter", sans-serif;
+}
+.deckshow.d-notes-on .d-notes:not(:empty) { display: block; }
+.deckshow.d-blank .d-stage { visibility: hidden; }
+
+/* The card under an answer that made a deck. */
+.deck-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+.deck-thumb {
+  position: relative;
+  flex: none;
+  width: 240px;
+  height: 135px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--d-bg, #121826);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  --k: 0.25;
+}
+.deck-thumb .d-slide { transform: scale(0.25); }
+.deck-meta { display: flex; flex-direction: column; gap: 4px; }
+.deck-meta span { opacity: 0.7; font-size: 13px; }

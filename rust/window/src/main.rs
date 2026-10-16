@@ -24,7 +24,7 @@ use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
     platform::macos::WindowExtMacOS,
-    window::{Window, WindowBuilder},
+    window::{Fullscreen, Window, WindowBuilder},
 };
 use wry::{NewWindowResponse, PermissionKind, PermissionResponse, WebViewBuilder};
 
@@ -132,6 +132,8 @@ enum UserEvent {
     ProbeDone(String),
     Menu(muda::MenuId),
     Tiny(bool),
+    /// The page's presenter (deck.js) asks for full screen while a deck is showing.
+    Fullscreen(bool),
 }
 
 /// Shrink to Tiny in the bottom-right corner. Returns where the full window was.
@@ -223,6 +225,8 @@ fn main() -> wry::Result<()> {
             let event = match req.body().as_str() {
                 "tiny" => UserEvent::Tiny(true),
                 "full" => UserEvent::Tiny(false),
+                "fullscreen-on" => UserEvent::Fullscreen(true),
+                "fullscreen-off" => UserEvent::Fullscreen(false),
                 other => UserEvent::ProbeDone(other.to_string()),
             };
             let _ = proxy.send_event(event);
@@ -241,6 +245,9 @@ fn main() -> wry::Result<()> {
                 if let Some(was) = full_window.take() {
                     go_full(&window, was);
                 }
+            }
+            Event::UserEvent(UserEvent::Fullscreen(on)) => {
+                window.set_fullscreen(on.then_some(Fullscreen::Borderless(None)));
             }
             Event::UserEvent(UserEvent::Menu(id)) if id == *reload.id() => {
                 let _ = webview.reload();

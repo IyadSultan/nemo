@@ -19,7 +19,8 @@
   const busy = () => {
     const state = capsule?.dataset.state || "idle";
     // meetingOn is voice.js's flag for a meeting or lecture in progress.
-    return !["idle", "listening", "muted"].includes(state) || (typeof meetingOn !== "undefined" && meetingOn);
+    // A deck on screen (deck.js) counts too: the presenter talks without touching anything.
+    return !["idle", "listening", "muted"].includes(state) || (typeof meetingOn !== "undefined" && meetingOn) || Boolean(window.brainDeck?.open);
   };
   const touch = () => { lastActive = Date.now(); };
 

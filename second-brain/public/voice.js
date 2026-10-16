@@ -2616,6 +2616,13 @@ async function startLocalListen() {
       showMeetingStatus();
       continue;
     }
+    // A deck is on screen: what is said goes to it (next slide, or a new slide in live mode), no Hey needed.
+    if (window.brainDeck?.open) {
+      clearThinkCue();
+      if (!looksLikeSilence(text)) window.brainDeck.hear(text);
+      setCapsuleState("listening");
+      continue;
+    }
     if (looksLikeSilence(text)) {
       clearThinkCue();
       setStatus(listenStatus());
@@ -3321,6 +3328,14 @@ function handleServerEvent(event) {
       showMeetingStatus();
       return;
     }
+    if (window.brainDeck?.open) {
+      if (userPartialEl) {
+        userPartialEl.remove();
+        userPartialEl = null;
+      }
+      if (text.trim()) window.brainDeck.hear(text.trim());
+      return;
+    }
     let question = questionAfterWake(text.trim());
     // null means they did not say Hey. "" means they said only Hey.
     if (question === null && keyboardWake) {
@@ -3763,6 +3778,8 @@ async function answerWithBrain(question, extras) {
   const writingNotes = writingMinutes || writingLecture;
   await deskReady;
   if (meetingOn || lectureFormOpen || brainBusy || paused) return;
+  // "start a live presentation about …", "present it": deck.js opens the deck.
+  if (!writingNotes && window.brainDeck?.command(question)) return;
   if (!writingNotes && runTerminalAsk(question)) return;
   const tinyMove = writingNotes ? "" : playTinyMove(question);
   if (!connected) setBusy(true);
@@ -3906,6 +3923,10 @@ async function answerWithBrain(question, extras) {
           pdfMade = event;
           bubble ??= addBubble("assistant", "", true);
           attachPdf(bubble, event);
+        } else if (event.type === "deck" && event.id) {
+          // The server saved a deck. Show its first slide with Present and PowerPoint buttons.
+          bubble ??= addBubble("assistant", "", true);
+          window.brainDeck?.attach(bubble, event);
         } else if (event.type === "skill") {
           // The server grabbed a skill, or put one away. One the brain chose
           // by itself (auto) is used for this answer only.

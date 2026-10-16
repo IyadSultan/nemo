@@ -23,6 +23,9 @@ second-brain/daylog/
 # PDFs the brain printed (second-brain/pdf.js)
 second-brain/pdfs/
 
+# Presentations the brain made (second-brain/deck.js)
+second-brain/decks/
+
 # Browser automation scratch and Python caches
 .playwright-mcp/
 __pycache__/

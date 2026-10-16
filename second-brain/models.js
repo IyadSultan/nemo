@@ -4,6 +4,7 @@
  */
 
 import { LOCAL_REPLY_CAP, LOCAL_THINK_ROOM, OLLAMA_URL, OUTPUT_CAP } from "./config.js";
+import { makeDeck } from "./deck.js";
 import { renderPdf } from "./pdf.js";
 import { priceForUsage } from "./pricing.js";
 import { INSTRUCTIONS, SPOKEN_STYLE, guideBlock } from "./prompt.js";
@@ -433,7 +434,8 @@ export function writeEvent(res, obj) {
     const text = pdf.feed(obj.text);
     if (pdf.seen && !pdf.told) {
       pdf.told = true;
-      res.write(`data: ${JSON.stringify({ type: "status", message: "Making the PDF…" })}\n\n`);
+      const message = pdf.marker === "DECK_BODY" ? "Making the slides…" : "Making the PDF…";
+      res.write(`data: ${JSON.stringify({ type: "status", message })}\n\n`);
     }
     if (!text) return;
     obj = { type: "delta", text };
@@ -441,7 +443,7 @@ export function writeEvent(res, obj) {
   res.write(`data: ${JSON.stringify(obj)}\n\n`);
 }
 
-/** After the answer: release held words, print the PDF if one was written, and tell the page. */
+/** After the answer: release held words, print the PDF or save the deck if one was written, and tell the page. */
 export async function finishPdf(res) {
   const pdf = res.locals?.pdf;
   if (!pdf) return;
@@ -449,6 +451,17 @@ export async function finishPdf(res) {
   const tail = pdf.flush();
   if (tail) writeEvent(res, { type: "delta", text: tail });
   if (!pdf.body.trim()) return;
+  if (pdf.marker === "DECK_BODY") {
+    try {
+      const made = await makeDeck(pdf.body);
+      console.log(`Made a deck (${made.slides} slides)`);
+      writeEvent(res, made);
+    } catch (err) {
+      console.error("Failed while making a deck:", err?.message || err);
+      writeEvent(res, { type: "delta", text: " The slides could not be made." });
+    }
+    return;
+  }
   try {
     const made = await renderPdf(pdf.body);
     console.log(`Made a PDF (${made.name})`);
@@ -459,7 +472,6 @@ export async function finishPdf(res) {
   }
 }
 
-/** A short spoken answer, plus an optional card on the voice page. */
 export function replyNow(res, text, card) {
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.flushHeaders?.();
