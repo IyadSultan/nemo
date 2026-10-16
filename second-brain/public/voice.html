@@ -11,6 +11,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/voice.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%232fc6a0'/%3E%3Cstop offset='.5' stop-color='%238b8cf8'/%3E%3Cstop offset='1' stop-color='%23f2a33a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3C/svg%3E" />
   </head>
   <body>
     <header class="topbar">
@@ -82,53 +83,58 @@
           <div class="slash-menu" id="slashMenu" role="listbox" aria-label="Skills" hidden></div>
         </form>
 
-        <div class="mode-row">
-          <button
-            type="button"
-            class="ghost-btn meeting-knob"
-            id="meetingBtn"
-            disabled
-            aria-pressed="false"
-            title="On: write down the meeting and stay quiet. Off: summarize it, then answer questions about it."
-          >
-            Meeting
-          </button>
-          <button
-            type="button"
-            class="ghost-btn meeting-knob lecture-knob"
-            id="lectureBtn"
-            disabled
-            aria-pressed="false"
-            title="On: write down the talk and stay quiet. Off: ask who presented, suggest a title, then summarize the talk."
-          >
-            Lecture
-          </button>
+        <div class="booth-group" role="group" aria-labelledby="captureHead">
+          <span id="captureHead">Capture</span>
+          <div class="mode-row">
+            <button
+              type="button"
+              class="ghost-btn meeting-knob"
+              id="meetingBtn"
+              disabled
+              aria-pressed="false"
+              title="On: write down the meeting and stay quiet. Off: summarize it, then answer questions about it."
+            >
+              Meeting
+            </button>
+            <button
+              type="button"
+              class="ghost-btn meeting-knob lecture-knob"
+              id="lectureBtn"
+              disabled
+              aria-pressed="false"
+              title="On: write down the talk and stay quiet. Off: ask who presented, suggest a title, then summarize the talk."
+            >
+              Lecture
+            </button>
+          </div>
+          <div class="action-row">
+            <button
+              type="button"
+              class="ghost-btn meeting-knob"
+              id="recapBtn"
+              disabled
+              title="Summarize what has been said so far and suggest questions. Shown only, not spoken."
+            >
+              Recap
+            </button>
+            <button
+              type="button"
+              class="ghost-btn meeting-knob"
+              id="photoBtn"
+              title="Take a photo with your iPhone, or this Mac if the phone is not nearby, and add it here."
+            >
+              Photo
+            </button>
+            <button
+              type="button"
+              class="ghost-btn meeting-knob"
+              id="documentBtn"
+              title="Add a PDF, Word, or PowerPoint file. A copy and a wiki page go to the meeting folder, and you can ask about it."
+            >
+              Document
+            </button>
+          </div>
         </div>
-        <button
-          type="button"
-          class="ghost-btn meeting-knob"
-          id="recapBtn"
-          disabled
-          title="Summarize what has been said so far and suggest questions. Shown only, not spoken."
-        >
-          Recap / Ask
-        </button>
-        <button
-          type="button"
-          class="ghost-btn meeting-knob"
-          id="photoBtn"
-          title="Take a photo with your iPhone, or this Mac if the phone is not nearby, and add it here."
-        >
-          Photo
-        </button>
-        <button
-          type="button"
-          class="ghost-btn meeting-knob"
-          id="documentBtn"
-          title="Add a PDF, Word, or PowerPoint file. A copy and a wiki page go to the meeting folder, and you can ask about it."
-        >
-          Document
-        </button>
         <input id="documentFile" type="file" accept=".pdf,.docx,.doc,.pptx,.rtf,.odt,.txt,.md" hidden />
 
         <section class="skills" aria-label="Skills">
@@ -146,11 +152,14 @@
           </select>
         </label>
 
-        <div class="controls">
-          <button type="button" class="ghost-btn" id="muteBtn" disabled>Mute mic</button>
-          <button type="button" class="ghost-btn" id="pauseBtn" disabled title="Stop this answer. Then say Hey to ask a new question.">Pause</button>
-          <button type="button" class="ghost-btn" id="stopBtn" disabled title="Stop this answer. Then say Hey to ask a new question.">Stop</button>
-          <button type="button" class="ghost-btn" id="restartBtn" disabled>Restart last</button>
+        <div class="booth-group" role="group" aria-labelledby="playbackHead">
+          <span id="playbackHead">Playback</span>
+          <div class="controls">
+            <button type="button" class="ghost-btn" id="muteBtn" disabled>Mute mic</button>
+            <button type="button" class="ghost-btn" id="pauseBtn" disabled title="Stop this answer. Then say Hey to ask a new question.">Pause</button>
+            <button type="button" class="ghost-btn" id="stopBtn" disabled title="Stop this answer. Then say Hey to ask a new question.">Stop</button>
+            <button type="button" class="ghost-btn" id="restartBtn" disabled>Restart last</button>
+          </div>
         </div>
 
         <details class="settings-wrap">
@@ -166,13 +175,24 @@
             </label>
             <label class="field">
               <span>Voice</span>
-              <select id="voiceSelect" aria-label="Assistant voice">
-                <option value="marin" selected>Marin</option>
-                <option value="cedar">Cedar</option>
-                <option value="alloy">Alloy</option>
-                <option value="ash">Ash</option>
-                <option value="coral">Coral</option>
-                <option value="sage">Sage</option>
+              <select id="voiceSelect" aria-label="Kokoro voice">
+                <optgroup label="American">
+                  <option value="af_heart" selected>Heart</option>
+                  <option value="af_bella">Bella</option>
+                  <option value="af_nicole">Nicole</option>
+                  <option value="af_nova">Nova</option>
+                  <option value="af_sarah">Sarah</option>
+                  <option value="af_sky">Sky</option>
+                  <option value="am_adam">Adam</option>
+                  <option value="am_michael">Michael</option>
+                  <option value="am_puck">Puck</option>
+                </optgroup>
+                <optgroup label="British">
+                  <option value="bf_emma">Emma</option>
+                  <option value="bf_isabella">Isabella</option>
+                  <option value="bm_george">George</option>
+                  <option value="bm_fable">Fable</option>
+                </optgroup>
               </select>
             </label>
             <label class="field">
@@ -260,5 +280,6 @@
     <script src="/voice.js"></script>
     <script src="/gemini.js"></script>
     <script src="/mascot.js"></script>
+    <script src="/tinymode.js"></script>
   </body>
 </html>

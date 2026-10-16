@@ -61,3 +61,21 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-10 10:57 — second-brain
 
 **Prompt:** done
+**Response:** The fixture records returned objects by reference, so it shows their final state rather than their state when returned. Snapshotting each result right away:
+
+## 2026-10-15 16:34 — second-brain
+
+**Prompt:** next
+
+## 2026-10-15 19:16 — second-brain
+
+**Prompt:** When user ask a question in the ask box during a meeting or lecture, please answer it. Don't just add it to the log.
+
+## 2026-10-15 19:16 — second-brain
+
+**Prompt:** IDEA · THE FIFTEENTH OF OCTOBER, TWENTY TWENTY-SIX, AT SIX FIFTY-EIGHT IN THE EVENING (in work box include date stamp in numbers)
+**Response:** Five suggestions, ranked. Based on reading the wiki page and `server.js` structure, not on running the app. **Do now** 1. **Commit the uncommitted work.** 1,111 lines across 12 files from at least three sessions (UI redesign, Kokoro voice, window app, security hardening) sit unstaged on `rust-port`. One bad `git checkout` loses it. 5 minutes. 2. **Add a retrieval golden set.** `searchNotes` return […]
+
+## 2026-10-16 07:00 — second-brain
+
+**Prompt:** commit then do 3, 4, 5

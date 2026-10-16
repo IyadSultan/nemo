@@ -19,3 +19,10 @@ voice/calendar-attendees/calendar-attendees
 # Daily voice-call log for brain.md (second-brain/brain.js)
 second-brain/daylog/
 .node-only
+
+# PDFs the brain printed (second-brain/pdf.js)
+second-brain/pdfs/
+
+# Browser automation scratch and Python caches
+.playwright-mcp/
+__pycache__/

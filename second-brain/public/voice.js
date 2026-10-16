@@ -621,7 +621,7 @@ async function startCall() {
     await waitForIceGathering(pc, 1500);
 
     const sdpResponse = await fetch(
-      `/session?voice=${encodeURIComponent(voiceSelect.value)}&model=${encodeURIComponent(modelSelect.value)}&reasoning=${encodeURIComponent(reasoningSelect.value)}`,
+      `/session?voice=${OPENAI_VOICE}&model=${encodeURIComponent(modelSelect.value)}&reasoning=${encodeURIComponent(reasoningSelect.value)}`,
       {
       method: "POST",
       body: pc.localDescription?.sdp || offer.sdp,
@@ -2711,7 +2711,7 @@ function openSpeaker() {
     await peer.setLocalDescription(offer);
     await waitForIceGathering(peer, 1500);
     const sdpResponse = await fetch(
-      `/session?voice=${encodeURIComponent(voiceSelect.value)}&model=gpt-realtime-2.1-mini&speak=1`,
+      `/session?voice=${OPENAI_VOICE}&model=gpt-realtime-2.1-mini&speak=1`,
       {
         method: "POST",
         body: peer.localDescription?.sdp || offer.sdp,
@@ -2914,6 +2914,12 @@ let kokoroSpeech = null;
 
 const ARABIC = /[\u0600-\u06FF]/;
 
+// The Voice list picks the Kokoro voice. Voice control (OpenAI) always speaks as Marin.
+const OPENAI_VOICE = "marin";
+voiceSelect.value = localStorage.getItem("kokoroVoice") || "af_heart";
+if (!voiceSelect.value) voiceSelect.value = "af_heart";
+voiceSelect.addEventListener("change", () => localStorage.setItem("kokoroVoice", voiceSelect.value));
+
 function kokoroVoice() {
   let chain = Promise.resolve();
   let stopped = false;
@@ -2930,7 +2936,7 @@ function kokoroVoice() {
       const clip = arabic ? Promise.reject(new Error("Kokoro reads English only")) : fetch("/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, voice: voiceSelect.value }),
       }).then((response) => {
         if (!response.ok) throw new Error(`Kokoro returned ${response.status}`);
         return response.blob();
@@ -3476,6 +3482,60 @@ function showSkillDoc(bubble, text) {
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
 }
 
+/** The PDF the server made, shown in the bubble with Save and Open buttons. */
+function attachPdf(bubble, pdf) {
+  if (!bubble || bubble.querySelector(".pdf-view")) return;
+  const frame = document.createElement("iframe");
+  frame.className = "pdf-view";
+  frame.src = pdf.url;
+  frame.title = pdf.name || "PDF";
+  const row = document.createElement("div");
+  row.className = "minutes-actions";
+  const status = document.createElement("span");
+  status.className = "minutes-saved";
+  status.textContent = pdf.name || "";
+  const button = (label, title, action) => {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "ghost-btn small";
+    el.textContent = label;
+    el.title = title;
+    el.addEventListener("click", () => action(el));
+    return el;
+  };
+  const save = async (el, pick) => {
+    const buttons = row.querySelectorAll("button");
+    buttons.forEach((b) => { b.disabled = true; });
+    status.textContent = pick ? "Choose a folder…" : "Saving…";
+    try {
+      const response = await fetch(`/pdf/${encodeURIComponent(pdf.id)}/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pick }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not save the PDF.");
+      status.textContent = data.path ? `Saved: ${data.path}` : pdf.name || "";
+      if (data.path) flashSaved();
+    } catch (err) {
+      console.error("Failed while saving the PDF:", err);
+      status.textContent = err.message || "Could not save the PDF.";
+    } finally {
+      buttons.forEach((b) => { b.disabled = false; });
+    }
+  };
+  row.append(
+    button("Save", "Save in Downloads and show it in the Finder", (el) => save(el, false)),
+    button("Save to…", "Choose a folder", (el) => save(el, true)),
+    button("Open", "Open in Preview", () => {
+      fetch(`/pdf/${encodeURIComponent(pdf.id)}/open`, { method: "POST" }).catch((err) => console.error("Failed while opening the PDF:", err));
+    }),
+    status,
+  );
+  bubble.append(frame, row);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
 /** "Haitham Aryan" becomes "Haitham". */
 function firstName(full) {
   const word = String(full || "").trim().split(/\s+/)[0].replace(/[,.]+$/, "");
@@ -3687,6 +3747,7 @@ async function answerWithBrain(question, extras) {
   let rawAnswer = "";
   let spokenShown = "";
   let outlook = null;
+  let pdfMade = null;
   let keepMemory = true;
   let remembered = false;
   try {
@@ -3791,6 +3852,11 @@ async function answerWithBrain(question, extras) {
             name: event.name || "",
             original: event.original || "",
           };
+        } else if (event.type === "pdf" && event.url) {
+          // The server printed a PDF. Show it under the spoken line, with Save and Open.
+          pdfMade = event;
+          bubble ??= addBubble("assistant", "", true);
+          attachPdf(bubble, event);
         } else if (event.type === "skill") {
           // The server grabbed a skill, or put one away. One the brain chose
           // by itself (auto) is used for this answer only.
@@ -3835,6 +3901,7 @@ async function answerWithBrain(question, extras) {
       : spoken.slice(spokenShown.length);
     if (leftover.trim()) unspoken += leftover;
     answer = written ? `${spoken}\n\n${written}` : spoken;
+    if (pdfMade) answer = `${answer}\n\n(A PDF named ${pdfMade.name} was made and shown on the screen.)`.trim();
     if (!answer.trim()) throw new Error("The selected model returned an empty answer.");
     if (bubble) {
       bubble.classList.remove("partial");

@@ -4,25 +4,37 @@
 //! showing the voice page from the Rust server on 127.0.0.1:3001.
 //! The server keeps running in the background (launchd) when the window closes.
 //!
+//! Tiny mode: after 3 idle minutes the page (tinymode.js) sends "tiny", and the window
+//! shrinks to Tiny alone (transparent, no frame or shadow) in the bottom-right corner, above other windows.
+//! A click on Tiny sends "full", and the window comes back where it was.
+//!
 //! `second-brain --probe` opens the page hidden, checks which browser features
 //! work inside this window, prints them as JSON, and exits. (It does not open
 //! the microphone, so no permission prompt appears.)
 
 use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use std::cell::RefCell;
 use std::net::TcpStream;
+use std::path::PathBuf;
+use std::rc::Rc;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use tao::{
-    dpi::LogicalSize,
+    dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
-    window::WindowBuilder,
+    platform::macos::WindowExtMacOS,
+    window::{Window, WindowBuilder},
 };
 use wry::{NewWindowResponse, PermissionKind, PermissionResponse, WebViewBuilder};
 
 const SERVER: &str = "127.0.0.1:3001";
 const PAGE: &str = "http://127.0.0.1:3001/voice.html";
 const SERVICE: &str = "com.iyad.talk-to-your-brain";
+/// Tiny's window, and its gap from the screen's right and bottom edges (above the Dock).
+const TINY: (f64, f64) = (200.0, 200.0);
+const TINY_GAP: (f64, f64) = (24.0, 110.0);
+const MIN_SIZE: (f64, f64) = (420.0, 480.0);
 
 /// Checks run inside the page by --probe.
 const PROBE: &str = r#"
@@ -119,6 +131,37 @@ fn menu_bar() -> (Menu, MenuItem) {
 enum UserEvent {
     ProbeDone(String),
     Menu(muda::MenuId),
+    Tiny(bool),
+}
+
+/// Shrink to Tiny in the bottom-right corner. Returns where the full window was.
+fn go_tiny(window: &Window) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    let was = (window.outer_position().ok()?, window.inner_size());
+    let monitor = window.current_monitor()?;
+    let scale = monitor.scale_factor();
+    window.set_decorations(false);
+    window.set_has_shadow(false);
+    window.set_resizable(false);
+    window.set_min_inner_size(None::<LogicalSize<f64>>);
+    window.set_always_on_top(true);
+    window.set_inner_size(LogicalSize::new(TINY.0, TINY.1));
+    let (pos, size) = (monitor.position(), monitor.size());
+    let x = pos.x + size.width as i32 - ((TINY.0 + TINY_GAP.0) * scale) as i32;
+    let y = pos.y + size.height as i32 - ((TINY.1 + TINY_GAP.1) * scale) as i32;
+    window.set_outer_position(PhysicalPosition::new(x, y));
+    Some(was)
+}
+
+/// Back to the full window, where it was before.
+fn go_full(window: &Window, was: (PhysicalPosition<i32>, PhysicalSize<u32>)) {
+    window.set_always_on_top(false);
+    window.set_decorations(true);
+    window.set_has_shadow(true);
+    window.set_resizable(true);
+    window.set_min_inner_size(Some(LogicalSize::new(MIN_SIZE.0, MIN_SIZE.1)));
+    window.set_inner_size(was.1);
+    window.set_outer_position(was.0);
+    window.set_focus();
 }
 
 fn main() -> wry::Result<()> {
@@ -136,16 +179,40 @@ fn main() -> wry::Result<()> {
     let window = WindowBuilder::new()
         .with_title("Second Brain")
         .with_inner_size(LogicalSize::new(1180.0, 860.0))
-        .with_min_inner_size(LogicalSize::new(420.0, 480.0))
+        .with_min_inner_size(LogicalSize::new(MIN_SIZE.0, MIN_SIZE.1))
         .with_visible(!probe)
+        // See-through where the page has no background: only Tiny shows in tiny mode.
+        .with_transparent(true)
         .build(&event_loop)
         .unwrap();
 
+    // Where the last download went, for the Finder.
+    let saved: Rc<RefCell<Option<PathBuf>>> = Rc::new(RefCell::new(None));
     let builder = WebViewBuilder::new()
+        // The first click on Tiny (window not active) must reach the page, not only focus the window.
+        .with_accept_first_mouse(true)
+        .with_transparent(true)
         // Speaking and photos need these; the page asks only when you use them.
         .with_permission_handler(|kind| match kind {
             PermissionKind::Microphone | PermissionKind::Camera => PermissionResponse::Allow,
             _ => PermissionResponse::Default,
+        })
+        // The arrow in the PDF viewer saves into Downloads (wry picks a free name there),
+        // then the Finder shows the file. Without these handlers the arrow does nothing.
+        .with_download_started_handler({
+            let saved = saved.clone();
+            move |_url, path: &mut PathBuf| {
+                *saved.borrow_mut() = Some(path.clone());
+                true
+            }
+        })
+        .with_download_completed_handler({
+            let saved = saved.clone();
+            move |_url, _path, ok| {
+                if let (true, Some(file)) = (ok, saved.borrow().as_ref()) {
+                    let _ = Command::new("/usr/bin/open").arg("-R").arg(file).spawn();
+                }
+            }
         })
         // Links that open a new window (Outlook web, sources) go to the default browser.
         .with_new_window_req_handler(|url, _| {
@@ -153,15 +220,28 @@ fn main() -> wry::Result<()> {
             NewWindowResponse::Deny
         })
         .with_ipc_handler(move |req| {
-            let _ = proxy.send_event(UserEvent::ProbeDone(req.body().to_string()));
+            let event = match req.body().as_str() {
+                "tiny" => UserEvent::Tiny(true),
+                "full" => UserEvent::Tiny(false),
+                other => UserEvent::ProbeDone(other.to_string()),
+            };
+            let _ = proxy.send_event(event);
         });
     let builder = if probe { builder.with_initialization_script(PROBE) } else { builder };
     let builder = if ensure_server() { builder.with_url(PAGE) } else { builder.with_html(NOT_RUNNING) };
     let webview = builder.build(&window)?;
 
+    // Where the full window was, while Tiny is showing.
+    let mut full_window = None;
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         match event {
+            Event::UserEvent(UserEvent::Tiny(true)) if full_window.is_none() => full_window = go_tiny(&window),
+            Event::UserEvent(UserEvent::Tiny(false)) => {
+                if let Some(was) = full_window.take() {
+                    go_full(&window, was);
+                }
+            }
             Event::UserEvent(UserEvent::Menu(id)) if id == *reload.id() => {
                 let _ = webview.reload();
             }

@@ -5,6 +5,8 @@
 --
 -- The window is the Second Brain app (/Applications, built by rust/window/bundle.sh).
 -- Clicking the brain opens it, or focuses it if it is already open.
+-- Hammerspoon does not open the app on its own: the app has its own icon and
+-- starts the server itself. This file only adds the menu and the shortcuts.
 -- The older Chrome window (its own profile) is used only if the app is missing,
 -- and is closed otherwise, so two pages never listen at once.
 
@@ -213,5 +215,3 @@ _G.heyMyBrainListenTap = hs.eventtap.new({
     return false
 end)
 _G.heyMyBrainListenTap:start()
-
-openVoice()

@@ -38,6 +38,7 @@ import { openFileJob, runOpenFile, findOnMacJob, runFindOnMac } from "./openfile
 import { emailSearchJob, runEmailSearch } from "./emailsearch.js";
 import { registerIMessage, sendIMessage, imessageHandle, textMeJob, runTextMe } from "./imessage.js";
 import * as desk from "./desk.js";
+import { pdfCatcher, renderPdf, registerPdf } from "./pdf.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -2331,6 +2332,13 @@ const APP_ABILITIES = [
   "The app cannot change or delete the user's existing files itself, and it never sends an email by itself.",
 ].join(" ");
 
+// The model makes a PDF by writing HTML after PDF_BODY. This server prints it and shows it on the page.
+const PDF_ABILITY = [
+  "You can make a PDF. Do it when the user asks for a PDF, a one-pager, a printable or downloadable document, a report, or a summary to save or share. Never say you cannot create or save files.",
+  "To make one: say one or two short spoken sentences about what the PDF holds. Then put PDF_BODY on its own line. Then write one complete HTML document with its own CSS in a style tag, sized for A4 (@page { size: A4; margin: 0 } and about 12mm of padding), with a title tag. Colors, cards, tables, and simple inline SVG diagrams print well. Keep the content honest: only facts from the notes, the conversation, or the web excerpts, with a short sources line.",
+  "The app turns the HTML into a PDF, shows it on the screen, and gives the user Save and Open buttons. The voice reads only the words before PDF_BODY, so never mention the HTML, and never put PDF_BODY in an answer that has no document.",
+].join(" ");
+
 const INSTRUCTIONS = [
   "You answer questions from a personal wiki of work notes, and from web pages this Mac looked up.",
   BRAIN_MAP,
@@ -2345,11 +2353,13 @@ const INSTRUCTIONS = [
   "Answer in the language of the question. If the user asks in Arabic, answer in Arabic.",
   "The here_and_now tool already ran. Its words are the Here and now line. Use that line for the time, the date, and the place. Do not guess, and do not look those up on the web.",
   "When the user asks for today's emails, leave out those from donotreply@khcc.jo. Say how many emails there are and who they are from, then summarize each one.",
+  PDF_ABILITY,
 ].join(" ");
 
 // The voice reads every word exactly as it is written. It does not turn abbreviations into speech.
 const SPOKEN_STYLE = [
   "Your answer will be read aloud by a voice assistant. The voice reads the words literally. Write only what you want heard.",
+  "These spoken rules cover only the words before a PDF_BODY marker. After PDF_BODY, write HTML.",
   "Use plain spoken sentences only.",
   "No markdown: no headings, bullet points, numbered lists, bold, italics, tables, file size, or code.",
   "No asterisks, hashes, backticks, underscores, slashes, brackets, emoji, links, web addresses, file paths, or HTML tags.",
@@ -2647,22 +2657,53 @@ function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000, di
   });
 }
 
-async function streamClaudeAnswer(prompt, res, model, reasoning, spoken) {
+async function streamClaudeAnswer(prompt, res, model, reasoning, spoken, readDirs) {
+  const dirs = Array.isArray(readDirs) && readDirs.length ? readDirs : selected;
   const files = [
-    `You can read the user's chosen folders with the Read, Glob and Grep tools: ${selected.join(", ")}.`,
+    `You can read these folders with the Read, Glob and Grep tools: ${dirs.join(", ")}.`,
     "Use them when the question is about a folder or file that the note excerpts do not cover. Read can open PDFs.",
+    readDirs ? "When a skill is on, its other files are in the first folder. Read them when the skill tells you to." : "",
     "When a question needs several separate searches (for example notes, email, and documents, or several folders), start helper agents with the Task tool so they search in parallel, then combine what they found. Answer simple questions yourself.",
-    "You cannot write files or run commands. Never type tool-call markup such as <invoke> in your answer.",
+    "You cannot write files or run commands. To give the user a file, make a PDF with PDF_BODY and the app saves it. Never type tool-call markup such as <invoke> in your answer.",
     "Do not narrate your searching. Answer only after you have looked.",
-  ].join(" ");
+  ].filter(Boolean).join(" ");
   const system = [INSTRUCTIONS, files, spoken ? SPOKEN_STYLE : "", guideBlock()].filter(Boolean).join("\n\n");
   const onHelpers = (n) => writeEvent(res, { type: "status", message: `Working with ${n} helper${n === 1 ? "" : "s"}…` });
-  const usage = await askClaude(model, system, prompt, reasoning, (text) => writeEvent(res, { type: "delta", text }), 300000, selected, onHelpers);
+  const usage = await askClaude(model, system, prompt, reasoning, (text) => writeEvent(res, { type: "delta", text }), 300000, dirs, onHelpers);
   writeEvent(res, usageEvent(model, reasoning, usage));
 }
 
 function writeEvent(res, obj) {
+  // While a PDF is being written, its HTML stays here instead of going to the voice.
+  const pdf = res.locals?.pdf;
+  if (pdf && obj.type === "delta") {
+    const text = pdf.feed(obj.text);
+    if (pdf.seen && !pdf.told) {
+      pdf.told = true;
+      res.write(`data: ${JSON.stringify({ type: "status", message: "Making the PDF…" })}\n\n`);
+    }
+    if (!text) return;
+    obj = { type: "delta", text };
+  }
   res.write(`data: ${JSON.stringify(obj)}\n\n`);
+}
+
+/** After the answer: release held words, print the PDF if one was written, and tell the page. */
+async function finishPdf(res) {
+  const pdf = res.locals?.pdf;
+  if (!pdf) return;
+  res.locals.pdf = null;
+  const tail = pdf.flush();
+  if (tail) writeEvent(res, { type: "delta", text: tail });
+  if (!pdf.body.trim()) return;
+  try {
+    const made = await renderPdf(pdf.body);
+    console.log(`Made a PDF (${made.name})`);
+    writeEvent(res, { type: "pdf", id: made.id, name: made.name, url: `/pdf/${made.id}` });
+  } catch (err) {
+    console.error("Failed while making a PDF:", err?.message || err);
+    writeEvent(res, { type: "delta", text: " The PDF could not be made." });
+  }
 }
 
 /** A short spoken answer, plus an optional card on the voice page. */
@@ -3523,11 +3564,13 @@ app.post("/transcribe/warm", (req, res) => {
 app.post("/speak", async (req, res) => {
   const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
   if (!text) return res.status(400).json({ error: "No text to speak." });
+  // A Kokoro voice name, like af_heart. Anything else gets Kokoro's default.
+  const voice = /^[ab][fm]_[a-z]+$/.test(req.body?.voice) ? req.body.voice : undefined;
   try {
     const upstream = await fetch(`${KOKORO_URL}/speak`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, voice }),
     });
     if (!upstream.ok) throw new Error(`Kokoro returned ${upstream.status}`);
     res.type("audio/wav").send(Buffer.from(await upstream.arrayBuffer()));
@@ -4426,6 +4469,17 @@ app.post("/meeting/folder", async (req, res) => {
 });
 
 const SKILLS_DIR = path.join(__dirname, "skills");
+const HOME_SKILLS = path.join(os.homedir(), ".claude", "skills");
+const CLAUDE_SETTINGS = path.join(os.homedir(), ".claude", "settings.json");
+const INSTALLED_PLUGINS = path.join(os.homedir(), ".claude", "plugins", "installed_plugins.json");
+// A skill Claude would load is at most 1 MB. The spoken prompt keeps the first 100,000 characters.
+const SKILL_FILE_MAX = 1024 * 1024;
+const SKILL_BODY_MAX = 100_000;
+// Do not walk these while looking for project skill folders.
+const SKILL_SKIP_DIRS = new Set([
+  "node_modules", ".git", "dist", "build", "target", "vendor",
+  "__pycache__", ".venv", "venv", ".trash", "cache", "tmp",
+]);
 
 /** "PRD simple" becomes the file name prd-simple. */
 function skillFileId(name) {
@@ -4434,11 +4488,50 @@ function skillFileId(name) {
     .replace(/\.md$/i, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
+    .slice(0, 80);
+}
+
+function skillIdOk(id) {
+  return /^[a-z0-9][a-z0-9_-]{0,80}$/.test(id);
+}
+
+/** The name and description between the --- lines at the top of a skill file. */
+function skillFrontMatter(block) {
+  const fields = {};
+  let key = "";
+  let folded = false;
+  const lines = [];
+  const save = () => {
+    if (!key) return;
+    let value = lines.join(folded ? " " : "\n").trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    fields[key] = value;
+    key = "";
+    folded = false;
+    lines.length = 0;
+  };
+  for (const line of String(block || "").split(/\r?\n/)) {
+    const next = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$/);
+    if (next) {
+      save();
+      key = next[1].toLowerCase();
+      const rest = next[2].trim();
+      if (rest === ">" || rest === "|") folded = rest === ">";
+      else lines.push(rest);
+    } else if (key && (line.startsWith(" ") || line.startsWith("\t"))) {
+      lines.push(line.trim());
+    } else {
+      save();
+    }
+  }
+  save();
+  return fields;
 }
 
 /** A skill file can start with a short name and description between --- lines. */
-function parseSkill(text, id) {
+function parseSkill(text, id, dir) {
   const raw = String(text || "");
   let name = id;
   let description = "";
@@ -4446,44 +4539,187 @@ function parseSkill(text, id) {
   const front = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (front) {
     body = raw.slice(front[0].length).trim();
-    for (const line of front[1].split(/\r?\n/)) {
-      const match = line.match(/^([A-Za-z]+):\s*(.*)$/);
-      if (!match) continue;
-      const key = match[1].toLowerCase();
-      if (key === "name" && match[2].trim()) name = match[2].trim();
-      if (key === "description") description = match[2].trim();
-    }
+    const fields = skillFrontMatter(front[1]);
+    if (fields.name) name = fields.name.replace(/\s+/g, " ").trim();
+    if (fields.description) description = fields.description;
   }
   return {
     id,
     name: name.slice(0, 80),
-    description: description.slice(0, 240),
-    body: body.slice(0, 20000),
+    description: description.replace(/\s+/g, " ").trim().slice(0, 240),
+    body: body.slice(0, SKILL_BODY_MAX),
+    // The folder that holds this skill, so Claude can open its other files.
+    dir: dir || "",
   };
 }
 
-/** Every markdown file in second-brain/skills is one skill the voice can use. */
-async function listSkills() {
-  let names = [];
-  try {
-    names = await fs.readdir(SKILLS_DIR);
-  } catch (err) {
-    if (err?.code !== "ENOENT") console.error("Failed while reading skills:", err?.message || err);
-    return [];
-  }
-  const skills = [];
-  for (const file of names) {
-    if (!file.endsWith(".md")) continue;
-    const id = file.slice(0, -3);
-    if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(id)) continue;
+/** A cloud-only OneDrive file has a size but no blocks on disk. Skip it. */
+function skillFileReady(stat) {
+  if (!stat?.isFile() || stat.size <= 0 || stat.size > SKILL_FILE_MAX) return false;
+  if (stat.blocks === 0 && stat.size > 4096) return false;
+  return true;
+}
+
+async function skillMarkdownIn(dir) {
+  for (const name of ["SKILL.md", "skill.md"]) {
     try {
-      const text = await fs.readFile(path.join(SKILLS_DIR, file), "utf8");
-      skills.push(parseSkill(text, id));
-    } catch (err) {
-      console.error("Failed while reading a skill:", err?.message || err);
+      const file = path.join(dir, name);
+      const stat = await fs.stat(file);
+      if (skillFileReady(stat)) return file;
+    } catch {
+      // This folder is not a skill, or the file is not on disk.
     }
   }
-  skills.sort((a, b) => a.name.localeCompare(b.name));
+  return "";
+}
+
+/**
+ * Read one skill into the map. The first folder that has a name wins,
+ * so a skill in the notes folder beats the same name in the home folder.
+ */
+async function rememberSkill(bag, id, file) {
+  if (!skillIdOk(id) || bag.has(id)) return;
+  try {
+    const text = await fs.readFile(file, "utf8");
+    bag.set(id, parseSkill(text, id, path.dirname(file)));
+  } catch (err) {
+    console.error("Failed while reading a skill:", err?.message || err);
+  }
+}
+
+/**
+ * One skills folder, the way Claude Code reads it.
+ * A skill is either name/SKILL.md or a plain name.md file.
+ * Folders such as synced/<account>/<name>/SKILL.md are included too.
+ */
+async function walkSkillDir(dir, depth, bag, skipNames = new Set()) {
+  if (depth > 4) return;
+  let entries = [];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if (err?.code !== "ENOENT" && err?.code !== "ENOTDIR") {
+      console.error("Failed while reading skills:", err?.message || err);
+    }
+    return;
+  }
+  if (depth === 0) {
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue;
+      const id = skillFileId(entry.name);
+      await rememberSkill(bag, id, path.join(dir, entry.name));
+    }
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith(".") || SKILL_SKIP_DIRS.has(entry.name) || skipNames.has(entry.name)) continue;
+    const child = path.join(dir, entry.name);
+    let isDirectory = entry.isDirectory();
+    if (!isDirectory && entry.isSymbolicLink()) {
+      try {
+        isDirectory = (await fs.stat(child)).isDirectory();
+      } catch {
+        isDirectory = false;
+      }
+    }
+    if (!isDirectory) continue;
+    const skillFile = await skillMarkdownIn(child);
+    if (skillFile) {
+      await rememberSkill(bag, skillFileId(entry.name), skillFile);
+      continue;
+    }
+    await walkSkillDir(child, depth + 1, bag);
+  }
+}
+
+/** .claude/skills and .agents/skills inside one project. */
+async function addProjectSkillDirs(projectDir, bag) {
+  await walkSkillDir(path.join(projectDir, ".claude", "skills"), 0, bag);
+  await walkSkillDir(path.join(projectDir, ".agents", "skills"), 0, bag);
+}
+
+/** The project itself, plus projects nested a couple of folders down. */
+async function addNearbyProjectSkills(dir, depth, bag) {
+  await addProjectSkillDirs(dir, bag);
+  if (depth <= 0) return;
+  let entries = [];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".") || SKILL_SKIP_DIRS.has(entry.name)) continue;
+    await addNearbyProjectSkills(path.join(dir, entry.name), depth - 1, bag);
+  }
+}
+
+/** Plugins turned on in Claude's settings. Old copies in the cache are left out. */
+function enabledPluginDirs() {
+  let enabled = {};
+  let installed = {};
+  try {
+    enabled = JSON.parse(fsSync.readFileSync(CLAUDE_SETTINGS, "utf8")).enabledPlugins || {};
+  } catch {
+    enabled = {};
+  }
+  try {
+    installed = JSON.parse(fsSync.readFileSync(INSTALLED_PLUGINS, "utf8")).plugins || {};
+  } catch {
+    installed = {};
+  }
+  const root = path.join(os.homedir(), ".claude", "plugins") + path.sep;
+  const dirs = [];
+  for (const [name, on] of Object.entries(enabled)) {
+    if (!on || !Array.isArray(installed[name])) continue;
+    for (const item of installed[name]) {
+      const installPath = typeof item?.installPath === "string" ? path.resolve(item.installPath) : "";
+      if (installPath.startsWith(root)) dirs.push(installPath);
+    }
+  }
+  return dirs;
+}
+
+let skillCache = { key: "", at: 0, skills: [] };
+
+/**
+ * Every skill Claude Code can see.
+ * Local skills (the notes folders, this app, and other projects) come first.
+ * Then the global skills in ~/.claude/skills, including ones synced from claude.ai.
+ * Then the plugins that are turned on.
+ * The same name is kept once: the earlier place wins.
+ */
+async function listSkills() {
+  const orderedFolders = [
+    ...selected,
+    ...folders.filter((folder) => !selected.includes(folder)),
+  ];
+  const key = orderedFolders.join("\n");
+  if (skillCache.skills.length && skillCache.key === key && Date.now() - skillCache.at < 60_000) {
+    return skillCache.skills;
+  }
+  const bag = new Map();
+  try {
+    for (const folder of orderedFolders) {
+      await addNearbyProjectSkills(folder, 2, bag);
+    }
+    await addProjectSkillDirs(path.join(__dirname, ".."), bag);
+    await walkSkillDir(SKILLS_DIR, 0, bag);
+    // User skills before the synced copies, so the copy in ~/.claude/skills wins.
+    await walkSkillDir(HOME_SKILLS, 0, bag, new Set(["synced"]));
+    await walkSkillDir(path.join(os.homedir(), ".agents", "skills"), 0, bag);
+    for (const pluginDir of enabledPluginDirs()) {
+      await walkSkillDir(pluginDir, 0, bag);
+    }
+    await walkSkillDir(path.join(HOME_SKILLS, "synced"), 0, bag);
+    await addNearbyProjectSkills(path.join(os.homedir(), "code"), 2, bag);
+  } catch (err) {
+    console.error("Failed while reading skills:", err?.message || err);
+  }
+  const skills = [...bag.values()].sort((a, b) => a.name.localeCompare(b.name));
+  if (skills.length !== skillCache.skills.length) {
+    console.log(`Skills: ${skills.length} ready. Type / in the question box.`);
+  }
+  skillCache = { key, at: Date.now(), skills };
   return skills;
 }
 
@@ -4497,13 +4733,18 @@ function mentionsSkillStop(question) {
 function matchSkill(question, skills) {
   const q = String(question || "").toLowerCase().replace(/['’]/g, "");
   let found = null;
+  let foundLength = 0;
   for (const skill of skills) {
     const names = [skill.name, skill.id.replace(/-/g, " ")]
       .map((name) => name.toLowerCase().trim())
       .filter((name) => name.length >= 3);
-    const mentioned = names.some((name) => q.includes(name));
+    // The longest name wins: "one page summary" beats "pdf" in "use the one page summary skill to make a PDF".
+    const mentioned = Math.max(0, ...names.filter((name) => q.includes(name)).map((name) => name.length));
     const asksToUse = /\b(use|using|grab|open|follow|start|load|switch to|with the)\b/.test(q) || /\bskills?\b/.test(q);
-    if (mentioned && asksToUse) found = skill;
+    if (mentioned > foundLength && asksToUse) {
+      found = skill;
+      foundLength = mentioned;
+    }
     if (/\bprd\b/.test(skill.id) && /\bprds?\b/.test(q) && /\b(write|create|draft|make|build|start|use)\b/.test(q)) {
       found = skill;
     }
@@ -4538,10 +4779,12 @@ function skillInstructions(skill, question, history, memory, meetingNotes, notes
     `The user wants you to use the skill "${skill.name}".`,
     "Follow the skill below. It decides the shape of the answer.",
     "Say a short spoken intro first. If the skill produces a document, put the marker SKILL_BODY on its own line, then write the document.",
-    "The voice reads only the words before SKILL_BODY. Do not read the document aloud.",
+    "If the skill produces a PDF, put PDF_BODY on its own line instead, then the complete HTML page, as the PDF rule says.",
+    "The voice reads only the words before SKILL_BODY or PDF_BODY. Do not read the document aloud.",
     "After SKILL_BODY, short labels on their own lines are fine.",
     "Do not invent facts. Write TBD when something was not said.",
     "Keep Arabic and English as the user said them.",
+    "If the skill tells you to open another file, that file is in the skill's folder.",
     "",
     skill.body,
     meetingNotes
@@ -4568,7 +4811,7 @@ function replySkillStop(res) {
  * Used for the meeting summary, which must not run the calendar or email tools.
  * firstEvent is sent before the words, so the page can highlight a skill.
  */
-async function streamSpokenPrompt(req, res, prompt, firstEvent) {
+async function streamSpokenPrompt(req, res, prompt, firstEvent, readDirs) {
   const model = getModel(req.body?.model) || getModel(DEFAULT_MODEL);
   let reasoning = typeof req.body?.reasoning === "string" ? req.body.reasoning : DEFAULT_REASONING;
   if (!model.reasoning.includes(reasoning)) reasoning = model.reasoning[0];
@@ -4594,11 +4837,13 @@ async function streamSpokenPrompt(req, res, prompt, firstEvent) {
   }
   if (model.local) loadedLocalId = model.id;
 
+  res.locals.pdf = pdfCatcher();
   try {
     // longSpoken so a real meeting can be more than three sentences.
     if (model.local) await streamLocalAnswer(prompt, res, model, reasoning, true, true);
-    else if (model.subscription) await streamClaudeAnswer(prompt, res, model, reasoning, true);
+    else if (model.subscription) await streamClaudeAnswer(prompt, res, model, reasoning, true, readDirs);
     else await streamAnswer(apiKey, prompt, res, model, reasoning, true);
+    await finishPdf(res);
     writeEvent(res, { type: "done" });
     res.end();
   } catch (err) {
@@ -4685,10 +4930,9 @@ app.post("/ask", async (req, res) => {
   const asksForASkill = /\b(use|grab|open|start|follow) (?:the |a )?skills?\b/i.test(question);
   if (asksForASkill && !named && !kept) {
     if (skills.length === 1) activeSkill = skills[0];
-    else if (!skills.length) return replyNow(res, "There are no skills yet. Upload one on the page.");
+    else if (!skills.length) return replyNow(res, "There are no skills yet. Add one under ~/.claude/skills.");
     else {
-      const names = skills.map((skill) => skill.name).join(", ");
-      return replyNow(res, `Which skill should I use? I have ${names}.`);
+      return replyNow(res, `I have ${skills.length} skills. Type / and the skill name.`);
     }
   }
   if (activeSkill && (named || asksForASkill || !looksLikeOwnJob(question))) {
@@ -4701,11 +4945,16 @@ app.post("/ask", async (req, res) => {
       notes,
       req.body?.notesKind === "lecture" ? "lecture" : "",
     );
+    const readDirs = [];
+    if (activeSkill.dir) readDirs.push(activeSkill.dir);
+    for (const folder of selected) {
+      if (!readDirs.includes(folder)) readDirs.push(folder);
+    }
     await streamSpokenPrompt(req, res, prompt, {
       type: "skill",
       id: activeSkill.id,
       name: activeSkill.name,
-    });
+    }, readDirs);
     return;
   }
   if (isNoise(question)) {
@@ -4879,9 +5128,11 @@ app.post("/ask", async (req, res) => {
     }
     const spoken = req.body?.spoken === true;
     const longSpoken = hits.emailJob === "read" || hits.emailJob === "reply" || hits.emailJob === "send" || hits.emailJob === "list" || hits.emailJob === "review" || hits.memoJob === "recent" || hits.memoJob === "all" || hits.memoJob === "find";
+    res.locals.pdf = pdfCatcher();
     if (model.local) await streamLocalAnswer(prompt, res, model, reasoning, spoken, longSpoken);
     else if (model.subscription) await streamClaudeAnswer(prompt, res, model, reasoning, spoken);
     else await streamAnswer(apiKey, prompt, res, model, reasoning, spoken, photo);
+    await finishPdf(res);
     writeEvent(res, { type: "done" });
     res.end();
   } catch (err) {
@@ -4914,6 +5165,7 @@ async function askBrain(question, history = []) {
 }
 
 registerIMessage(app, askBrain);
+registerPdf(app);
 
 /**
  * Morning briefing: today's meetings, tasks due, and emails that need a reply.
