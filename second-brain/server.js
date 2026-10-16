@@ -42,6 +42,7 @@ import { registerDeck, rememberDocument } from "./deck.js";
 import { pdfCatcher, registerPdf } from "./pdf.js";
 import { answerPdfTool, qaBlock, registerPdfTools, rememberPdf, wantsPdfTool } from "./pdftools.js";
 import { ingestDocument } from "./upload.js";
+import { registerWordcraft } from "./wordcraft.js";
 import { MODELS, REASONING_LEVELS, VOICE_MODELS, getModel } from "./pricing.js";
 import { TINY_LINES, buildPrompt, cleanHistory, cleanMemory } from "./prompt.js";
 import { runCommand } from "./shell.js";
@@ -601,6 +602,7 @@ registerIMessage(app, askBrain);
 
 registerPdf(app);
 registerPdfTools(app);
+registerWordcraft(app);
 registerDeck(app);
 registerDeskjobs(app);
 

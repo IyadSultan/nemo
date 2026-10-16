@@ -375,6 +375,11 @@ async function askTyped(raw) {
     answerDuringMeeting(question);
     return;
   }
+  // Word is open on the right: the question is about the document there.
+  if (window.brainWord?.open) {
+    window.brainWord.ask(question);
+    return;
+  }
   questionEndedAt = performance.now();
 
   // Gemini Live takes typed words on the same line.
@@ -2616,6 +2621,13 @@ async function startLocalListen() {
       showMeetingStatus();
       continue;
     }
+    // The Word editor is open: "Hey, …" goes to it.
+    if (window.brainWord?.open) {
+      clearThinkCue();
+      if (!looksLikeSilence(text)) window.brainWord.hear(text);
+      setCapsuleState("listening");
+      continue;
+    }
     // A deck is on screen: what is said goes to it (next slide, or a new slide in live mode), no Hey needed.
     if (window.brainDeck?.open) {
       clearThinkCue();
@@ -3328,6 +3340,14 @@ function handleServerEvent(event) {
       showMeetingStatus();
       return;
     }
+    if (window.brainWord?.open) {
+      if (userPartialEl) {
+        userPartialEl.remove();
+        userPartialEl = null;
+      }
+      if (text.trim()) window.brainWord.hear(text.trim());
+      return;
+    }
     if (window.brainDeck?.open) {
       if (userPartialEl) {
         userPartialEl.remove();
@@ -3780,6 +3800,7 @@ async function answerWithBrain(question, extras) {
   if (meetingOn || lectureFormOpen || brainBusy || paused) return;
   // "start a live presentation about …", "present it": deck.js opens the deck.
   if (!writingNotes && window.brainDeck?.command(question)) return;
+  if (!writingNotes && window.brainWord?.command(question)) return;
   if (!writingNotes && runTerminalAsk(question)) return;
   const tinyMove = writingNotes ? "" : playTinyMove(question);
   if (!connected) setBusy(true);

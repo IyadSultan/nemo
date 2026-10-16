@@ -1,0 +1,129 @@
+diff --git a/apps/wordcraft-web/src/web.rs b/apps/wordcraft-web/src/web.rs
+index 0e40099..dd25030 100644
+--- a/apps/wordcraft-web/src/web.rs
++++ b/apps/wordcraft-web/src/web.rs
+@@ -12,6 +12,7 @@ use wordcraft_ui_egui::{Inbox, Services, WordApp};
+ const DOC_EXTS: &[&str] = &["docx", "docm", "dotx", "dotm", "doc", "dot", "odt", "rtf", "txt", "md", "html", "htm", "tex", "json", "xml"];
+ const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "wmf", "emf"];
+ const RECIPIENT_EXTS: &[&str] = wordcraft_engine::cmd::mailings::RECIPIENT_EXTENSIONS;
++mod bridge;
+ mod font_store;
+ const CANVAS_ID: &str = "wordcraft_canvas";
+ const LOADING_ID: &str = "wordcraft_loading";
+@@ -66,10 +67,16 @@ pub fn start() {
+                     app.services.pasted = Some(pasted);
+                     app.autosave = false;
+                     // No document to show: start on File › Home, as the desktop app does (#766).
+-                    if !sample {
++                    // Embedded (?embed): a blank page, driven through window.wordcraftBridge.
++                    let embed = query().contains("embed");
++                    if !sample && !embed {
+                         app.start_screen();
+                     }
+-                    Ok(Box::new(WebShell { app, inbox, messages }))
++                    let bridge = bridge::Bridge::default();
++                    if let Err(e) = bridge.install(cc.egui_ctx.clone()) {
++                        log::error!("no wordcraftBridge: {e}");
++                    }
++                    Ok(Box::new(WebShell { app, inbox, messages, bridge }))
+                 }),
+             )
+             .await;
+@@ -92,6 +99,7 @@ struct WebShell {
+     app: WordApp,
+     inbox: Inbox,
+     messages: Rc<RefCell<Vec<String>>>,
++    bridge: bridge::Bridge,
+ }
+ 
+ impl eframe::App for WebShell {
+@@ -115,6 +123,7 @@ impl eframe::App for WebShell {
+         for msg in msgs {
+             self.app.status(msg);
+         }
++        self.bridge.drain(&mut self.app, ctx);
+         self.app.logic(ctx);
+     }
+ 
+diff --git a/apps/wordcraft-web/src/web/bridge.rs b/apps/wordcraft-web/src/web/bridge.rs
+new file mode 100644
+index 0000000..0f81b00
+--- /dev/null
++++ b/apps/wordcraft-web/src/web/bridge.rs
+@@ -0,0 +1,76 @@
++//! A JavaScript bridge for pages that embed WordCraft in an iframe (talk_to_your_brain).
++//!
++//! `window.wordcraftBridge(method, paramsJson)` returns a Promise. Every control-protocol
++//! method works (`engine.execute`, `document.inspect`, any command id), plus:
++//! - `bridge.save {name}`: the document as file bytes (format from the name's extension), a Uint8Array
++//! - `bridge.state`: `{dirty, title, hasDocument}`
++//! Requests run on the next frame, inside the app, so they see what the user sees.
++
++use std::cell::RefCell;
++use std::rc::Rc;
++
++use serde_json::{Value, json};
++use wasm_bindgen::JsCast as _;
++use wasm_bindgen::prelude::*;
++use wordcraft_ui_egui::WordApp;
++use wordcraft_ui_egui::control::{self, ControlRequest, Outcome};
++
++struct Pending {
++    method: String,
++    params: Value,
++    resolve: js_sys::Function,
++}
++
++#[derive(Clone, Default)]
++pub struct Bridge {
++    queue: Rc<RefCell<Vec<Pending>>>,
++}
++
++impl Bridge {
++    pub fn install(&self, ctx: egui::Context) -> Result<(), String> {
++        let window = web_sys::window().ok_or("no window")?;
++        let queue = self.queue.clone();
++        let call = Closure::<dyn FnMut(String, Option<String>) -> js_sys::Promise>::new(move |method: String, params: Option<String>| {
++            let params = params.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or(json!({}));
++            let queue = queue.clone();
++            let ctx = ctx.clone();
++            js_sys::Promise::new(&mut |resolve, _reject| {
++                queue.borrow_mut().push(Pending { method: method.clone(), params: params.clone(), resolve });
++                ctx.request_repaint();
++            })
++        });
++        js_sys::Reflect::set(&window, &JsValue::from_str("wordcraftBridge"), call.as_ref().unchecked_ref()).map_err(|e| format!("{e:?}"))?;
++        call.forget();
++        Ok(())
++    }
++
++    pub fn drain(&self, app: &mut WordApp, ctx: &egui::Context) {
++        let pending = std::mem::take(&mut *self.queue.borrow_mut());
++        for p in pending {
++            let reply: JsValue = match p.method.as_str() {
++                "bridge.save" => {
++                    let name = p.params.get("name").and_then(Value::as_str).unwrap_or("Document.docx");
++                    match wordcraft_engine::io::save_bytes(name, &app.session.doc) {
++                        Ok(bytes) => {
++                            app.session.dirty = false;
++                            js_sys::Uint8Array::from(bytes.as_slice()).into()
++                        }
++                        Err(e) => JsValue::from_str(&json!({"ok": false, "error": e}).to_string()),
++                    }
++                }
++                "bridge.state" => JsValue::from_str(
++                    &json!({"ok": true, "result": {"dirty": app.session.dirty, "title": app.title_stem(), "hasDocument": app.has_document()}}).to_string(),
++                ),
++                _ => {
++                    let (req, _rx) = ControlRequest::new(p.method, p.params);
++                    let v = match control::handle(app, ctx, &req) {
++                        Outcome::Done(v) => v,
++                        Outcome::Screenshot { .. } => json!({"ok": false, "error": "screenshots are not available in the browser"}),
++                    };
++                    JsValue::from_str(&v.to_string())
++                }
++            };
++            let _ = p.resolve.call1(&JsValue::NULL, &reply);
++        }
++    }
++}
