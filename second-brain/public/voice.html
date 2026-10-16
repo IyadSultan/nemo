@@ -37,6 +37,10 @@
         </dl>
       </section>
 
+      <button type="button" class="term-btn" id="pdfEditBtn" title="Upload PDFs to edit (or drop them on the window)">
+        <span aria-hidden="true">⧉</span> PDF tools
+      </button>
+      <input id="pdfEditFile" type="file" accept=".pdf,application/pdf" multiple hidden />
       <button type="button" class="term-btn" id="terminalBtn" title="Open or close a terminal">
         <span aria-hidden="true">&gt;_</span> Terminal
       </button>
@@ -258,6 +262,16 @@
           </div>
           <div class="desk-cards" id="deskCards"></div>
         </section>
+        <section class="pdfdesk" id="pdfDesk" hidden>
+          <div class="transcript-head">
+            <h2>PDFs <span class="desk-count" id="pdfCount"></span></h2>
+            <span class="transcript-actions">
+              <button type="button" class="ghost-btn small" id="pdfAddBtn">Add PDFs</button>
+              <button type="button" class="ghost-btn small" id="pdfClearBtn" title="Remove the boxes (saved files stay)">Clear</button>
+            </span>
+          </div>
+          <div class="pdfboxes" id="pdfBoxes"></div>
+        </section>
         <div class="transcript-head">
           <h2>Transcript</h2>
           <span class="transcript-actions">
@@ -298,6 +312,7 @@
     <script src="/vendor/xterm/xterm/lib/xterm.js"></script>
     <script src="/vendor/xterm/addon-fit/lib/addon-fit.js"></script>
     <script src="/terminal.js"></script>
+    <script src="/pdfedit.js"></script>
     <script type="module" src="/deck.js"></script>
   </body>
 </html>

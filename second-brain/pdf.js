@@ -148,6 +148,15 @@ export async function renderPdf(raw) {
   return { id, name, path: pdfPath };
 }
 
+/** Keep a finished PDF (from the PDF tools, pdftools.js) so the page can show, save and open it. */
+export async function storePdf(bytes, name) {
+  const id = `${new Date().toISOString().slice(0, 10)}-${crypto.randomBytes(4).toString("hex")}`;
+  await fs.mkdir(PDF_DIR, { recursive: true });
+  await fs.writeFile(path.join(PDF_DIR, `${id}.pdf`), bytes);
+  await fs.writeFile(path.join(PDF_DIR, `${id}.name`), name, "utf8");
+  return { id, name, url: `/pdf/${id}` };
+}
+
 const ID = /^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{8}$/;
 
 async function lookup(id) {

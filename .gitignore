@@ -29,3 +29,6 @@ second-brain/decks/
 # Browser automation scratch and Python caches
 .playwright-mcp/
 __pycache__/
+
+# PDFCraft tools bundle and web app (voice/install-pdfcraft.sh)
+second-brain/vendor/

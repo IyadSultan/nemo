@@ -40,6 +40,7 @@ import { findOnMacJob, openFileJob, runFindOnMac, runOpenFile } from "./openfile
 import { openOutlookDraft } from "./outlook.js";
 import { registerDeck, rememberDocument } from "./deck.js";
 import { pdfCatcher, registerPdf } from "./pdf.js";
+import { answerPdfTool, registerPdfTools, rememberPdf, wantsPdfTool } from "./pdftools.js";
 import { ingestDocument } from "./upload.js";
 import { MODELS, REASONING_LEVELS, VOICE_MODELS, getModel } from "./pricing.js";
 import { TINY_LINES, buildPrompt, cleanHistory, cleanMemory } from "./prompt.js";
@@ -432,6 +433,15 @@ app.post("/ask", async (req, res) => {
       return replyNow(res, `I could not open ${site.name}.`);
     }
   }
+  // "Merge the last two PDFs", "rotate it": PDFCraft's tools change a PDF the user has.
+  if (wantsPdfTool(question)) {
+    try {
+      if (await answerPdfTool(question, res)) return;
+    } catch (err) {
+      console.error("Failed while planning a PDF tool:", err?.message || err);
+      if (res.headersSent) return res.end();
+    }
+  }
   // Email first: "open the email from Sara" must not look for a file called "email from Sara".
   const mailSearch = emailSearchJob(question);
   const openFile = mailSearch ? null : openFileJob(question);
@@ -588,6 +598,7 @@ async function askBrain(question, history = []) {
 registerIMessage(app, askBrain);
 
 registerPdf(app);
+registerPdfTools(app);
 registerDeck(app);
 registerDeskjobs(app);
 
@@ -710,6 +721,7 @@ app.post("/document", express.raw({ type: "*/*", limit: "60mb" }), async (req, r
     setNotes([...notes, parseNote(path.relative(root, doc.wikiPath), doc.wikiText)]);
     semantic.build(notes).catch((err) => console.error("Failed while building the meaning index:", err?.message || err));
     rememberDocument(doc.copyPath);
+    rememberPdf(doc.copyPath);
     console.log(`Saved an uploaded document and its wiki page (${path.extname(doc.copyPath)})`);
     res.json({ title: doc.title, summary: doc.summary, wiki: doc.wikiPath, copy: doc.copyPath });
   } catch (err) {
