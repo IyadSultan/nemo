@@ -63,6 +63,11 @@ async fn plan_helpers_and_streamed_answer() {
     for id in ["ada", "milo"] {
         assert!(events.iter().any(|e| e["type"] == "agent" && e["id"] == id && e["state"] == "done"), "{id} done");
     }
+    // Each helper's terminal log: its job, its tool calls, what it wrote, and the end.
+    let ada_log: String = events.iter().filter(|e| e["id"] == "ada").filter_map(|e| e["log"].as_str()).collect();
+    for part in ["Job: Search the notes", "› Reading plan.md", "Found it in plan.md", "✓ Done"] {
+        assert!(ada_log.contains(part), "{part} missing from {ada_log:?}");
+    }
     let answer: String = events.iter().filter(|e| e["type"] == "delta").map(|e| e["text"].as_str().unwrap()).collect();
     assert_eq!(answer, "Hello world.");
     assert!(!events.iter().any(|e| e["type"] == "error"));
@@ -87,7 +92,20 @@ fn plans_are_read_even_with_words_around_them() {
 
 #[test]
 fn final_prompt_lists_each_helpers_findings() {
-    assert_eq!(team::final_prompt("Q", &[]), "Q");
-    let p = team::final_prompt("Q", &[("Ada".into(), "notes".into(), " fact \n".into())]);
+    assert_eq!(team::final_prompt("Q", &[], &[]), "Q");
+    let p = team::final_prompt("Q", &[("Ada".into(), "notes".into(), " fact \n".into())], &[]);
     assert!(p.starts_with("Q\n\n---\n") && p.contains("### Ada: notes\nfact\n"));
+    assert!(p.contains("Do not mention the helpers by name"));
+    let p = team::final_prompt("Q", &[("Ada".into(), "notes".into(), "fact".into())], &["Ada".into()]);
+    assert!(p.contains("The user asked Ada by name") && !p.contains("Do not mention"));
+}
+
+#[test]
+fn a_helper_asked_by_name_gets_that_name() {
+    let plan = parse_plan(r#"{"helpers":[{"task":"other job"},{"name":"milo","task":"check email"},{"name":"Zed","task":"x"}]}"#);
+    let crew = team::assign_crew(&plan.helpers);
+    let names: Vec<(&str, bool)> = crew.iter().map(|c| (c.0.as_str(), c.3)).collect();
+    // Milo keeps his name; the unnamed job and the unknown "Zed" get the next free names.
+    assert_eq!(names, [("Ada", false), ("Milo", true), ("Juno", false)]);
+    assert_eq!(crew[1].2, "check email");
 }

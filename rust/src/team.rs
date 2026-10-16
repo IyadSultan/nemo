@@ -89,6 +89,8 @@ pub struct ClaudeCli {
     pub timeout: Duration,
     pub tokens: Arc<Mutex<Tokens>>,
     pub on_doing: Option<OnDoing>,
+    /// Everything it writes and every tool it uses, for the helper's terminal on the page.
+    pub on_log: Option<OnDoing>,
 }
 
 impl ClaudeCli {
@@ -144,9 +146,17 @@ impl ClaudeCli {
                 if let Some(piece) = text_delta(&msg) {
                     text.push_str(piece);
                     on_text(piece);
+                    if let Some(log) = &self.on_log {
+                        log(piece.to_string());
+                    }
                 }
-                if let (Some(say), Some(cb)) = (doing(&msg), &self.on_doing) {
-                    cb(say);
+                if let Some(say) = doing(&msg) {
+                    if let Some(log) = &self.on_log {
+                        log(format!("\n\x1b[2m› {say}\x1b[0m\n"));
+                    }
+                    if let Some(cb) = &self.on_doing {
+                        cb(say);
+                    }
                 }
                 if msg["type"] == "result" {
                     result = Some(msg);
@@ -301,6 +311,7 @@ impl ClaudeCli {
             timeout: self.timeout,
             tokens: self.tokens.clone(),
             on_doing: self.on_doing.clone(),
+            on_log: self.on_log.clone(),
         }
     }
 }
@@ -329,7 +340,7 @@ impl LLMProvider for ClaudeCli {}
 
 #[agent(
     name = "planner",
-    description = "You are the lead of a small team of research helpers. Read the user's request and the note excerpts. Decide whether separate helpers searching at the same time would give a better answer: for example notes, email and documents, several folders, or several distinct sub-questions. Simple questions need no helpers. Reply with JSON only, no other text: {\"helpers\": [{\"task\": \"one clear, self-contained job in one sentence\"}]}. Use at most 4 helpers; use an empty list when you can answer alone."
+    description = "You are the lead of a small team of research helpers. Read the user's request and the note excerpts. Decide whether separate helpers searching at the same time would give a better answer: for example notes, email and documents, several folders, or several distinct sub-questions. Simple questions need no helpers. Reply with JSON only, no other text: {\"helpers\": [{\"task\": \"one clear, self-contained job in one sentence\"}]}. Use at most 4 helpers; use an empty list when you can answer alone. The helpers are named Ada, Milo, Juno, Kai, Nova and Remy. When the latest request speaks to one of them by name (for example \"ask Ada how many files changed\" or \"Milo, check my email\"), reply with exactly that one helper and its name: {\"helpers\": [{\"name\": \"Ada\", \"task\": \"...\"}]}."
 )]
 #[derive(Clone, AgentHooks)]
 pub struct Planner {}
@@ -379,6 +390,51 @@ pub struct Plan {
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct Job {
     pub task: String,
+    /// Set when the user asked this helper by name ("ask Ada …").
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// Each helper's last job and what it found, so "ask Ada …" can build on it.
+/// Kept in memory only; a restart forgets it.
+static LAST_WORK: Mutex<Vec<(String, String, String)>> = Mutex::new(Vec::new());
+/// How much of a helper's earlier findings it is reminded of.
+const MEMORY_CHARS: usize = 4000;
+
+fn remember(name: &str, task: &str, found: &str) {
+    let mut last = LAST_WORK.lock().unwrap();
+    last.retain(|(n, _, _)| n != name);
+    last.push((name.into(), task.into(), found.chars().take(MEMORY_CHARS).collect()));
+}
+
+fn recall(name: &str) -> Option<(String, String)> {
+    LAST_WORK.lock().unwrap().iter().find(|(n, _, _)| n == name).map(|(_, t, f)| (t.clone(), f.clone()))
+}
+
+/// Names and colours for the jobs. A job asked of a helper by name gets that helper;
+/// the rest get the next free names, in crew order.
+pub fn assign_crew(jobs: &[Job]) -> Vec<(String, String, String, bool)> {
+    let wanted = |j: &Job| j.name.as_deref().and_then(|n| CREW.iter().find(|(c, _)| c.eq_ignore_ascii_case(n.trim())));
+    let mut taken: Vec<&str> = Vec::new();
+    let mut out: Vec<Option<(String, String, String, bool)>> = jobs
+        .iter()
+        .map(|j| match wanted(j) {
+            Some((n, c)) if !taken.contains(n) => {
+                taken.push(n);
+                Some((n.to_string(), c.to_string(), j.task.trim().to_string(), true))
+            }
+            _ => None,
+        })
+        .collect();
+    let mut free = CREW.iter().filter(|(n, _)| !taken.contains(n));
+    for (slot, j) in out.iter_mut().zip(jobs) {
+        if slot.is_none() {
+            if let Some((n, c)) = free.next() {
+                *slot = Some((n.to_string(), c.to_string(), j.task.trim().to_string(), false));
+            }
+        }
+    }
+    out.into_iter().flatten().collect()
 }
 
 /// The planner's JSON, even inside a ```json fence or with words around it.
@@ -395,7 +451,7 @@ pub fn parse_plan(text: &str) -> Plan {
 }
 
 /// The lead's prompt for the final answer: Node's prompt plus each helper's findings.
-pub fn final_prompt(prompt: &str, found: &[(String, String, String)]) -> String {
+pub fn final_prompt(prompt: &str, found: &[(String, String, String)], asked: &[String]) -> String {
     if found.is_empty() {
         return prompt.to_string();
     }
@@ -403,13 +459,20 @@ pub fn final_prompt(prompt: &str, found: &[(String, String, String)]) -> String 
     for (name, task, text) in found {
         out.push_str(&format!("\n### {name}: {task}\n{}\n", text.trim()));
     }
-    out.push_str("\nCombine these findings into one answer to the user's question. Do not mention the helpers by name.");
+    if asked.is_empty() {
+        out.push_str("\nCombine these findings into one answer to the user's question. Do not mention the helpers by name.");
+    } else {
+        out.push_str(&format!(
+            "\nThe user asked {} by name. Answer with what {} found, and say it comes from {}.",
+            asked.join(" and "), asked.join(" and "), asked.join(" and ")
+        ));
+    }
     out
 }
 
 pub type Send_ = mpsc::UnboundedSender<Value>;
 
-fn provider(model: &str, dirs: &[PathBuf], effort: Option<String>, timeout: Duration, tokens: &Arc<Mutex<Tokens>>, on_doing: Option<OnDoing>) -> Arc<ClaudeCli> {
+fn provider(model: &str, dirs: &[PathBuf], effort: Option<String>, timeout: Duration, tokens: &Arc<Mutex<Tokens>>, on_doing: Option<OnDoing>, on_log: Option<OnDoing>) -> Arc<ClaudeCli> {
     Arc::new(ClaudeCli {
         bin: claude_bin(),
         model: model.into(),
@@ -418,6 +481,7 @@ fn provider(model: &str, dirs: &[PathBuf], effort: Option<String>, timeout: Dura
         timeout,
         tokens: tokens.clone(),
         on_doing,
+        on_log,
     })
 }
 
@@ -441,7 +505,7 @@ pub async fn run(req: Request, tx: Send_) {
 
     // 1. Plan.
     send(json!({ "type": "status", "message": "Deciding whether helpers are needed…" }));
-    let planner = provider(HELPER_MODEL, &[], Some("low".into()), LEAD_TIMEOUT, &tokens, None);
+    let planner = provider(HELPER_MODEL, &[], Some("low".into()), LEAD_TIMEOUT, &tokens, None, None);
     let plan = match run_once(Planner {}, planner, Task::new(req.prompt.clone())).await {
         Ok(text) => parse_plan(&text),
         Err(err) => {
@@ -451,15 +515,9 @@ pub async fn run(req: Request, tx: Send_) {
     };
 
     // 2. Helpers, all at once.
-    let crew: Vec<(String, String, String)> = plan
-        .helpers
-        .iter()
-        .enumerate()
-        .map(|(i, job)| {
-            let (name, color) = CREW[i % CREW.len()];
-            (name.to_string(), color.to_string(), job.task.trim().to_string())
-        })
-        .collect();
+    let assigned = assign_crew(&plan.helpers);
+    let asked: Vec<String> = assigned.iter().filter(|a| a.3).map(|a| a.0.clone()).collect();
+    let crew: Vec<(String, String, String)> = assigned.into_iter().map(|(n, c, t, _)| (n, c, t)).collect();
     let mut found: Vec<(String, String, String)> = Vec::new();
     if !crew.is_empty() {
         send(json!({
@@ -476,22 +534,33 @@ pub async fn run(req: Request, tx: Send_) {
                 let (tx, id) = (tx.clone(), id.clone());
                 Arc::new(move |say: String| { let _ = tx.send(json!({ "type": "agent", "id": id, "state": "working", "doing": say })); })
             };
-            let llm = provider(HELPER_MODEL, &dirs, None, HELPER_TIMEOUT, &tokens, Some(on_doing));
+            let on_log: OnDoing = {
+                let (tx, id) = (tx.clone(), id.clone());
+                Arc::new(move |text: String| { let _ = tx.send(json!({ "type": "agent", "id": id, "log": text })); })
+            };
+            let llm = provider(HELPER_MODEL, &dirs, None, HELPER_TIMEOUT, &tokens, Some(on_doing), Some(on_log.clone()));
             let short = task_text(task);
+            let earlier = recall(name)
+                .map(|(t, f)| format!("\n\nEarlier in this chat your job was: {t}\nWhat you found then:\n{f}"))
+                .unwrap_or_default();
             let task = Task::new(format!(
-                "Your name is {name}. Your job: {task}\n\nThe user's request and the note excerpts you were given:\n\n{}",
+                "Your name is {name}. Your job: {task}{earlier}\n\nThe user's request and the note excerpts you were given:\n\n{}",
                 req.prompt
             ));
             let (name, short_task) = (name.clone(), short);
             async move {
                 let _ = tx.send(json!({ "type": "agent", "id": id, "state": "working", "doing": "Starting" }));
+                on_log(format!("\x1b[1m{name}\x1b[0m on {HELPER_MODEL}\n\x1b[2mJob: {short_task}\x1b[0m\n\n"));
                 match run_once(Helper {}, llm, task).await {
                     Ok(text) => {
+                        on_log("\n\n\x1b[32m✓ Done\x1b[0m\n".into());
+                        remember(&name, &short_task, &text);
                         let _ = tx.send(json!({ "type": "agent", "id": id, "state": "done", "doing": "Done" }));
                         Some((name, short_task, text))
                     }
                     Err(err) => {
                         eprintln!("Helper {name} failed: {err}");
+                        on_log(format!("\n\n\x1b[31m✗ Could not finish: {err}\x1b[0m\n"));
                         let _ = tx.send(json!({ "type": "agent", "id": id, "state": "failed", "doing": "Could not finish" }));
                         None
                     }
@@ -504,8 +573,8 @@ pub async fn run(req: Request, tx: Send_) {
 
     // 3. The lead writes the answer, streamed. With no helpers, the lead may read the folders itself.
     let lead_dirs = if crew.is_empty() { dirs.clone() } else { Vec::new() };
-    let lead = provider(&req.lead_model, &lead_dirs, req.effort.clone(), LEAD_TIMEOUT, &tokens, None);
-    let mut task = Task::new(final_prompt(&req.prompt, &found));
+    let lead = provider(&req.lead_model, &lead_dirs, req.effort.clone(), LEAD_TIMEOUT, &tokens, None, None);
+    let mut task = Task::new(final_prompt(&req.prompt, &found, &asked));
     task.system_prompt = Some(req.system.clone());
     let handle = AgentBuilder::<_, DirectAgent>::new(BasicAgent::new(Lead {}))
         .llm(lead)

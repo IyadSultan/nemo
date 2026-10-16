@@ -3346,6 +3346,7 @@ function handleServerEvent(event) {
     finalizeUser(question);
     if (selectedModel()?.hears) {
       lastQuestion = question;
+      if (runTerminalAsk(question)) return;
       playTinyMove(question);
       sendEvent({ type: "response.create" });
     }
@@ -3496,6 +3497,11 @@ function showTeam(bubble, event) {
     el.dataset.state = "working";
     el.style.setProperty("--mate", mate.color || "#d97757");
     el.title = `${mate.name}: ${mate.task}`;
+    // Click a helper to watch its progress in a terminal (terminal.js).
+    el.tabIndex = 0;
+    el.setAttribute("role", "button");
+    el.addEventListener("click", () => window.brainTerminal?.showAgent(el));
+    el.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && window.brainTerminal?.showAgent(el));
     el.innerHTML = `<svg class="mate-face" viewBox="20 0 560 470" aria-hidden="true"><g class="critter">
       <rect class="arm arm-l" x="35" y="140" width="52" height="105"/>
       <rect class="arm arm-r" x="513" y="140" width="52" height="105"/>
@@ -3516,6 +3522,7 @@ function updateTeamMate(bubble, event) {
   if (!el) return;
   if (event.state) el.dataset.state = event.state;
   if (event.doing) el.querySelector(".mate-doing").textContent = event.doing;
+  if (event.log) window.brainTerminal?.agentLog(el, event.log);
 }
 
 function attachPdf(bubble, pdf) {
@@ -3756,6 +3763,7 @@ async function answerWithBrain(question, extras) {
   const writingNotes = writingMinutes || writingLecture;
   await deskReady;
   if (meetingOn || lectureFormOpen || brainBusy || paused) return;
+  if (!writingNotes && runTerminalAsk(question)) return;
   const tinyMove = writingNotes ? "" : playTinyMove(question);
   if (!connected) setBusy(true);
   compressAbort?.abort();
@@ -4104,6 +4112,17 @@ const TINY_MOVES = [
  * Only short requests count, so "add the dance class to my calendar" is left alone.
  * Returns the pose, or "".
  */
+/** "Open a terminal" or "close the terminal" (terminal.js), done here without asking a model. */
+function runTerminalAsk(question) {
+  const ask = window.brainTerminal?.intent(question);
+  if (!ask) return false;
+  if (ask === "open") window.brainTerminal.openShell();
+  else window.brainTerminal.closeShell();
+  addBubble("assistant", ask === "open" ? "The terminal is open at the bottom of the page." : "Closed the terminal.");
+  setStatus(listenStatus());
+  return true;
+}
+
 function playTinyMove(text) {
   const q = String(text || "").toLowerCase().replace(/[^\w\s']/g, " ").replace(/\s+/g, " ").trim();
   if (!q || q.split(" ").length > 8) return "";

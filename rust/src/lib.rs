@@ -9,3 +9,4 @@ pub mod medgem;
 pub mod openfile;
 pub mod pricing;
 pub mod team;
+pub mod term;

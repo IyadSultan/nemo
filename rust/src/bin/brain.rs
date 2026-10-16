@@ -13,14 +13,14 @@
 
 use axum::{
     body::{Body, Bytes},
-    extract::{Request, State},
+    extract::{ws::WebSocketUpgrade, Request, State},
     http::{header, HeaderName, HeaderValue, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use hyper_util::{client::legacy::connect::HttpConnector, client::legacy::Client, rt::TokioExecutor};
-use nemo_realtime_voice::{clock, js, medgem::Medgem, pricing, team};
+use nemo_realtime_voice::{clock, js, medgem::Medgem, pricing, team, term};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,7 +37,8 @@ const RUST_ROUTES: &[&str] = &[
     "GET /here",
     "POST /meeting/folder",
     "POST /team/ask (helper team on AutoAgents; Node only)",
-    "static files (public/, /vendor/rive)",
+    "GET /term (terminal WebSocket; this page only)",
+    "static files (public/, /vendor/rive, /vendor/xterm)",
 ];
 
 const SERVED_BY: HeaderName = HeaderName::from_static("x-served-by");
@@ -49,6 +50,9 @@ struct AppState {
     medgem: Arc<Medgem>,
     public: PathBuf,
     rive: PathBuf,
+    xterm: PathBuf,
+    /// This server's port, for the terminal's Host and Origin check.
+    port: u16,
     /// Secret for /team/ask, made at start and written where only Node reads it.
     team_token: Arc<String>,
 }
@@ -146,6 +150,14 @@ async fn team_ask(State(s): State<AppState>, headers: axum::http::HeaderMap, bod
     mark(res, "rust")
 }
 
+/// A shell in a terminal on the page (src/term.rs). Only this server's own page may open one.
+async fn terminal(State(s): State<AppState>, headers: axum::http::HeaderMap, ws: WebSocketUpgrade) -> Response {
+    if !term::allowed(&headers, s.port) {
+        return mark((StatusCode::FORBIDDEN, Json(json!({ "error": "Not allowed." }))).into_response(), "rust");
+    }
+    mark(ws.on_upgrade(term::serve), "rust")
+}
+
 /// A fresh random token, saved for Node (owner-only file).
 fn make_team_token(repo: &std::path::Path) -> String {
     let mut bytes = [0u8; 24];
@@ -224,9 +236,13 @@ async fn files_or_node(State(s): State<AppState>, req: Request) -> Response {
     }
     let is_read = req.method() == axum::http::Method::GET || req.method() == axum::http::Method::HEAD;
     if is_read {
-        let (dir, sub) = match path.strip_prefix("/vendor/rive") {
-            Some(rest) if rest.is_empty() || rest.starts_with('/') => (&s.rive, rest.to_string()),
-            _ => (&s.public, path.clone()),
+        let vendor = |prefix: &str| path.strip_prefix(prefix).filter(|rest| rest.is_empty() || rest.starts_with('/'));
+        let (dir, sub) = if let Some(rest) = vendor("/vendor/rive") {
+            (&s.rive, rest.to_string())
+        } else if let Some(rest) = vendor("/vendor/xterm") {
+            (&s.xterm, rest.to_string())
+        } else {
+            (&s.public, path.clone())
         };
         let mut file_req = Request::new(Body::empty());
         *file_req.uri_mut() = if sub.is_empty() { "/".parse().unwrap() } else { sub.parse().unwrap_or_else(|_| "/".parse().unwrap()) };
@@ -250,6 +266,7 @@ fn app(state: AppState) -> Router {
         .route("/here", get(here))
         .route("/meeting/folder", post(meeting_folder))
         .route("/team/ask", post(team_ask))
+        .route("/term", get(terminal))
         .route("/rust", get(status))
         .fallback(files_or_node)
         .with_state(state)
@@ -267,6 +284,8 @@ async fn main() {
         medgem: Arc::new(Medgem::from_env()),
         public: repo.join("second-brain").join("public"),
         rive: repo.join("node_modules").join("@rive-app").join("canvas"),
+        xterm: repo.join("node_modules").join("@xterm"),
+        port,
         team_token: Arc::new(make_team_token(&repo)),
     };
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.unwrap_or_else(|e| panic!("port {port}: {e}"));
@@ -316,15 +335,17 @@ mod tests {
     }
 
     async fn front(node: String, public: PathBuf) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let state = AppState {
             client: Client::builder(TokioExecutor::new()).build(HttpConnector::new()),
             node,
             medgem: Arc::new(Medgem::new("http://127.0.0.1:9")),
             public,
             rive: PathBuf::from("/nonexistent"),
+            xterm: PathBuf::from("/nonexistent"),
+            port: listener.local_addr().unwrap().port(),
             team_token: Arc::new("test-token".into()),
         };
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, app(state)).await.unwrap() });
         url
@@ -425,6 +446,39 @@ mod tests {
         assert_eq!(res.status(), 403);
         let res = client().post(format!("{base}/team/ask")).header("x-team-token", "test-token").body("not json").send().await.unwrap();
         assert_eq!(res.status(), 400);
+    }
+
+    #[tokio::test]
+    async fn terminal_runs_a_shell_for_our_page_only() {
+        use futures::SinkExt;
+        use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+        let base = front("http://127.0.0.1:9".into(), public_dir()).await;
+        let ws_url = base.replace("http://", "ws://") + "/term";
+        let request = |origin: &str| {
+            let mut r = ws_url.as_str().into_client_request().unwrap();
+            r.headers_mut().insert("origin", origin.parse().unwrap());
+            r
+        };
+        // Another website gets no shell.
+        let err = tokio_tungstenite::connect_async(request("https://evil.example")).await.unwrap_err();
+        assert!(err.to_string().contains("403"), "{err}");
+        // Our own page does.
+        let (mut ws, _) = tokio_tungstenite::connect_async(request(&base)).await.unwrap();
+        ws.send(Message::Text(r#"{"cols":100,"rows":30}"#.into())).await.unwrap();
+        ws.send(Message::Binary(b"echo term-$((40+2))\r".to_vec().into())).await.unwrap();
+        let mut seen = String::new();
+        let found = tokio::time::timeout(Duration::from_secs(15), async {
+            while let Some(Ok(msg)) = futures::StreamExt::next(&mut ws).await {
+                if let Message::Binary(b) = msg {
+                    seen.push_str(&String::from_utf8_lossy(&b));
+                    if seen.contains("term-42") { return true; }
+                }
+            }
+            false
+        })
+        .await
+        .unwrap_or(false);
+        assert!(found, "no shell output: {seen:?}");
     }
 
     /// Golden test: hereAndNow extracted from server.js (rust/tests/fixtures/gen_routes.mjs).

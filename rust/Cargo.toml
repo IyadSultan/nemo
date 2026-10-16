@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "process", "time"] }
 tower-http = { version = "0.6", features = ["fs"] }
 tower = { version = "0.5", features = ["util"] }
@@ -27,8 +27,10 @@ autoagents-derive = "0.4"
 async-trait = "0.1"
 futures = "0.3"
 tokio-stream = "0.1"
+portable-pty = "0.9"
 
 [dev-dependencies]
 futures-core = "0.3"
 tokio-stream = "0.1"
 http-body-util = "0.1"
+tokio-tungstenite = "0.26"
