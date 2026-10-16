@@ -12,6 +12,10 @@
  * When nothing happens for a while, Tiny does a little idle move now and then.
  * If the character cannot load, the orb stays.
  *
+ * Settings > Mascot picks Tiny or the Claude Code critter (the default). The
+ * critter is a pixel SVG animated by CSS from the same data-state and
+ * data-activity; Tiny's Rive file only loads once Tiny is picked.
+ *
  * The .riv file holds a view model with two enums:
  *   pose            idle, thinking, celebration, hand_wave, bookreading, writing,
  *                   coffeedrink, bobbateadrink, dancing, recording
@@ -20,7 +24,9 @@
 (function startMascot() {
   const capsule = document.getElementById("capsule");
   const canvas = document.getElementById("mascotCanvas");
-  if (!capsule || !canvas || !window.rive) return;
+  const mark = document.getElementById("claudeMark");
+  const select = document.getElementById("mascotSelect");
+  if (!capsule || !canvas) return;
 
   // Mouth shapes to cycle through while speaking. Open vowels more often, so it reads as talking.
   const TALK_SHAPES = ["aa", "E", "oh", "ih", "aa", "ou", "DD", "SS", "aa", "E", "nn", "PP"];
@@ -32,28 +38,76 @@
   let idleTimer = 0;
   let lastState = capsule.dataset.state;
   let lastActivity = capsule.dataset.activity || "";
+  let tiny = null;
+  let choice = localStorage.getItem("mascot") === "tiny" ? "tiny" : "claude";
 
-  rive.RuntimeLoader.setWasmUrl("/vendor/rive/rive.wasm");
-  const tiny = new rive.Rive({
-    src: "/mascot/tiny_mascot.riv",
-    canvas,
-    stateMachine: "MascotSM",
-    autoplay: true,
-    autoBind: true,
-    layout: new rive.Layout({ fit: rive.Fit.Contain }),
-    onLoad: () => {
-      tiny.resizeDrawingSurfaceToCanvas();
-      vm = tiny.viewModelInstance;
-      if (!vm) {
-        console.error("Tiny loaded without its view model; keeping the orb.");
-        return;
-      }
-      capsule.classList.add("has-mascot");
-      render();
-      scheduleIdleMove(8000);
-    },
-    onLoadError: (err) => console.error("Failed while loading Tiny:", err),
+  // The Claude Code critter: a square body, two arms, four legs, open eyes, a hidden mouth.
+  if (mark) {
+    mark.setAttribute("viewBox", "20 0 560 470");
+    mark.innerHTML = `<g class="critter">
+      <rect class="arm arm-l" x="35" y="140" width="52" height="105"/>
+      <rect class="arm arm-r" x="513" y="140" width="52" height="105"/>
+      ${[85, 180, 370, 465].map((x, i) =>
+        `<rect class="leg" style="--i:${i}" x="${x}" y="340" width="50" height="110"/>`).join("")}
+      <rect class="body" x="85" y="35" width="430" height="310"/>
+      <g class="eyes">
+        <rect x="160" y="120" width="40" height="80"/>
+        <rect x="400" y="120" width="40" height="80"/>
+      </g>
+      <rect class="mouth" x="270" y="235" width="60" height="40"/>
+    </g>`;
+  }
+
+  function applyChoice() {
+    capsule.classList.toggle("is-claude", choice === "claude");
+    if (choice === "claude") {
+      capsule.classList.toggle("has-mascot", Boolean(mark));
+      stopMouth();
+      tiny?.stopRendering?.();
+      return;
+    }
+    if (!vm) {
+      capsule.classList.remove("has-mascot");
+      loadTiny();
+      return;
+    }
+    capsule.classList.add("has-mascot");
+    tiny.startRendering?.();
+    tiny.resizeDrawingSurfaceToCanvas();
+    render();
+  }
+
+  select?.addEventListener("change", () => {
+    choice = select.value === "tiny" ? "tiny" : "claude";
+    localStorage.setItem("mascot", choice);
+    applyChoice();
   });
+  if (select) select.value = choice;
+  applyChoice();
+
+  function loadTiny() {
+    if (tiny || !window.rive) return;
+    rive.RuntimeLoader.setWasmUrl("/vendor/rive/rive.wasm");
+    tiny = new rive.Rive({
+      src: "/mascot/tiny_mascot.riv",
+      canvas,
+      stateMachine: "MascotSM",
+      autoplay: true,
+      autoBind: true,
+      layout: new rive.Layout({ fit: rive.Fit.Contain }),
+      onLoad: () => {
+        tiny.resizeDrawingSurfaceToCanvas();
+        vm = tiny.viewModelInstance;
+        if (!vm) {
+          console.error("Tiny loaded without its view model; keeping the orb.");
+          return;
+        }
+        if (choice === "tiny") applyChoice();
+        scheduleIdleMove(8000);
+      },
+      onLoadError: (err) => console.error("Failed while loading Tiny:", err),
+    });
+  }
 
   function setPose(pose) {
     const input = vm?.enum("pose");
@@ -118,7 +172,7 @@
   function scheduleIdleMove(delay) {
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      if (quiet()) {
+      if (quiet() && choice === "tiny") {
         setPose(IDLE_MOVES[Math.floor(Math.random() * IDLE_MOVES.length)]);
         setTimeout(() => quiet() && setPose("idle"), 5000);
       }
@@ -130,11 +184,11 @@
     const state = capsule.dataset.state;
     const activity = capsule.dataset.activity || "";
     if (state === lastState && activity === lastActivity) return;
-    render();
+    if (choice === "tiny") render();
     lastState = state;
     lastActivity = activity;
     scheduleIdleMove(8000);
   }).observe(capsule, { attributes: true, attributeFilter: ["data-state", "data-activity"] });
 
-  window.addEventListener("resize", () => tiny.resizeDrawingSurfaceToCanvas());
+  window.addEventListener("resize", () => tiny?.resizeDrawingSurfaceToCanvas());
 })();

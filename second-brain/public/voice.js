@@ -4066,7 +4066,7 @@ const TINY_MOVES = [
 function playTinyMove(text) {
   const q = String(text || "").toLowerCase().replace(/[^\w\s']/g, " ").replace(/\s+/g, " ").trim();
   if (!q || q.split(" ").length > 8) return "";
-  if (!/^(?:hey )?(?:tiny )?(?:(?:can|could|will|would) you|please|show me|let's|let us|do a|dance|wave|drink|celebrate|have a (?:coffee|boba|bubble))\b/.test(q)) return "";
+  if (!/^(?:hey )?(?:tiny )?(?:(?:can|could|will|would) (?:you|u)|please|show me|let's|let us|do a|dance|wave|drink|celebrate|have a (?:coffee|boba|bubble))\b/.test(q)) return "";
   const move = TINY_MOVES.find(([pattern]) => pattern.test(q));
   if (!move) return "";
   const activity = `move-${move[1]}`;

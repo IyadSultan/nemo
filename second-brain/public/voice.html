@@ -40,6 +40,7 @@
       <section class="panel booth" aria-label="Voice conversation controls">
         <div class="capsule" id="capsule" data-state="idle">
           <canvas class="mascot" id="mascotCanvas" width="400" height="400" aria-hidden="true"></canvas>
+          <svg class="claude-mark" id="claudeMark" viewBox="0 0 100 100" aria-hidden="true"></svg>
           <div class="rings" aria-hidden="true"><span></span><span></span><span></span></div>
           <div class="orbit" aria-hidden="true"></div>
           <div class="halo" aria-hidden="true">
@@ -193,6 +194,13 @@
                   <option value="bm_george">George</option>
                   <option value="bm_fable">Fable</option>
                 </optgroup>
+              </select>
+            </label>
+            <label class="field">
+              <span>Mascot</span>
+              <select id="mascotSelect" aria-label="Mascot">
+                <option value="claude" selected>Claude</option>
+                <option value="tiny">Tiny</option>
               </select>
             </label>
             <label class="field">

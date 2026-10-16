@@ -1254,6 +1254,62 @@ summary:focus-visible {
   border-radius: 999px;
 }
 
+/* ---------- The Claude Code critter, the default mascot (mascot.js draws it) ---------- */
+.claude-mark { display: none; }
+.capsule.has-mascot.is-claude .mascot { display: none; }
+.capsule.has-mascot.is-claude .claude-mark {
+  display: block;
+  width: 200px;
+  height: 200px;
+  overflow: visible;
+}
+.claude-mark .critter > rect:not(.mouth) { fill: #d97757; }
+.claude-mark .eyes rect { fill: #111; }
+.claude-mark .mouth { fill: #111; transform: scaleY(0); }
+.claude-mark :is(.critter, .arm, .leg, .eyes, .mouth) { transform-box: fill-box; }
+.claude-mark .critter { transform-origin: 50% 100%; animation: critter-bob 3s ease-in-out infinite; }
+.claude-mark .arm { transform-origin: 50% 50%; }
+.claude-mark .mouth { transform-origin: 50% 50%; }
+.claude-mark .eyes { transform-origin: 50% 50%; animation: critter-blink 5s step-end infinite; }
+/* Listening: arms wave up and down. */
+.capsule.is-claude[data-state="listening"] .arm { animation: critter-arm 0.8s ease-in-out infinite alternate; }
+.capsule.is-claude[data-state="listening"] .arm-r { animation-delay: -0.4s; }
+/* Thinking, connecting, searching, writing: it walks on the spot and looks around. */
+.capsule.is-claude:is([data-state="thinking"], [data-state="connecting"], [data-activity="searching"], [data-activity="writing"]) .leg {
+  animation: critter-step 0.5s ease-in-out infinite alternate;
+  animation-delay: calc(var(--i) % 2 * -0.25s);
+}
+.capsule.is-claude:is([data-state="thinking"], [data-state="connecting"], [data-activity="searching"], [data-activity="writing"]) .critter {
+  animation: critter-bob 0.5s ease-in-out infinite;
+}
+.capsule.is-claude:is([data-state="thinking"], [data-state="connecting"], [data-activity="searching"], [data-activity="writing"]) .eyes {
+  animation: critter-look 2s ease-in-out infinite;
+}
+/* Speaking: the mouth opens and closes, a little bounce. */
+.capsule.is-claude[data-state="speaking"] .mouth { animation: critter-talk 0.22s ease-in-out infinite alternate; }
+.capsule.is-claude[data-state="speaking"] .critter { animation: critter-bob 0.44s ease-in-out infinite; }
+/* Meeting or lecture: a slow pulse while recording. */
+.capsule.is-claude:is([data-state="meeting"], [data-state="lecture"]) .critter { animation: critter-record 1.6s ease-in-out infinite; }
+/* Saved: a happy jump. A move the user asked for: a dance. */
+.capsule.is-claude[data-activity="saved"] .critter { animation: critter-jump 0.6s ease-out 3; }
+.capsule.is-claude[data-activity^="move-"] .critter { animation: critter-dance 0.8s ease-in-out infinite; }
+.capsule.is-claude[data-activity^="move-"] .arm { animation: critter-arm 0.4s ease-in-out infinite alternate; }
+@keyframes critter-bob { 50% { transform: translateY(-3%); } }
+@keyframes critter-blink { 0%, 94% { transform: scaleY(1); } 96% { transform: scaleY(0.15); } }
+@keyframes critter-arm { from { transform: translateY(12%); } to { transform: translateY(-30%); } }
+@keyframes critter-step { from { transform: translateY(0); } to { transform: translateY(-14%); } }
+@keyframes critter-look { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(-4%); } 70% { transform: translateX(4%); } }
+@keyframes critter-talk { from { transform: scaleY(0.1); } to { transform: scaleY(1); } }
+@keyframes critter-record { 50% { transform: scale(0.94); opacity: 0.75; } }
+@keyframes critter-jump { 40% { transform: translateY(-14%); } }
+@keyframes critter-dance {
+  25% { transform: rotate(-8deg) translateY(-5%); }
+  75% { transform: rotate(8deg) translateY(-5%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .claude-mark * { animation: none !important; }
+}
+
 /* ---------- Tiny mode: the window app shrinks to Tiny alone (tinymode.js) ---------- */
 /* The window is see-through; the page paints its own background, except in tiny mode. */
 html { background: var(--bg); }
@@ -1274,4 +1330,5 @@ body.tiny-mode .capsule {
   align-items: center;
   justify-content: center;
 }
-body.tiny-mode .capsule.has-mascot .mascot { width: 180px; height: 180px; }
+body.tiny-mode .capsule.has-mascot .mascot,
+body.tiny-mode .capsule.has-mascot .claude-mark { width: 180px; height: 180px; }
