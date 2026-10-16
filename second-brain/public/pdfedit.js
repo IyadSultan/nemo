@@ -14,6 +14,20 @@
   const picker = document.getElementById("pdfEditFile");
   if (!desk || !boxes || !picker) return;
 
+  // Folds like the Work list; "closed" is kept on this Mac. New PDFs open it again.
+  const toggle = document.getElementById("pdfToggle");
+  let open = localStorage.getItem("pdfDeskOpen") !== "closed";
+  function fold(next) {
+    open = next;
+    localStorage.setItem("pdfDeskOpen", open ? "open" : "closed");
+    desk.classList.toggle("is-collapsed", !open);
+    if (!toggle) return;
+    toggle.textContent = open ? "Collapse" : "Expand";
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  toggle?.addEventListener("click", () => fold(!open));
+  fold(open);
+
   // A tool with fields asks first, inside the box; build turns the answers into the request.
   // A tool with open has its own window. Others run at once.
   const PAGES = { key: "pages", placeholder: "Pages, e.g. 2, 5-7" };
@@ -638,6 +652,7 @@
     const pdfs = [...files].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
     if (!pdfs.length) return;
     desk.hidden = false;
+    fold(true);
     for (const file of pdfs) {
       const holder = el("article", "pdfbox busy");
       holder.append(el("div", "pdfbox-name", file.name), el("div", "pdfbox-status", "Uploading…"));

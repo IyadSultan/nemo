@@ -1486,3 +1486,4 @@ body.pdf-drop .pdfdesk, body.pdf-drop #pdfEditBtn { outline: 2px dashed #2fc6a0;
 .pdfbox-more .ghost-btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pdfbox.qa { border-color: #2fc6a0; box-shadow: 0 0 0 1px #2fc6a0 inset; }
 .pdfbox-status .ghost-btn { min-height: 0; padding: 0.1rem 0.4rem; font-size: 0.72rem; }
+.pdfdesk.is-collapsed .pdfboxes { display: none; }
