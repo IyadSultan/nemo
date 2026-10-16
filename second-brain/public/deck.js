@@ -855,6 +855,7 @@ function attach(bubble, event) {
     ghost("▶ Present", "Full screen (Esc ends)", () => present(event.id).catch((err) => { status.textContent = err.message; })),
     ghost("Present live", "Full screen; every sentence you say adds a slide", () => present(event.id, { live: true }).catch((err) => { status.textContent = err.message; })),
     ghost("Edit with brain", "Change slides one at a time by voice or typing; Enhance the whole deck", () => edit(event.id).catch((err) => { status.textContent = err.message; })),
+    ghost("Open in Slides", "The .pptx in the slides editor (DeckCraft): ask about it, change a slide or the whole deck", () => window.brainSlides?.openDeck(event.id, event.title)),
     ghost("PowerPoint", "Save the .pptx in Downloads", (b) => save(false, b)),
     ghost("Save to…", "Choose where to save the .pptx", (b) => save(true, b)),
     ghost("Open", "Open in PowerPoint or Keynote", () => fetch(`/deck/${encodeURIComponent(event.id)}/open`, { method: "POST" }).catch(() => {})),

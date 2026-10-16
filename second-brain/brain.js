@@ -3,18 +3,19 @@
  *
  * During the day, every voice question and answer goes into daylog/YYYY-MM-DD.md.
  * Each night the day's calls, meeting minutes, memos, and Claude Code work
- * (the dated entries in the orchestration wiki) are summarized into ~/.claude/brain.md.
+ * (the dated entries in the orchestration wiki) are summarized into ~/.brain/brain.md.
  * The newest part of brain.md goes into every answer's prompt.
  *
- * learnings.md is separate: those are rules the user says out loud.
+ * ~/.brain/memories.md is separate: those are rules the user says out loud.
  */
 
+import { BRAIN_FILE } from "./config.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const BRAIN_FILE = path.join(os.homedir(), ".claude", "brain.md");
+export { BRAIN_FILE };
 const DAYLOG_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "daylog");
 const WIKI_AGENTS = path.join(os.homedir(), ".claude", "orchestration", "wiki", "agents");
 // How much of brain.md goes into a prompt: the newest days, about two weeks.

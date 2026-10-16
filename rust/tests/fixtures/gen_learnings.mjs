@@ -11,11 +11,10 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "learnings-fixture-"));
-const file = path.join(dir, "learnings.md");
-let source = await fs.readFile(path.resolve(here, "../../../second-brain/learnings.js"), "utf8");
-source = source.replace('path.join(path.dirname(fileURLToPath(import.meta.url)), "learnings.md")', JSON.stringify(file));
-await fs.writeFile(path.join(dir, "learnings.mjs"), source);
-const m = await import(path.join(dir, "learnings.mjs"));
+const file = path.join(dir, "memories.md");
+// Point the real module at this throwaway file before it is loaded.
+process.env.BRAIN_MEMORIES_FILE = file;
+const m = await import(path.resolve(here, "../../../second-brain/learnings.js"));
 
 const parses = [
   "What have you learned about me?", "what do you remember", "show me my memories", "Read the learnings.",

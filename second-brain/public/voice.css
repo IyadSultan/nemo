@@ -765,6 +765,10 @@ summary:focus-visible {
   gap: 0.4rem;
 }
 
+.add-row .ghost-btn {
+  flex: 0 0 auto;
+}
+
 .rates,
 .breakdown {
   margin: 0;
@@ -982,6 +986,41 @@ summary:focus-visible {
 }
 .bubble.assistant .who { color: var(--speak); }
 
+/* /brain: phrases you can say, and what each one does. */
+.bubble.commands {
+  align-self: stretch;
+  max-width: 100%;
+}
+.cmd-table {
+  width: 100%;
+  margin-top: 0.65rem;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.cmd-table th,
+.cmd-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--line);
+}
+.cmd-table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+.cmd-table .cmd-group td {
+  padding-top: 0.75rem;
+  color: var(--speak);
+  font-weight: 600;
+  border-bottom-color: var(--line-strong);
+}
+.cmd-say {
+  width: 38%;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
 /* A cleaned medical transcript. It is not a question, so it spans the column. */
 .bubble.note {
   align-self: stretch;
@@ -1069,12 +1108,26 @@ summary:focus-visible {
   gap: 0.4rem;
 }
 
+/* Waiting for the shutter on the iPhone. The preview and the Mac button stay hidden. */
+.photo-card.phone-wait video,
+.photo-card.phone-wait .field,
+.photo-card.phone-wait #shutterBtn {
+  display: none;
+}
+.photo-card.phone-wait .photo-actions {
+  grid-template-columns: 1fr;
+}
+
 /* A recap during the meeting. Shown only, never part of the minutes. */
 .bubble.recap {
   align-self: stretch;
   border-left: 2px solid var(--listen);
 }
 .bubble.recap .text { white-space: pre-wrap; }
+/* While this recap is being held for reading. */
+.bubble.recap.is-held {
+  background: rgba(47, 198, 160, 0.08);
+}
 
 /* The written minutes, after Meeting is turned off. */
 .bubble.minutes {

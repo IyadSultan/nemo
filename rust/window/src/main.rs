@@ -28,6 +28,8 @@ use tao::{
 };
 use wry::{NewWindowResponse, PermissionKind, PermissionResponse, WebViewBuilder};
 
+mod iphone_photo;
+
 const SERVER: &str = "127.0.0.1:3001";
 const PAGE: &str = "http://127.0.0.1:3001/voice.html";
 const SERVICE: &str = "com.iyad.talk-to-your-brain";
@@ -134,6 +136,10 @@ enum UserEvent {
     Tiny(bool),
     /// The page's presenter (deck.js) asks for full screen while a deck is showing.
     Fullscreen(bool),
+    /// JPEG bytes from the iPhone shutter.
+    PhonePhoto(Vec<u8>),
+    /// The iPhone camera was not offered, so the page uses this Mac's camera instead.
+    PhonePhotoMissing,
 }
 
 /// Shrink to Tiny in the bottom-right corner. Returns where the full window was.
@@ -222,6 +228,13 @@ fn main() -> wry::Result<()> {
             NewWindowResponse::Deny
         })
         .with_ipc_handler(move |req| {
+            // The shutter on the iPhone. Handled here so the phone camera opens immediately.
+            if req.body() == "iphone-photo" {
+                if !iphone_photo::take() {
+                    let _ = proxy.send_event(UserEvent::PhonePhotoMissing);
+                }
+                return;
+            }
             let event = match req.body().as_str() {
                 "tiny" => UserEvent::Tiny(true),
                 "full" => UserEvent::Tiny(false),
@@ -234,6 +247,13 @@ fn main() -> wry::Result<()> {
     let builder = if probe { builder.with_initialization_script(PROBE) } else { builder };
     let builder = if ensure_server() { builder.with_url(PAGE) } else { builder.with_html(NOT_RUNNING) };
     let webview = builder.build(&window)?;
+
+    // The iPhone shutter hands its picture to the page.
+    iphone_photo::install(window.ns_window());
+    let photo_proxy = event_loop.create_proxy();
+    iphone_photo::on_photo(move |bytes| {
+        let _ = photo_proxy.send_event(UserEvent::PhonePhoto(bytes));
+    });
 
     // Where the full window was, while Tiny is showing.
     let mut full_window = None;
@@ -251,6 +271,16 @@ fn main() -> wry::Result<()> {
             }
             Event::UserEvent(UserEvent::Menu(id)) if id == *reload.id() => {
                 let _ = webview.reload();
+            }
+            Event::UserEvent(UserEvent::PhonePhoto(jpeg)) => {
+                let js = format!(
+                    "window.receivePhonePhoto&&window.receivePhonePhoto(\"{}\")",
+                    iphone_photo::data_url(&jpeg)
+                );
+                let _ = webview.evaluate_script(&js);
+            }
+            Event::UserEvent(UserEvent::PhonePhotoMissing) => {
+                let _ = webview.evaluate_script("window.phonePhotoUnavailable&&window.phonePhotoUnavailable()");
             }
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => *control_flow = ControlFlow::Exit,
             Event::UserEvent(UserEvent::ProbeDone(json)) if probe => {

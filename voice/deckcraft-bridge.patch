@@ -1,0 +1,143 @@
+diff --git a/apps/deckcraft-web/src/web.rs b/apps/deckcraft-web/src/web.rs
+index dabad8a..a503c55 100644
+--- a/apps/deckcraft-web/src/web.rs
++++ b/apps/deckcraft-web/src/web.rs
+@@ -8,6 +8,7 @@ const PRESENTATION_EXTS: &[&str] = &["deckcraft", "pptx", "potx", "ppsx", "txt",
+ const PICTURE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"];
+ const AUDIO_EXTS: &[&str] = &["wav", "mp3", "m4a", "aac", "flac", "ogg", "opus", "aif", "aiff"];
+ const VIDEO_EXTS: &[&str] = &["mp4", "m4v", "mov", "webm"];
++mod bridge;
+ const CANVAS_ID: &str = "deckcraft_canvas";
+ const LOADING_ID: &str = "deckcraft_loading";
+ 
+@@ -49,7 +50,11 @@ pub fn start() {
+                     if q.contains("show") {
+                         app.start_show(0, false);
+                     }
+-                    Ok(Box::new(WebShell { app, inbox }))
++                    let bridge = bridge::Bridge::default();
++                    if let Err(e) = bridge.install(cc.egui_ctx.clone()) {
++                        log::error!("no deckcraftBridge: {e}");
++                    }
++                    Ok(Box::new(WebShell { app, inbox, bridge }))
+                 }),
+             )
+             .await;
+@@ -71,6 +76,7 @@ fn query() -> String {
+ struct WebShell {
+     app: SlideApp,
+     inbox: Inbox,
++    bridge: bridge::Bridge,
+ }
+ 
+ impl eframe::App for WebShell {
+@@ -97,6 +103,7 @@ impl eframe::App for WebShell {
+                 }
+             });
+         }
++        self.bridge.drain(&mut self.app, ctx);
+         self.app.logic(ctx);
+     }
+ 
+diff --git a/apps/deckcraft-web/src/web/bridge.rs b/apps/deckcraft-web/src/web/bridge.rs
+new file mode 100644
+index 0000000..24731f9
+--- /dev/null
++++ b/apps/deckcraft-web/src/web/bridge.rs
+@@ -0,0 +1,83 @@
++//! A JavaScript bridge for pages that embed DeckCraft in an iframe (talk_to_your_brain).
++//!
++//! `window.deckcraftBridge(method, paramsJson)` returns a Promise. Every control-protocol
++//! method works (`engine.execute`, `document.inspect`, `show.start`, …), plus:
++//! - `bridge.save {format}`: the presentation as file bytes (`pptx` or `deckcraft`), a Uint8Array;
++//!   marks it saved
++//! - `bridge.state`: `{dirty, title, hasDocument, slide, slides}`
++//! Requests run on the next frame, inside the app, so they see what the user sees.
++
++use std::cell::RefCell;
++use std::rc::Rc;
++
++use deckcraft_ui_egui::SlideApp;
++use deckcraft_ui_egui::control::{self, ControlRequest, Outcome};
++use serde_json::{Value, json};
++use wasm_bindgen::JsCast as _;
++use wasm_bindgen::prelude::*;
++
++struct Pending {
++    method: String,
++    params: Value,
++    resolve: js_sys::Function,
++}
++
++#[derive(Clone, Default)]
++pub struct Bridge {
++    queue: Rc<RefCell<Vec<Pending>>>,
++}
++
++impl Bridge {
++    pub fn install(&self, ctx: egui::Context) -> Result<(), String> {
++        let window = web_sys::window().ok_or("no window")?;
++        let queue = self.queue.clone();
++        let call = Closure::<dyn FnMut(String, Option<String>) -> js_sys::Promise>::new(move |method: String, params: Option<String>| {
++            let params = params.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or(json!({}));
++            let queue = queue.clone();
++            let ctx = ctx.clone();
++            js_sys::Promise::new(&mut |resolve, _reject| {
++                queue.borrow_mut().push(Pending { method: method.clone(), params: params.clone(), resolve });
++                ctx.request_repaint();
++            })
++        });
++        js_sys::Reflect::set(&window, &JsValue::from_str("deckcraftBridge"), call.as_ref().unchecked_ref()).map_err(|e| format!("{e:?}"))?;
++        call.forget();
++        Ok(())
++    }
++
++    pub fn drain(&self, app: &mut SlideApp, ctx: &egui::Context) {
++        let pending = std::mem::take(&mut *self.queue.borrow_mut());
++        for p in pending {
++            let reply: JsValue = match p.method.as_str() {
++                "bridge.save" => {
++                    let format = p.params.get("format").and_then(Value::as_str).unwrap_or("pptx");
++                    let saved = app.session.doc_mut().map_err(|e| e.to_string()).and_then(|st| {
++                        let bytes = deckcraft_engine::cmd::file::save_bytes(&st.doc, format).map_err(|e| e.to_string())?;
++                        st.saved_doc = st.doc.clone();
++                        Ok(bytes)
++                    });
++                    match saved {
++                        Ok(bytes) => js_sys::Uint8Array::from(bytes.as_slice()).into(),
++                        Err(e) => JsValue::from_str(&json!({"ok": false, "error": e}).to_string()),
++                    }
++                }
++                "bridge.state" => {
++                    let state = match app.session.active() {
++                        Some(st) => json!({"dirty": st.is_dirty(), "title": st.title(), "hasDocument": true, "slide": st.selection.slide, "slides": st.doc.slides.len()}),
++                        None => json!({"dirty": false, "title": "", "hasDocument": false, "slide": 0, "slides": 0}),
++                    };
++                    JsValue::from_str(&json!({"ok": true, "result": state}).to_string())
++                }
++                _ => {
++                    let (req, _rx) = ControlRequest::new(p.method, p.params);
++                    let v = match control::handle(app, ctx, &req) {
++                        Outcome::Done(v) => v,
++                        Outcome::Screenshot { .. } => json!({"ok": false, "error": "screenshots are not available in the browser"}),
++                    };
++                    JsValue::from_str(&v.to_string())
++                }
++            };
++            let _ = p.resolve.call1(&JsValue::NULL, &reply);
++        }
++    }
++}
+diff --git a/crates/engine/src/recovery.rs b/crates/engine/src/recovery.rs
+index 707d0aa..cca03dd 100644
+--- a/crates/engine/src/recovery.rs
++++ b/crates/engine/src/recovery.rs
+@@ -44,6 +44,8 @@ pub fn instance_id() -> u64 {
+     *ID.get_or_init(|| {
+         use std::hash::{BuildHasher, Hasher};
+         let mut h = std::collections::hash_map::RandomState::new().build_hasher();
++        // std::process::id() panics in the browser ("no pids on this platform").
++        #[cfg(not(target_arch = "wasm32"))]
+         h.write_u32(std::process::id());
+         #[cfg(not(target_arch = "wasm32"))]
+         if let Ok(d) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {

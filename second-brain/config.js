@@ -4,6 +4,7 @@
  */
 
 import dotenv from "dotenv";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -70,6 +71,13 @@ export const WIKI_PATH =
   process.env.WIKI_PATH ||
   "/Users/USER/Library/CloudStorage/OneDrive-KingHusseinCancerCenter/2nd_brain/wiki";
 export const FOLDERS_FILE = path.join(__dirname, "folders.json");
+
+// The four files the app always reads. They live together in the home folder.
+export const BRAIN_DIR = path.join(os.homedir(), ".brain");
+export const BRAIN_FILE = path.join(BRAIN_DIR, "brain.md");
+export const MEMORIES_FILE = path.join(BRAIN_DIR, "memories.md");
+export const MANUAL_FILE = path.join(BRAIN_DIR, "manual.md");
+export const CODE_FILE = path.join(BRAIN_DIR, "code.md");
 
 // Folders that are not real wiki pages (email-subject lists, Obsidian internals).
 export const SKIP_DIRS = new Set([".obsidian", "_batches", "_batches2"]);

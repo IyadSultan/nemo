@@ -79,3 +79,8 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-16 07:00 — second-brain
 
 **Prompt:** commit then do 3, 4, 5
+**Response:** You can upload a PDF for editing three ways now: 1. **Visual editing** (edit text, sign, fill forms, redact): click **PDF tools** in the top bar (reload the page first to see it), or say "open PDF tools". Then drop your PDF into the PDFCraft window. The file stays on your Mac. 2. **Voice editing** (merge, rotate, delete pages, page numbers, watermark, compress, OCR): click **Document** in the left […]
+
+## 2026-10-16 15:55 — second-brain
+
+**Prompt:** yes add the edit-only upload, multiple pdfs, and do not open the whole app. Just upload the documents in boxes within app window and show buttons on the screen per pef + combination button on the last document. Include split in one button per document and open a splitting window. all clear?

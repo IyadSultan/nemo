@@ -10,7 +10,8 @@ import { loadDocs } from "./docs.js";
 import { indexRawMail } from "./mail.js";
 import { loadWiki, semantic } from "./notes.js";
 import { voiceInstructions } from "./prompt.js";
-import { codePresent, folders, notes, selected, setCodePresent, setFolders, setGuides, setNotes, setSelected } from "./state.js";
+import { runCommand } from "./shell.js";
+import { folders, notes, selected, setFolders, setNotes, setSelected } from "./state.js";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -22,7 +23,6 @@ export function folderState() {
       path: folderPath,
       name: path.basename(folderPath),
       selected: selected.includes(folderPath),
-      hasCode: Boolean(codePresent.get(folderPath)),
     })),
     selected,
     notes: notes.length,
@@ -98,45 +98,19 @@ export function saveFolders() {
   fsSync.writeFileSync(FOLDERS_FILE, JSON.stringify({ folders, selected }, null, 2));
 }
 
-export async function readCode(folderPath) {
-  try {
-    const text = await fs.readFile(path.join(folderPath, "code.md"), "utf8");
-    return text.trim().slice(0, 8000);
-  } catch {
-    return "";
-  }
-}
-
-export async function folderHasCode(folderPath) {
-  try {
-    await fs.access(path.join(folderPath, "code.md"));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // Bumped on every reload, so a slow document read for old folders is dropped.
 export let notesGeneration = 0;
 
 export async function reloadNotes() {
   const generation = ++notesGeneration;
   const loaded = [];
-  const nextGuides = new Map();
-  const nextPresent = new Map();
-  for (const root of folders) {
-    nextPresent.set(root, await folderHasCode(root));
-  }
   for (const root of selected) {
     loaded.push(...(await loadWiki(root)));
-    if (nextPresent.get(root)) nextGuides.set(root, await readCode(root));
   }
   // brain.md sections are notes too, so older days can be found by search.
   loaded.push(...brainNotes());
   setNotes(loaded);
   semantic.build(notes).catch((err) => console.error("Failed while building the meaning index:", err?.message || err));
-  setGuides(nextGuides);
-  setCodePresent(nextPresent);
   await indexRawMail();
   syncSuggestions();
   console.log(`Loaded ${notes.length} notes from ${selected.length} folder(s)`);
@@ -157,8 +131,23 @@ export function registerFolders(app) {
     res.json(folderState());
   });
 
+  // Opens the Mac folder window (the same one Finder and other apps use).
+  // An empty path means the user pressed Cancel.
+  app.post("/folders/pick", async (_req, res) => {
+    try {
+      const out = await runCommand("osascript", [
+        "-e",
+        'POSIX path of (choose folder with prompt "Add this folder:")',
+      ]);
+      res.json({ path: path.resolve(out.trim()) });
+    } catch {
+      res.json({ path: "" });
+    }
+  });
+
   app.post("/folders", async (req, res) => {
-    const folderPath = typeof req.body?.path === "string" ? req.body.path.trim() : "";
+    const raw = typeof req.body?.path === "string" ? req.body.path.trim() : "";
+    const folderPath = raw ? path.resolve(raw) : "";
     try {
       const stat = await fs.stat(folderPath);
       if (!stat.isDirectory()) {
@@ -166,7 +155,7 @@ export function registerFolders(app) {
       }
     } catch (err) {
       console.error("Failed while checking a folder:", err?.message || err);
-      return res.status(400).json({ error: "That folder was not found. Paste the full path." });
+      return res.status(400).json({ error: "That folder was not found. Browse for it, or paste the full path." });
     }
     if (!folderIsAllowed(folderPath)) {
       return res.status(400).json({ error: "Pick a folder inside your home folder." });

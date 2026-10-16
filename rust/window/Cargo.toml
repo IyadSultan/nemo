@@ -12,3 +12,20 @@ path = "src/main.rs"
 wry = "0.57"
 tao = "0.37"
 muda = "0.17"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSData", "NSDictionary", "NSObject", "NSString", "NSValue"] }
+objc2-app-kit = { version = "0.3", features = [
+    "NSApplication",
+    "NSBitmapImageRep",
+    "NSEvent",
+    "NSGraphicsContext",
+    "NSImage",
+    "NSImageRep",
+    "NSMenu",
+    "NSMenuItem",
+    "NSPasteboard",
+    "NSResponder",
+    "NSUserInterfaceItemIdentification",
+    "NSView",
+    "NSWindow",
+] }

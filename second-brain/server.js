@@ -26,7 +26,8 @@ import { checkWatches, deliverReminders, registerDeskjobs, runDeskCommand, syncS
 import { emailSearchJob, runEmailSearch } from "./emailsearch.js";
 import { readSavedFolders, refreshBrainNotes, registerFolders, reloadNotes } from "./folders.js";
 import { imessageHandle, registerIMessage, runTextMe, sendIMessage, textMeJob } from "./imessage.js";
-import { asksForOutlookCalendar, calendarRead, isChatQuestion, isNoise, meetingJob, memoJob, wantsEmail } from "./intents.js";
+import { BRAIN_COMMANDS, wantsCommandTable } from "./commands.js";
+import { asksAboutThisApp, asksForAppOverview, asksForOutlookCalendar, calendarRead, isChatQuestion, isNoise, meetingJob, memoJob, wantsEmail } from "./intents.js";
 import { judgeSpeech, warmJudge } from "./jev.js";
 import { learningJob, siteShortcut } from "./learnings.js";
 import { registerLive } from "./live.js";
@@ -43,8 +44,9 @@ import { pdfCatcher, registerPdf } from "./pdf.js";
 import { answerPdfTool, qaBlock, registerPdfTools, rememberPdf, wantsPdfTool } from "./pdftools.js";
 import { ingestDocument } from "./upload.js";
 import { registerWordcraft } from "./wordcraft.js";
+import { registerDeckweb } from "./deckweb.js";
 import { MODELS, REASONING_LEVELS, VOICE_MODELS, getModel } from "./pricing.js";
-import { TINY_LINES, buildPrompt, cleanHistory, cleanMemory } from "./prompt.js";
+import { TINY_LINES, appManualPrompt, appManualText, buildPrompt, cleanHistory, cleanMemory } from "./prompt.js";
 import { runCommand } from "./shell.js";
 import { listSkills, matchSkill, mentionsSkillStop, registerSkills, replySkillStop, skillInstructions } from "./skills.js";
 import { registerSpeech, startKokoro, startWhisperServer } from "./speech.js";
@@ -70,6 +72,13 @@ function fileTalk(history) {
   for (const turn of history || []) bits.push(turn.question, turn.answer);
   return bits.filter(Boolean).join("\n");
 }
+
+// The live voice models call this when asked what the app can do. The text is manual.md.
+app.get("/manual", (_req, res) => {
+  const text = appManualText();
+  if (!text) return res.status(404).json({ error: "The app manual is missing." });
+  res.type("text/plain; charset=utf-8").send(text);
+});
 
 app.get("/health", (_req, res) => {
   // Note count and the default model only. Folder paths stay on /folders, which the page already asks for.
@@ -264,6 +273,7 @@ function looksLikeOwnJob(question) {
     || calendarRead(question)
     || memoJob(question)
     || wantsEmail(question)
+    || asksAboutThisApp(question)
   );
 }
 
@@ -272,7 +282,7 @@ function looksLikeOwnJob(question) {
  * Used for the meeting summary, which must not run the calendar or email tools.
  * firstEvent is sent before the words, so the page can highlight a skill.
  */
-async function streamSpokenPrompt(req, res, prompt, firstEvent, readDirs) {
+async function streamSpokenPrompt(req, res, prompt, firstEvent, readDirs, tail) {
   const model = getModel(req.body?.model) || getModel(DEFAULT_MODEL);
   let reasoning = typeof req.body?.reasoning === "string" ? req.body.reasoning : DEFAULT_REASONING;
   if (!model.reasoning.includes(reasoning)) reasoning = model.reasoning[0];
@@ -305,6 +315,8 @@ async function streamSpokenPrompt(req, res, prompt, firstEvent, readDirs) {
     else if (model.subscription) await streamClaudeAnswer(prompt, res, model, reasoning, true, readDirs);
     else await streamAnswer(apiKey, prompt, res, model, reasoning, true);
     await finishPdf(res);
+    // Added after the model stops, so a "what can you do?" answer always ends the same way.
+    if (tail) writeEvent(res, { type: "delta", text: tail });
     writeEvent(res, { type: "done" });
     res.end();
   } catch (err) {
@@ -324,6 +336,15 @@ app.post("/ask", async (req, res) => {
   let question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
   if (!question) {
     return res.status(400).json({ error: "Type or say a question first." });
+  }
+  // "/brain" or "brain functions": a table of phrases, with no model call.
+  if (wantsCommandTable(question)) {
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.flushHeaders?.();
+    writeEvent(res, { type: "delta", text: "Here is every phrase you can tell me." });
+    writeEvent(res, { type: "commands", rows: BRAIN_COMMANDS });
+    writeEvent(res, { type: "done" });
+    return res.end();
   }
   // A meeting or lecture summary must not open the calendar or search the wiki.
   if (req.body?.summarizeLecture === true) {
@@ -458,6 +479,22 @@ app.post("/ask", async (req, res) => {
     const text = typeof opened === "string" ? opened : opened.text;
     const card = opened && typeof opened === "object" ? opened.card : { title: "Done", lines: [text] };
     return replyNow(res, text, card);
+  }
+  // "What can you do?" and "How does the watermark work?" are answered from manual.md.
+  if (asksAboutThisApp(question)) {
+    // Only the broad overview gets the pointer to /brain. A question about one function does not.
+    const tail = asksForAppOverview(question)
+      ? " If you want every phrase you can tell me, type /brain, or say brain functions. That shows a table of the commands and what each one does."
+      : "";
+    await streamSpokenPrompt(
+      req,
+      res,
+      appManualPrompt(question, cleanHistory(req.body?.history), cleanMemory(req.body?.memory)),
+      null,
+      undefined,
+      tail,
+    );
+    return;
   }
   if (!notes.length) {
     return res.status(500).json({
@@ -603,6 +640,7 @@ registerIMessage(app, askBrain);
 registerPdf(app);
 registerPdfTools(app);
 registerWordcraft(app);
+registerDeckweb(app);
 registerDeck(app);
 registerDeskjobs(app);
 
@@ -678,7 +716,7 @@ app.post("/daylog", (req, res) => {
   res.json({ ok: true });
 });
 
-/** Summarize one day (default today) into ~/.claude/brain.md with the default model. */
+/** Summarize one day (default today) into ~/.brain/brain.md with the default model. */
 async function summarizeBrainDay(day) {
   const model = getModel(DEFAULT_MODEL);
   const folders = { meetingDir: meetingFolder(), notesDir: memoFolder(), lectureDir: lectureFolder() };

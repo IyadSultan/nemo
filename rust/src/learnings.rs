@@ -7,7 +7,7 @@
 //! "Forget that Dr Khaled leads the AML protocol"   -> removes the closest line
 //! "What have you learned about me?"                -> lists them
 //!
-//! They live in learnings.md next to server.js (git-ignored, one "- " line each)
+//! The Node app stores them in ~/.brain/memories.md (one "- " line each).
 //! and go into every answer's prompt, so they last across calls.
 //! Chat memory, by contrast, is cleared when a call ends.
 
@@ -117,7 +117,7 @@ pub struct Learnings {
 }
 
 impl Learnings {
-    /// `file` is learnings.md (next to server.js).
+    /// `file` is the memories file. Node uses ~/.brain/memories.md.
     pub fn new(file: PathBuf) -> Self {
         Self { file }
     }
@@ -127,7 +127,7 @@ impl Learnings {
             Ok(text) => text.split('\n').filter_map(|l| l.strip_prefix("- ")).map(|l| js::trim(l).to_string()).collect(),
             Err(err) => {
                 if err.kind() != std::io::ErrorKind::NotFound {
-                    eprintln!("Failed while reading learnings.md: {err}");
+                    eprintln!("Failed while reading memories.md: {err}");
                 }
                 Vec::new()
             }

@@ -10,10 +10,6 @@ import { WIKI_PATH } from "./config.js";
 export let notes = [];
 export let folders = [WIKI_PATH];
 export let selected = [WIKI_PATH];
-/** @type {Map<string, string>} code.md text for folders currently in use */
-export let guides = new Map();
-/** @type {Map<string, boolean>} */
-export let codePresent = new Map();
 /** @type {{ rel: string, title: string, full: string, mtime: number, words: string[] }[]} */
 export let rawMail = [];
 /** The Ollama model this server last loaded, so switching models unloads the old one. */
@@ -22,7 +18,5 @@ export let loadedLocalId = "";
 export function setNotes(list) { notes = list; }
 export function setFolders(list) { folders = list; }
 export function setSelected(list) { selected = list; }
-export function setGuides(map) { guides = map; }
-export function setCodePresent(map) { codePresent = map; }
 export function setRawMail(list) { rawMail = list; }
 export function setLoadedLocalId(id) { loadedLocalId = id; }

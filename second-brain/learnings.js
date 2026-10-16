@@ -6,16 +6,17 @@
  * "Forget that Dr Khaled leads the AML protocol"   -> removes the closest line
  * "What have you learned about me?"                -> lists them
  *
- * They live in learnings.md next to this file (git-ignored, one "- " line each)
+ * They live in ~/.brain/memories.md (one "- " line each)
  * and go into every answer's prompt, so they last across calls.
  * Chat memory, by contrast, is cleared when a call ends.
  */
 
+import { MEMORIES_FILE } from "./config.js";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-const FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "learnings.md");
+// A test can point this at a throwaway file. The real app uses ~/.brain/memories.md.
+const FILE = process.env.BRAIN_MEMORIES_FILE || MEMORIES_FILE;
 // Enough for a page of preferences without crowding out the notes.
 const MAX_LINES = 40;
 const MAX_CHARS = 3000;
@@ -42,13 +43,15 @@ function readLines() {
       .filter((line) => line.startsWith("- "))
       .map((line) => line.slice(2).trim());
   } catch (err) {
-    if (err.code !== "ENOENT") console.error("Failed while reading learnings.md:", err.message);
+    if (err.code !== "ENOENT") console.error("Failed while reading memories.md:", err.message);
     return [];
   }
 }
 
 function writeLines(lines) {
   const body = lines.map((line) => `- ${line}`).join("\n");
+  // The heading stays "Learnings" so each saved line keeps the same shape.
+  fs.mkdirSync(path.dirname(FILE), { recursive: true });
   fs.writeFileSync(FILE, `# Learnings\n\nThings the user asked the second brain to keep in mind.\n\n${body}\n`, "utf8");
 }
 

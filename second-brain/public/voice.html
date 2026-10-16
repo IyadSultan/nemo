@@ -43,6 +43,9 @@
       <button type="button" class="term-btn" id="wordBtn" title="Open the Word editor (WordCraft) with the brain beside it">
         <span aria-hidden="true">W</span> Word
       </button>
+      <button type="button" class="term-btn" id="slidesBtn" title="Open the slides editor (DeckCraft) with the brain beside it">
+        <span aria-hidden="true">▭</span> Slides
+      </button>
       <input id="pdfEditFile" type="file" accept=".pdf,application/pdf" multiple hidden />
       <button type="button" class="term-btn" id="terminalBtn" title="Open or close a terminal">
         <span aria-hidden="true">&gt;_</span> Terminal
@@ -135,7 +138,7 @@
               type="button"
               class="ghost-btn meeting-knob"
               id="photoBtn"
-              title="Take a photo with your iPhone, or this Mac if the phone is not nearby, and add it here."
+              title="Take a photo. On your iPhone, press the shutter, then tap Use Photo. If the phone is not nearby, this Mac’s camera is used."
             >
               Photo
             </button>
@@ -238,13 +241,14 @@
               <span>Second brains</span>
               <div id="folderList" class="folder-list"></div>
             </div>
-            <label class="field wide">
+            <div class="field wide">
               <span>Add a folder</span>
               <span class="add-row">
-                <input id="folderPath" type="text" placeholder="Paste a full folder path" aria-label="Folder path" />
+                <button type="button" class="ghost-btn" id="browseFolderBtn">Browse…</button>
+                <input id="folderPath" type="text" placeholder="Or paste a full path" aria-label="Folder path" />
                 <button type="button" class="ghost-btn" id="addFolderBtn">Add</button>
               </span>
-            </label>
+            </div>
           </div>
         </details>
       </section>
@@ -310,6 +314,15 @@
     </div>
     <script src="/vendor/rive/rive.js"></script>
     <script src="/voice.js"></script>
+    <script src="/voice-ears.js"></script>
+    <script src="/voice-meeting.js"></script>
+    <script src="/voice-photo.js"></script>
+    <script src="/voice-minutes.js"></script>
+    <script src="/voice-local.js"></script>
+    <script src="/voice-speech.js"></script>
+    <script src="/voice-events.js"></script>
+    <script src="/voice-brain.js"></script>
+    <script src="/voice-page.js"></script>
     <script src="/gemini.js"></script>
     <script src="/mascot.js"></script>
     <script src="/tinymode.js"></script>
@@ -318,6 +331,7 @@
     <script src="/terminal.js"></script>
     <script src="/pdfedit.js"></script>
     <script src="/wordedit.js"></script>
+    <script src="/slidesedit.js"></script>
     <script type="module" src="/deck.js"></script>
   </body>
 </html>

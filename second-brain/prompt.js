@@ -1,17 +1,58 @@
 /**
- * The words the models see: the standing instructions, the spoken-style rules, each
- * folder's code.md, and the prompt built from notes, web pages and the chat so far.
+ * The words the models see: the standing instructions, the spoken-style rules,
+ * ~/.brain/code.md, and the prompt built from notes, web pages and the chat so far.
  */
 
 import { brainBlock, inBrainBlock } from "./brain.js";
+import { CODE_FILE, MANUAL_FILE } from "./config.js";
 import { DECK_ABILITY } from "./deck.js";
 import { isVaultQuestion, wantsEmail, wantsFile, wantsNews } from "./intents.js";
 import { learningsBlock } from "./learnings.js";
 import { replyDraftNote, sendDraftNote } from "./mail.js";
 import { noteBody } from "./notes.js";
 import { hereAndNow } from "./spoken.js";
-import { guides, selected } from "./state.js";
+import { selected } from "./state.js";
+import fs from "node:fs";
 import path from "node:path";
+
+// ~/.brain/manual.md. Loaded only when a question is about this app.
+let manualCache = { mtime: 0, text: "" };
+
+/** The full text of manual.md. Empty if the file is missing. Cached until the file changes. */
+export function appManualText() {
+  try {
+    const mtime = fs.statSync(MANUAL_FILE).mtimeMs;
+    if (mtime !== manualCache.mtime) {
+      manualCache = { mtime, text: fs.readFileSync(MANUAL_FILE, "utf8") };
+    }
+    return manualCache.text;
+  } catch (err) {
+    console.error("Failed while reading the app manual:", err?.code || err?.message || err);
+    return "";
+  }
+}
+
+/**
+ * The prompt for "what can you do?" and for a question about one function.
+ * The model must answer from the manual, not from memory.
+ */
+export function appManualPrompt(question, history = [], memory = "") {
+  const manual = appManualText();
+  const earlier = history.length
+    ? history.map((turn) => `User: ${turn.question}\nAssistant: ${turn.answer}`).join("\n\n")
+    : "";
+  return [
+    "The user is asking what this app can do, or how one of its functions works.",
+    "Answer only from the app manual below. A broad question gets a short spoken overview of the main things. A specific question gets that part, in a few plain sentences.",
+    "Do not invent a function the manual does not describe. Do not say the app cannot do something the manual says it does.",
+    "Do not read headings, file paths, or code names aloud.",
+    "If they asked what you can do in general, do not end by offering more detail, and do not mention /brain. The app adds that last sentence itself.",
+    manual ? `App manual:\n${manual}` : "The app manual is missing. Say you could not open it.",
+    memory ? `Compressed memory of older turns:\n${memory}` : "",
+    earlier ? `Earlier in this conversation:\n${earlier}` : "",
+    `Question: ${question}`,
+  ].filter(Boolean).join("\n\n");
+}
 
 export function buildPrompt(question, hits, pages = [], history = [], memory = "", meetingNotes = "", notesKind = "") {
   const learned = brainBlock();
@@ -157,7 +198,8 @@ export const APP_ABILITIES = [
   "Find an email: say find the email from, or about, then the name or subject. Then say open number one, two, or three, and Outlook searches for it.",
   "Search the whole Mac like the Finder: say find, then the file name, then on my Mac. Then say open number one, two, or three.",
   "Read today's or tomorrow's calendar, today's emails, and which emails need an urgent reply.",
-  "The app cannot change or delete the user's existing files itself, and it never sends an email by itself.",
+  "The app never sends an email by itself.",
+  "When the user asks what you can do, or how one function works, the prompt includes the app manual (manual.md). Answer only from that manual.",
 ].join(" ");
 
 // The model makes a PDF by writing HTML after PDF_BODY. This server prints it and shows it on the page.
@@ -197,23 +239,28 @@ export const SPOKEN_STYLE = [
   "Write dates and times as full words. Say October, not a three-letter month. Say nine eleven in the evening, not a clock code. Say kilograms, not an abbreviation.",
 ].join(" ");
 
-/** The rulebook the model must follow for every folder it is using. */
+/** The shared rulebook at ~/.brain/code.md. Empty if that file is missing. */
+function codeText() {
+  try {
+    return fs.readFileSync(CODE_FILE, "utf8").trim().slice(0, 8000);
+  } catch (err) {
+    if (err.code !== "ENOENT") console.error("Failed while reading code.md:", err?.message || err);
+    return "";
+  }
+}
+
+/** The rulebook the model must follow, plus which notes folders are in use. */
 export function guideBlock() {
-  if (!selected.length) return "No second-brain folder is selected.";
-  return selected
-    .map((folderPath) => {
-      const name = path.basename(folderPath);
-      const guide = guides.get(folderPath) || "";
-      if (!guide) {
-        return `Folder ${name} has no code.md. Treat its notes as a normal wiki.`;
-      }
-      return [
-        `You landed in ${name}.`,
-        "Read and follow this code.md. It explains how this second brain works:",
-        guide,
-      ].join("\n");
-    })
-    .join("\n\n");
+  const where = selected.length
+    ? `Notes folders in use: ${selected.map((folderPath) => path.basename(folderPath)).join(", ")}.`
+    : "No second-brain folder is selected.";
+  const guide = codeText();
+  if (!guide) return `${where}\nThere is no code.md in the brain folder. Treat the notes as a normal wiki.`;
+  return [
+    where,
+    "Read and follow this code.md. It is the rulebook for how this second brain works:",
+    guide,
+  ].join("\n");
 }
 
 // What Tiny, the character on the page, says while doing a move the user asked for.
@@ -238,13 +285,15 @@ export function voiceInstructions() {
     "You can hear the user through the microphone. Never say you cannot hear audio.",
     "Finish each reply. Do not stop mid-sentence.",
     "The voice reads every word literally. Say full month names and say the time in words, such as nine eleven in the evening.",
-    "Whenever a folder is in use, follow its code.md. Those rulebooks are included below.",
+    "Follow the code.md rulebook included below. It lives in the brain folder and applies to every notes folder.",
     "When the user asks the time, the date, or where they are, call here_and_now. Say the words that tool returns.",
     "When the user asks about their work, people, projects, or tasks, call search_notes first.",
-    "Answer those questions only from the notes the tool returns and from the code.md rulebooks.",
+    "Answer those questions only from the notes the tool returns and from the code.md rulebook.",
     "If the notes do not contain the answer, say you could not find it in the notes.",
     "For a simple check like can you hear me, just confirm that you can hear them.",
-    "In this live call you can only search notes and tell the time. The app can also text his phone, save memos and rules, open files, show a web page, draft emails, and open meetings in Outlook, but only in the regular voice mode. If he asks for one of those, say so and ask him to switch modes. Never say the app cannot do them.",
+    "In this live call you can only search notes and tell the time, unless he asks what you can do or how a function works. Then call app_manual first and answer only from what it returns. A broad question gets a short overview. A specific question, such as how the PDF watermark works, gets that part in a few sentences. Do not invent a function. Do not say the app cannot do something the manual describes.",
+    "A what-can-you-do answer must end with this exact sentence: If you want every phrase you can tell me, type /brain, or say brain functions. That shows a table of the commands and what each one does.",
+    "The app can also text his phone, save memos and rules, open files, show a web page, draft emails, edit PDFs, edit Word, and make slides. If he asks you to do one of those in this live call, say it works in the regular voice mode and ask him to switch. Never say the app cannot do them.",
     "Follow the things the user asked you to always keep in mind, listed below.",
     "",
     learningsBlock(),

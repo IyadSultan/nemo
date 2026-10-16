@@ -195,6 +195,10 @@ async function answerGeminiTools(g, calls) {
     try {
       if (call.name === "here_and_now") {
         result = (await (await fetch("/here")).json()).text;
+      } else if (call.name === "app_manual") {
+        setStatus("Checking the manual…");
+        const response = await fetch("/manual");
+        result = response.ok ? await response.text() : "The app manual is missing.";
       } else if (call.name === "search_notes") {
         const query = String(call.args?.query || "");
         result = (await (await fetch(`/notes?q=${encodeURIComponent(query)}`)).json()).notes;
@@ -258,7 +262,7 @@ function handleGeminiMessage(g, msg) {
     g.userHeardAt = performance.now();
     if (!g.userBubble) g.userBubble = addBubble("user", "", true);
     g.userBubble.querySelector(".text").textContent += heard;
-    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    followTranscript();
   }
 
   for (const part of content.modelTurn?.parts || []) {

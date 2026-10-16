@@ -422,6 +422,7 @@
       return;
     }
     if (!we.root) build();
+    window.brainSlides?.close();
     show(true);
     clearInterval(we.poll);
     we.poll = setInterval(pollSelection, 800);

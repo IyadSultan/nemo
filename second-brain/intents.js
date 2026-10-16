@@ -164,6 +164,34 @@ export function wantsNews(question) {
   return false;
 }
 
+/**
+ * A question about this app itself: what it can do, or how one function works.
+ * "Rotate the PDF" is a request to do it, so this stays false.
+ * "What can you do?" and "How does the watermark work?" are true.
+ */
+
+/** The broad "what can you do?" question. A question about one function is not this. */
+export function asksForAppOverview(question) {
+  const q = String(question || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const overview = /\b(?:what can you do|what do you do|what are you able to|what are your (?:functions|features|capabilities|abilities)|how do you work|what can this app|what does this app|what does the app|what can the app|tell me what you can|list (?:your|the) (?:functions|features))\b/;
+  // "What can you do about the budget?" is about the notes, not the app.
+  const aboutWork = /\b(?:about|with|for|on|regarding) (?:my|the|this|that)\b/;
+  return overview.test(q) && !aboutWork.test(q);
+}
+
+export function asksAboutThisApp(question) {
+  const q = String(question || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (asksForAppOverview(question)) return true;
+  // A named function from the manual, asked about rather than ordered.
+  const feature = /\b(?:pdf tools?|word editor|wordcraft|presentations?|slide decks?|powerpoints?|the terminal|tiny mode|mascot|morning briefing|watermark|page numbers|bookmarks|q\/a)\b/;
+  const asking = /\b(?:how|what|which|can you|do you|does (?:it|the app)|are you able|explain|tell me about)\b/;
+  if (feature.test(q) && asking.test(q)) return true;
+  // "How do I split a PDF?" names the job in either order.
+  const howTo = /\bhow (?:do|can|does|to)\b/;
+  const job = /\b(?:pdfs?|word|slides?|presentation|deck|terminal|meetings?|lectures?|memos?|watermark|signature|bookmarks?|compress|ocr)\b/;
+  return howTo.test(q) && job.test(q);
+}
+
 /** Questions whose answer changes over time, or that ask for the web outright. */
 export function needsFreshFacts(question) {
   const q = question.toLowerCase();

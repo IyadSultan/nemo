@@ -69,7 +69,7 @@ function cleanOps(ops) {
 }
 
 /** A file path the page may open or save: under the home folder, a document type, no dot folders. */
-function allowedPath(raw, types) {
+export function allowedPath(raw, types) {
   const file = path.resolve(String(raw || ""));
   const rel = path.relative(HOME, file);
   if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
@@ -77,7 +77,7 @@ function allowedPath(raw, types) {
   return types.has(path.extname(file).toLowerCase()) ? file : null;
 }
 
-async function freeName(folder, name) {
+export async function freeName(folder, name) {
   const ext = path.extname(name);
   const stem = path.basename(name, ext);
   for (let n = 1; n < 1000; n += 1) {
