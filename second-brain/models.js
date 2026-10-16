@@ -355,6 +355,8 @@ export function askClaude(model, system, prompt, effort, onText, timeoutMs = 120
 
 export async function streamClaudeAnswer(prompt, res, model, reasoning, spoken, readDirs) {
   const dirs = Array.isArray(readDirs) && readDirs.length ? readDirs : selected;
+  // Every Claude answer goes to the helper team first; it decides whether helpers are needed.
+  if (model.team !== false) return streamTeamAnswer(prompt, res, model, reasoning, spoken, dirs);
   const files = [
     `You can read these folders with the Read, Glob and Grep tools: ${dirs.join(", ")}.`,
     "Use them when the question is about a folder or file that the note excerpts do not cover. Read can open PDFs.",
@@ -367,6 +369,61 @@ export async function streamClaudeAnswer(prompt, res, model, reasoning, spoken, 
   const onHelpers = (n) => writeEvent(res, { type: "status", message: `Working with ${n} helper${n === 1 ? "" : "s"}…` });
   const usage = await askClaude(model, system, prompt, reasoning, (text) => writeEvent(res, { type: "delta", text }), 300000, dirs, onHelpers);
   writeEvent(res, usageEvent(model, reasoning, usage));
+}
+
+// The Rust front (rust/src/bin/brain.rs) runs the helper team; its token proves the call comes from here.
+const TEAM_URL = process.env.TEAM_URL || "http://127.0.0.1:3001/team/ask";
+const TEAM_TOKEN_FILE = path.join(path.dirname(new URL(import.meta.url).pathname), "tmp", "team.token");
+
+/**
+ * The helper team: a quick Sonnet 5.5 planner decides whether helpers are needed,
+ * named Claude Sonnet 5.5 helpers search the folders at the same time, and the
+ * picked Claude model (model.cliModel) writes the answer
+ * (rust/src/team.rs, on AutoAgents). The page gets `team` and `agent` events
+ * for the helpers' avatars. If the Rust team is not running, the lead answers alone.
+ */
+async function streamTeamAnswer(prompt, res, model, reasoning, spoken, dirs) {
+  const rules = [
+    dirs.length ? `When no helper findings are given, you can read these folders with the Read, Glob and Grep tools: ${dirs.join(", ")}. Read can open PDFs.` : "",
+    "You cannot write files or run commands. To give the user a file, make a PDF with PDF_BODY and the app saves it. Never type tool-call markup such as <invoke> in your answer.",
+    "Do not narrate your searching.",
+  ].filter(Boolean).join(" ");
+  const system = [INSTRUCTIONS, rules, spoken ? SPOKEN_STYLE : "", guideBlock()].filter(Boolean).join("\n\n");
+  let upstream;
+  try {
+    const token = fsSync.readFileSync(TEAM_TOKEN_FILE, "utf8").trim();
+    upstream = await fetch(TEAM_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-team-token": token },
+      body: JSON.stringify({ system, prompt, lead_model: model.cliModel, effort: reasoning || null, dirs }),
+      signal: AbortSignal.timeout(600000),
+    });
+    if (!upstream.ok) throw new Error(`status ${upstream.status}`);
+  } catch (err) {
+    console.error("The helper team is not available; the lead answers alone:", err?.message || err);
+    return streamClaudeAnswer(prompt, res, { ...model, team: false }, reasoning, spoken, dirs);
+  }
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let failed = "";
+  for await (const chunk of upstream.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+    for (const part of parts) {
+      if (!part.startsWith("data:")) continue;
+      let ev;
+      try {
+        ev = JSON.parse(part.slice(5));
+      } catch {
+        continue;
+      }
+      if (ev.type === "tokens") writeEvent(res, usageEvent(model, reasoning, ev));
+      else if (ev.type === "error") failed = ev.message || "The team could not answer.";
+      else if (["team", "agent", "status", "delta"].includes(ev.type)) writeEvent(res, ev);
+    }
+  }
+  if (failed) throw new Error(failed);
 }
 
 export function writeEvent(res, obj) {

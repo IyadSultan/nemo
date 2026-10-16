@@ -1332,3 +1332,34 @@ body.tiny-mode .capsule {
 }
 body.tiny-mode .capsule.has-mascot .mascot,
 body.tiny-mode .capsule.has-mascot .claude-mark { width: 180px; height: 180px; }
+
+/* ---------- Claude Team: the helpers under an answer (voice.js showTeam) ---------- */
+.team { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 8px; }
+.mate {
+  display: grid; justify-items: center; width: 92px; gap: 1px;
+  padding: 6px 4px 5px; border-radius: 10px;
+  background: color-mix(in srgb, var(--mate) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mate) 35%, transparent);
+  transition: opacity 0.3s;
+}
+.mate-face { width: 30px; height: 26px; overflow: visible; }
+.mate-face rect { fill: var(--mate); }
+.mate-face .eyes rect { fill: #1b1b1f; }
+.mate-face :is(.critter, .arm, .leg, .eyes) { transform-box: fill-box; }
+.mate-face .critter { transform-origin: 50% 100%; }
+.mate-face .eyes { transform-origin: 50% 50%; animation: critter-blink 5s step-end infinite; }
+.mate-name { font-size: 12px; font-weight: 600; color: var(--mate); }
+.mate-doing {
+  max-width: 100%; font-size: 10px; line-height: 1.25; opacity: 0.7;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mate[data-state="working"] .critter { animation: critter-bob 0.5s ease-in-out infinite; }
+.mate[data-state="working"] .leg {
+  animation: critter-step 0.5s ease-in-out infinite alternate;
+  animation-delay: calc(var(--i) * -0.25s);
+}
+.mate[data-state="done"] .critter { animation: critter-jump 0.6s ease-out 1; }
+.mate[data-state="failed"] { opacity: 0.45; }
+@media (prefers-reduced-motion: reduce) {
+  .mate .critter, .mate .leg, .mate .eyes { animation: none !important; }
+}

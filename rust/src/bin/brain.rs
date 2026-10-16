@@ -20,10 +20,12 @@ use axum::{
     Json, Router,
 };
 use hyper_util::{client::legacy::connect::HttpConnector, client::legacy::Client, rt::TokioExecutor};
-use nemo_realtime_voice::{clock, js, medgem::Medgem, pricing};
+use nemo_realtime_voice::{clock, js, medgem::Medgem, pricing, team};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::os::unix::fs::OpenOptionsExt;
+use tokio_stream::StreamExt as _;
 use tower::ServiceExt;
 use tower_http::services::ServeDir;
 
@@ -34,6 +36,7 @@ const RUST_ROUTES: &[&str] = &[
     "POST /medgem/clean",
     "GET /here",
     "POST /meeting/folder",
+    "POST /team/ask (helper team on AutoAgents; Node only)",
     "static files (public/, /vendor/rive)",
 ];
 
@@ -46,6 +49,8 @@ struct AppState {
     medgem: Arc<Medgem>,
     public: PathBuf,
     rive: PathBuf,
+    /// Secret for /team/ask, made at start and written where only Node reads it.
+    team_token: Arc<String>,
 }
 
 fn mark(mut res: Response, who: &'static str) -> Response {
@@ -116,6 +121,53 @@ async fn meeting_folder(headers: axum::http::HeaderMap, body: Bytes) -> Response
         _ => String::new(),
     };
     mark(Json(json!({ "folder": folder })).into_response(), "rust")
+}
+
+/// Run a helper team for one answer (src/team.rs). Only Node may call this:
+/// it sends the token from second-brain/tmp/team.token. Answers as an event stream.
+async fn team_ask(State(s): State<AppState>, headers: axum::http::HeaderMap, body: Bytes) -> Response {
+    let given = headers.get("x-team-token").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if s.team_token.is_empty() || given != s.team_token.as_str() {
+        return mark((StatusCode::FORBIDDEN, Json(json!({ "error": "Not allowed." }))).into_response(), "rust");
+    }
+    let req: team::Request = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(_) => return mark((StatusCode::BAD_REQUEST, Json(json!({ "error": "Bad team request." }))).into_response(), "rust"),
+    };
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Value>();
+    tokio::spawn(team::run(req, tx));
+    let events = tokio_stream::wrappers::UnboundedReceiverStream::new(rx)
+        .map(|v| Ok::<_, std::convert::Infallible>(Bytes::from(format!("data: {v}\n\n"))));
+    let res = Response::builder()
+        .header(header::CONTENT_TYPE, "text/event-stream")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .body(Body::from_stream(events))
+        .unwrap();
+    mark(res, "rust")
+}
+
+/// A fresh random token, saved for Node (owner-only file).
+fn make_team_token(repo: &std::path::Path) -> String {
+    let mut bytes = [0u8; 24];
+    if getrandom::fill(&mut bytes).is_err() {
+        return String::new();
+    }
+    let token = hex::encode(bytes);
+    let dir = repo.join("second-brain").join("tmp");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("team.token");
+    let _ = std::fs::remove_file(&path);
+    let saved = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, token.as_bytes()));
+    if let Err(err) = saved {
+        eprintln!("Could not save the team token ({err}); the helper team is off.");
+        return String::new();
+    }
+    token
 }
 
 async fn status(State(s): State<AppState>) -> Response {
@@ -197,6 +249,7 @@ fn app(state: AppState) -> Router {
         .route("/medgem/clean", post(medgem_clean))
         .route("/here", get(here))
         .route("/meeting/folder", post(meeting_folder))
+        .route("/team/ask", post(team_ask))
         .route("/rust", get(status))
         .fallback(files_or_node)
         .with_state(state)
@@ -214,6 +267,7 @@ async fn main() {
         medgem: Arc::new(Medgem::from_env()),
         public: repo.join("second-brain").join("public"),
         rive: repo.join("node_modules").join("@rive-app").join("canvas"),
+        team_token: Arc::new(make_team_token(&repo)),
     };
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.unwrap_or_else(|e| panic!("port {port}: {e}"));
     println!("Second brain (Rust front) → http://localhost:{port}  (everything not yet in Rust goes to {node})");
@@ -268,6 +322,7 @@ mod tests {
             medgem: Arc::new(Medgem::new("http://127.0.0.1:9")),
             public,
             rive: PathBuf::from("/nonexistent"),
+            team_token: Arc::new("test-token".into()),
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -359,6 +414,17 @@ mod tests {
         let res = client().get(format!("{base}/health")).send().await.unwrap();
         assert_eq!(res.status(), 502);
         assert_eq!(res.json::<Value>().await.unwrap(), json!({ "error": "The Node brain server is not answering." }));
+    }
+
+    #[tokio::test]
+    async fn team_needs_nodes_token() {
+        let base = front("http://127.0.0.1:9".into(), public_dir()).await;
+        let res = client().post(format!("{base}/team/ask")).json(&json!({ "system": "", "prompt": "hi" })).send().await.unwrap();
+        assert_eq!(res.status(), 403);
+        let res = client().post(format!("{base}/team/ask")).header("x-team-token", "wrong").body("{}").send().await.unwrap();
+        assert_eq!(res.status(), 403);
+        let res = client().post(format!("{base}/team/ask")).header("x-team-token", "test-token").body("not json").send().await.unwrap();
+        assert_eq!(res.status(), 400);
     }
 
     /// Golden test: hereAndNow extracted from server.js (rust/tests/fixtures/gen_routes.mjs).

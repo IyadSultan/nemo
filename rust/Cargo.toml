@@ -21,6 +21,12 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 url = "2"
 getrandom = "0.3"
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+# The team of helper agents (rust/src/team.rs).
+autoagents = "0.4"
+autoagents-derive = "0.4"
+async-trait = "0.1"
+futures = "0.3"
+tokio-stream = "0.1"
 
 [dev-dependencies]
 futures-core = "0.3"

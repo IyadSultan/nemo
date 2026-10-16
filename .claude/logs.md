@@ -761,3 +761,51 @@ Removed the openVoice() call at the end of voice/hammerspoon.lua. Menu icon, Cmd
 **Prompt:** <task-notification> <task-id>bs890bqm5</task-id> <tool-use-id>toolu_01Mh3nENUsrqzS69dtkwmcKY</tool-use-id> <output-file>/private/tmp/claude-501/-Users-USER-code-talk-to-your-brain/a740eed8-3303-457a-a3e3-a10a74f1db28/tasks/bs890bqm5.output</output-file> <status>completed</status> <summary>Background command "Diff deterministic routes and canned /ask paths between old and new servers" completed (exit code 0)</summary> </task-notification>
 **Commit:** 9e859fa Split second-brain/server.js into domain modules
 **Commit:** 9e859fa Split second-brain/server.js into domain modules
+
+## 2026-10-16 07:30 — improvement round (talk_to_your_brain)
+- Committed pending work (b899020); split server.js into 20 domain modules with no behaviour change (9e859fa), verified by old-vs-new diff on port 3999 and Rust parity tests; brain.md sections now indexed for search and a Hammerspoon health watchdog added (see git log).
+- Incident: the live Node server hung ~10 min at 07:05 (cause unknown, OneDrive EAGAIN reads nearby); kickstart -k left the old node alive, needed kill -9.
+**Commit:** bdb4aa2 Search older brain.md days; menu-bar health watchdog
+**Response:** The first `hs -c` call blocked the chain, so the commit never ran. Stopping that background task, then redoing the commit and bookkeeping without it.
+
+## 2026-10-16 10:58 — talk_to_your_brain
+
+**Prompt:** can i change tiny to a moving claude shape? make optional to switch between 2 in settings with claude default
+
+- 2026-10-16: Added Claude starburst mascot (SVG + CSS animation) as default; Settings > Mascot switches Claude/Tiny (localStorage "mascot"). Tiny's Rive loads only when picked. Not committed yet.
+**Response:** Checking the screenshot, then testing the switch to Tiny.
+
+## 2026-10-16 11:03 — talk_to_your_brain
+
+**Prompt:** [Image #4] I meant claude code avatar
+- 2026-10-16: Replaced starburst with the Claude Code pixel critter (body, arms, 4 legs, > < eyes, mouth) per user's reference image. Still uncommitted.
+**Response:** Checking the critter screenshot.
+
+## 2026-10-16 11:07 — talk_to_your_brain
+
+**Prompt:** change the eye shape to look loke open eyes. Also I asked it to dance it said it cannot
+- 2026-10-16: Critter eyes changed to open (black rects). Fixed "can u dance" not triggering the move (regex only accepted "you"). error_753 logged. Uncommitted.
+**Response:** Open eyes and the dance both work. Logging the gotcha and cleaning up.
+
+## 2026-10-16 11:10 — talk_to_your_brain
+
+**Prompt:** commit
+**Commit:** 5e380cb Claude Code critter mascot, switchable with Tiny; "can u dance" works
+**Response:** Reload the brain window, then say "hey, can u dance". I tested both fixes in the browser: 1. **Eyes:** the `> <` eyes are now open eyes, two black upright rectangles. They still blink and look around. 2. **Dance:** the app only recognised "can **you** dance" as a move request. You typed "can **u** dance", so it was missed and the brain answered on its own that it had no body. It now accepts "u" as […]
+
+## 2026-10-16 11:17 — talk_to_your_brain
+
+**Prompt:** I want to add rust based multiagentic framework with subagents appearing as small avatars weach witha name, thye should use sonnet5.5 not opus - use the link to read about this https://github.com/liquidos-ai/AutoAgents
+
+## 2026-10-16 11:17 — talk_to_your_brain
+
+**Prompt:** <pasted_content id="ebf9"> I want to add rust based multiagentic framework with subagents appearing as small avatars weach witha name, thye should use sonnet5.5 not opus - use the link to read about this https://github.com/liquidos-ai/AutoAgents </pasted_content id="ebf9">
+
+- 2026-10-16 milestone: Claude Team added (rust/src/team.rs on AutoAgents 0.4). Lead = Opus plans/writes; named helpers (Ada, Milo, …) run on claude-sonnet-5-5 via `claude -p` subscription; avatars in voice page. Live test passed (2 helpers, 24 s). Not committed.
+
+- 2026-10-16 decision: user asked to drop "Claude Team" from the model menu; team is now the default path for all Claude Opus/Sonnet answers, with a Sonnet 5.5 planner deciding if helpers are needed.
+**Response:** Tests pass. Restarting and timing a simple question, which should get no helpers, against a two-part question.
+
+## 2026-10-16 11:51 — talk_to_your_brain
+
+**Prompt:** commit this

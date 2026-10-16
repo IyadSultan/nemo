@@ -3483,6 +3483,41 @@ function showSkillDoc(bubble, text) {
 }
 
 /** The PDF the server made, shown in the bubble with Save and Open buttons. */
+/** The helper team under an answer: a small critter per helper, in its own colour, with its name. */
+function showTeam(bubble, event) {
+  bubble.querySelector(".team")?.remove();
+  const row = document.createElement("div");
+  row.className = "team";
+  row.title = `Helpers on ${event.model || "Claude Sonnet"}`;
+  for (const mate of event.agents) {
+    const el = document.createElement("div");
+    el.className = "mate";
+    el.dataset.id = mate.id;
+    el.dataset.state = "working";
+    el.style.setProperty("--mate", mate.color || "#d97757");
+    el.title = `${mate.name}: ${mate.task}`;
+    el.innerHTML = `<svg class="mate-face" viewBox="20 0 560 470" aria-hidden="true"><g class="critter">
+      <rect class="arm arm-l" x="35" y="140" width="52" height="105"/>
+      <rect class="arm arm-r" x="513" y="140" width="52" height="105"/>
+      ${[85, 180, 370, 465].map((x, i) => `<rect class="leg" style="--i:${i}" x="${x}" y="340" width="50" height="110"/>`).join("")}
+      <rect class="body" x="85" y="35" width="430" height="310"/>
+      <g class="eyes"><rect x="160" y="120" width="40" height="80"/><rect x="400" y="120" width="40" height="80"/></g>
+    </g></svg><span class="mate-name"></span><span class="mate-doing"></span>`;
+    el.querySelector(".mate-name").textContent = mate.name;
+    el.querySelector(".mate-doing").textContent = "Starting";
+    row.append(el);
+  }
+  bubble.querySelector(".who")?.after(row);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+function updateTeamMate(bubble, event) {
+  const el = bubble.querySelector(`.team .mate[data-id="${CSS.escape(event.id)}"]`);
+  if (!el) return;
+  if (event.state) el.dataset.state = event.state;
+  if (event.doing) el.querySelector(".mate-doing").textContent = event.doing;
+}
+
 function attachPdf(bubble, pdf) {
   if (!bubble || bubble.querySelector(".pdf-view")) return;
   const frame = document.createElement("iframe");
@@ -3852,6 +3887,12 @@ async function answerWithBrain(question, extras) {
             name: event.name || "",
             original: event.original || "",
           };
+        } else if (event.type === "team" && event.agents?.length) {
+          // Claude Team: one small avatar per helper, with its name.
+          bubble ??= addBubble("assistant", "", true);
+          showTeam(bubble, event);
+        } else if (event.type === "agent" && event.id) {
+          if (bubble) updateTeamMate(bubble, event);
         } else if (event.type === "pdf" && event.url) {
           // The server printed a PDF. Show it under the spoken line, with Save and Open.
           pdfMade = event;
