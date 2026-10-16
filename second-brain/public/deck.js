@@ -476,7 +476,9 @@ function updateHud() {
   show.hud.querySelector(".d-livebtn").textContent = show.live ? "● Live" : "Live";
   const slide = show.deck.slides[show.index];
   show.notesEl.textContent = slide?.notes || "";
-  if (!show.busy) setStatus(show.live ? "Live: say what the next slide is about" : "");
+  if (!show.busy) {
+    setStatus(!show.live ? "" : micOn() ? "Live: say what the next slide is about" : "Mic is off: press Start talking (or unmute), then speak");
+  }
 }
 
 function setStatus(text) {
@@ -513,8 +515,19 @@ function openPptx() {
   setStatus("Opening in PowerPoint…");
 }
 
+/** voice.js's call state (globals of a classic script). Live mode needs the mic listening. */
+function micOn() {
+  return typeof connected !== "undefined" && connected && !(typeof muted !== "undefined" && muted) && !(typeof paused !== "undefined" && paused);
+}
+
+/** Start the call (the Start talking button) if it is off, so dictation is heard. */
+function ensureMic() {
+  if (typeof connected !== "undefined" && !connected) document.getElementById("talkBtn")?.click();
+}
+
 function setLive(on) {
   show.live = on;
+  if (on) ensureMic();
   updateHud();
 }
 
@@ -602,6 +615,11 @@ async function present(id, { live = false, index = 0 } = {}) {
   // Wait a frame so the stage has its full-screen size before measuring anything.
   await new Promise((resolve) => requestAnimationFrame(() => { fit(); resolve(); }));
   go(Math.min(index, show.deck.slides.length - 1));
+  if (live) {
+    ensureMic();
+    // The call takes a moment to start; say so if it still is not listening.
+    setTimeout(updateHud, 3000);
+  }
 }
 
 function close() {
