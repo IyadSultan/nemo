@@ -14,6 +14,16 @@ const FALLBACK_THEME = {
 };
 
 let themes = null;
+// The editor ("Edit with brain", deck-edit.js) loads the first time it is opened.
+let editMod = null;
+const editor = async () => (editMod ??= await import("/deck-edit.js"));
+
+/** Open the editor at slide index; start: { mode, request } runs an enhance at once. */
+async function edit(id, index = 0, start = null) {
+  if (show.root) close();
+  localStorage.setItem("lastDeckAt", String(Date.now()));
+  await (await editor()).openEditor(id, index, start);
+}
 const show = {
   root: null, stage: null, slideEl: null, hud: null, statusEl: null, heardEl: null, notesEl: null,
   id: "", deck: null, index: 0, pending: [], live: false, busy: false, queue: [], draft: false,
@@ -27,7 +37,7 @@ const el = (tag, cls, text) => {
   return node;
 };
 
-async function loadThemes() {
+export async function loadThemes() {
   if (themes) return themes;
   try {
     const response = await fetch("/deck/themes");
@@ -39,13 +49,13 @@ async function loadThemes() {
   return themes;
 }
 
-function themeOf(deck) {
+export function themeOf(deck) {
   return (themes || []).find((t) => t.name === deck?.theme) || themes?.find((t) => t.name === "Nocturne") || FALLBACK_THEME;
 }
 
 const loadedFonts = new Set();
 /** DeckCraft's theme fonts are Google Fonts; load the pair the deck uses. */
-function loadFonts(theme) {
+export function loadFonts(theme) {
   for (const family of [theme.heading, theme.body]) {
     if (!family || loadedFonts.has(family) || /Carlito|Liberation/.test(family)) continue;
     loadedFonts.add(family);
@@ -56,16 +66,23 @@ function loadFonts(theme) {
   }
 }
 
-function applyTheme(theme) {
-  const s = show.root.style;
-  s.setProperty("--d-bg", theme.bg);
-  s.setProperty("--d-text", theme.text);
-  s.setProperty("--d-muted", theme.muted);
-  s.setProperty("--d-accent", theme.accents[0]);
-  s.setProperty("--d-accent2", theme.accents[1]);
-  s.setProperty("--d-head", `"${theme.heading}", "Inter", -apple-system, "Helvetica Neue", sans-serif`);
-  s.setProperty("--d-body", `"${theme.body}", "Inter", -apple-system, "Helvetica Neue", sans-serif`);
+/** The theme's colours and fonts as CSS variables on node (the show, a thumbnail, the editor). */
+export function themeVars(node, theme) {
+  const vars = {
+    "--d-bg": theme.bg,
+    "--d-text": theme.text,
+    "--d-muted": theme.muted,
+    "--d-accent": theme.accents[0],
+    "--d-accent2": theme.accents[1],
+    "--d-head": `"${theme.heading}", "Inter", -apple-system, "Helvetica Neue", sans-serif`,
+    "--d-body": `"${theme.body}", "Inter", -apple-system, "Helvetica Neue", sans-serif`,
+  };
+  for (const [k, v] of Object.entries(vars)) node.style.setProperty(k, v);
   loadFonts(theme);
+}
+
+function applyTheme(theme) {
+  themeVars(show.root, theme);
 }
 
 // ---------- drawing slides (positions match deckcraft.js) ----------
@@ -203,7 +220,7 @@ function chartSvg(chart, theme) {
   return svg;
 }
 
-function renderSlide(slide, theme, draft = false) {
+export function renderSlide(slide, theme, draft = false) {
   const node = el("div", `d-slide d-${slide.kind}${draft ? " d-draft" : ""}`);
   const kind = slide.kind;
   if (kind === "title" || kind === "closing") {
@@ -241,7 +258,7 @@ function renderSlide(slide, theme, draft = false) {
       }
     } else if (kind === "stat") {
       node.append(
-        box("d-stat d-center d-mid", "value", [60, 160, 840, 170], slide.value || ""),
+        box("d-statv d-center d-mid", "value", [60, 160, 840, 170], slide.value || ""),
         box("d-label-t d-center", "label", [100, 340, 760, 80], slide.label || ""),
       );
     } else if (kind === "chart" && slide.chart) {
@@ -552,6 +569,7 @@ function onKey(event) {
   else if (key === "b" || key === "B" || key === ".") toggleBlank();
   else if (key === "l" || key === "L") setLive(!show.live);
   else if (key === "m" || key === "M") toggleMic();
+  else if (key === "e" || key === "E") edit(show.id, show.index);
   else if (key === "n" || key === "N") show.root.classList.toggle("d-notes-on");
   else return;
   event.preventDefault();
@@ -583,6 +601,7 @@ function buildRoot() {
     button("Save to…", "Choose where to save the .pptx", (node) => savePptx(true, node)),
     button("Open", "Open in PowerPoint or Keynote", openPptx),
     button("Notes", "Speaker notes (N)", () => show.root.classList.toggle("d-notes-on")),
+    button("Edit", "Edit with brain: change this slide by voice or typing (E)", () => edit(show.id, show.index)),
     button("✕", "End the show (Esc)", close, "d-close"),
   );
   root.append(stage, heard, notes, hud);
@@ -737,9 +756,14 @@ async function drain() {
  * in live mode anything else becomes a slide. Returns true when it was for the deck.
  */
 function hear(text) {
-  if (!show.root) return false;
+  const editing = editMod?.editorOpen();
+  if (!show.root && !editing) return false;
   const said = String(text || "").replace(/^(hey|okay|ok)[, ]+/i, "").trim();
   if (!said) return true;
+  if (editing) {
+    editMod.editorHear(said);
+    return true;
+  }
   wake();
   if (navigate(said)) return true;
   if (!show.live) return true;
@@ -763,6 +787,28 @@ function command(question) {
     return true;
   }
   const last = localStorage.getItem("lastDeck");
+  // Enhance or edit the last deck. "it" counts only within three hours of making it,
+  // and a request for a new deck ("make a presentation on how to improve sleep") never does.
+  const recent = Date.now() - Number(localStorage.getItem("lastDeckAt") || 0) < 3 * 3600_000;
+  const DECK = recent
+    ? "(?:it|them|this|that|the (?:deck|presentation|slides?)|this (?:deck|presentation)|my (?:deck|presentation|slides))"
+    : "(?:the (?:deck|presentation|slides?)|this (?:deck|presentation)|my (?:deck|presentation|slides))";
+  const wantsNew = /\b(make|create|build|prepare|write|generate|draft|give)\s+(me\s+)?(a|an|new|another)\b[^.]*\b(deck|presentation|slides?|power ?point)\b/i.test(q);
+  const refersToDeck = new RegExp(`\\b${DECK}\\b`, "i").test(q);
+  if (last && !wantsNew && refersToDeck) {
+    let mode = "";
+    if (/\b(add|get|use|put|bring|pull|include|find)\b[^.]*\b(online|web|internet|latest)\b[^.]*\b(data|facts|numbers|statistics|stats|sources|information)\b|\bsearch (the )?(web|online)\b/i.test(q)) mode = "web";
+    else if (/\b(add|use|put|pull|include|take|bring)\b[^.]*\b(uploaded|attached|the|my|this)\s+(document|file|pdf|report|paper)\b/i.test(q)) mode = "document";
+    else if (new RegExp(`\\b(enhance|improve|polish|redesign|beautify|jazz up|upgrade)\\s+${DECK}\\b|\\bmake\\s+${DECK}\\s+(?:look\\s+)?(?:more\\s+|a bit\\s+)?(attractive|beautiful|better|nicer|prettier|professional|engaging|appealing)\\b`, "i").test(q)) mode = "design";
+    if (mode) {
+      edit(last, 0, { mode, request: q }).catch((err) => console.error("Failed while enhancing the deck:", err));
+      return true;
+    }
+    if (new RegExp(`\\b(edit|adjust|tweak|work on)\\s+${DECK}\\b|\\bopen\\s+${DECK}\\s+(in the editor|with (the )?brain)\\b`, "i").test(q)) {
+      edit(last).catch((err) => console.error("Failed while opening the editor:", err));
+      return true;
+    }
+  }
   if (last && /^(?:please )?(?:present|show|play|start|open)\s+(?:it|this|that|the (?:deck|presentation|slides|slide ?show))(?: (?:full ?screen|now))?[.!]?$/i.test(q)) {
     present(last).catch((err) => console.error("Failed while opening the deck:", err));
     return true;
@@ -774,6 +820,7 @@ function command(question) {
 function attach(bubble, event) {
   if (!bubble || bubble.querySelector(".deck-card")) return;
   localStorage.setItem("lastDeck", event.id);
+  localStorage.setItem("lastDeckAt", String(Date.now()));
   const card = el("div", "deck-card");
   const thumb = el("div", "deck-thumb");
   const meta = el("div", "deck-meta");
@@ -806,6 +853,7 @@ function attach(bubble, event) {
   row.append(
     ghost("▶ Present", "Full screen (Esc ends)", () => present(event.id).catch((err) => { status.textContent = err.message; })),
     ghost("Present live", "Full screen; every sentence you say adds a slide", () => present(event.id, { live: true }).catch((err) => { status.textContent = err.message; })),
+    ghost("Edit with brain", "Change slides one at a time by voice or typing; Enhance the whole deck", () => edit(event.id).catch((err) => { status.textContent = err.message; })),
     ghost("PowerPoint", "Save the .pptx in Downloads", (b) => save(false, b)),
     ghost("Save to…", "Choose where to save the .pptx", (b) => save(true, b)),
     ghost("Open", "Open in PowerPoint or Keynote", () => fetch(`/deck/${encodeURIComponent(event.id)}/open`, { method: "POST" }).catch(() => {})),
@@ -818,15 +866,13 @@ function attach(bubble, event) {
   Promise.all([loadThemes(), fetch(`/deck/${encodeURIComponent(event.id)}`).then((r) => r.json())]).then(([, data]) => {
     if (!data.deck) return;
     const theme = themeOf(data.deck);
-    loadFonts(theme);
-    const slide = renderSlide(data.deck.slides[0], theme);
-    for (const [k, v] of Object.entries({ "--d-bg": theme.bg, "--d-text": theme.text, "--d-muted": theme.muted, "--d-accent": theme.accents[0], "--d-accent2": theme.accents[1], "--d-head": `"${theme.heading}", "Inter", sans-serif`, "--d-body": `"${theme.body}", "Inter", sans-serif` })) thumb.style.setProperty(k, v);
-    thumb.append(slide);
+    themeVars(thumb, theme);
+    thumb.append(renderSlide(data.deck.slides[0], theme));
   }).catch(() => {});
 }
 
 window.brainDeck = {
-  get open() { return Boolean(show.root); },
+  get open() { return Boolean(show.root || editMod?.editorOpen()); },
   get live() { return Boolean(show.root && show.live); },
   present,
   startLive,
@@ -834,4 +880,5 @@ window.brainDeck = {
   command,
   attach,
   close,
+  edit,
 };

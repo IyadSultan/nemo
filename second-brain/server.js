@@ -38,7 +38,7 @@ import { askModelOnce, clientError, finishPdf, ollamaNamesMatch, replyNow, safeJ
 import { excerpt, notesForQuestion, parseNote, semantic } from "./notes.js";
 import { findOnMacJob, openFileJob, runFindOnMac, runOpenFile } from "./openfile.js";
 import { openOutlookDraft } from "./outlook.js";
-import { registerDeck } from "./deck.js";
+import { registerDeck, rememberDocument } from "./deck.js";
 import { pdfCatcher, registerPdf } from "./pdf.js";
 import { ingestDocument } from "./upload.js";
 import { MODELS, REASONING_LEVELS, VOICE_MODELS, getModel } from "./pricing.js";
@@ -709,6 +709,7 @@ app.post("/document", express.raw({ type: "*/*", limit: "60mb" }), async (req, r
     const root = path.dirname(path.dirname(folder));
     setNotes([...notes, parseNote(path.relative(root, doc.wikiPath), doc.wikiText)]);
     semantic.build(notes).catch((err) => console.error("Failed while building the meaning index:", err?.message || err));
+    rememberDocument(doc.copyPath);
     console.log(`Saved an uploaded document and its wiki page (${path.extname(doc.copyPath)})`);
     res.json({ title: doc.title, summary: doc.summary, wiki: doc.wikiPath, copy: doc.copyPath });
   } catch (err) {

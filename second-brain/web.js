@@ -153,8 +153,9 @@ export async function fetchPage(result) {
  * Only news reads one full page, since headlines need more than a snippet.
  * The model never connects to the internet itself.
  */
-export async function searchWeb(question) {
-  if (!shouldBrowse(question)) return [];
+export async function searchWeb(question, { force = false } = {}) {
+  // force: the caller already decided to look this up (deck.js "add online data").
+  if (!force && !shouldBrowse(question)) return [];
   let html = "";
   try {
     const query = wantsNews(question) ? `top news headlines ${todayLabel()}` : question;
