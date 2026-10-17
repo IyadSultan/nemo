@@ -309,6 +309,16 @@ function fillFolders(state) {
     remove.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      // The app window (WebKit via wry) has no confirm() dialog, so the button asks twice.
+      if (remove.dataset.armed !== "1") {
+        remove.dataset.armed = "1";
+        remove.textContent = "Click again to remove";
+        setTimeout(() => {
+          remove.dataset.armed = "";
+          remove.textContent = "Remove";
+        }, 4000);
+        return;
+      }
       removeFolder(folder.path);
     });
     row.append(box, name, remove);
@@ -750,8 +760,6 @@ async function chooseFolders(paths) {
 }
 
 async function removeFolder(folderPath) {
-  const ok = window.confirm("Remove this folder from the list? The files stay on your Mac.");
-  if (!ok) return;
   try {
     const response = await fetch("/folders/remove", {
       method: "POST",
