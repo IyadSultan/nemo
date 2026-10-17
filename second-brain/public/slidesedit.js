@@ -441,6 +441,7 @@
       return false;
     }
     if (!sl.root) build();
+    window.brainR?.close();
     show(true);
     clearInterval(sl.poll);
     sl.poll = setInterval(pollState, 800);

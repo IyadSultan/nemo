@@ -197,6 +197,14 @@ function handleServerEvent(event) {
       if (text.trim()) window.brainSlides.hear(text.trim());
       return;
     }
+    if (window.brainR?.open) {
+      if (userPartialEl) {
+        userPartialEl.remove();
+        userPartialEl = null;
+      }
+      if (text.trim()) window.brainR.hear(text.trim());
+      return;
+    }
     if (window.brainDeck?.open) {
       if (userPartialEl) {
         userPartialEl.remove();
@@ -369,11 +377,11 @@ function showSkillDoc(bubble, text) {
   if (!bubble || !clean) return;
   let doc = bubble.querySelector(".skill-doc");
   if (!doc) {
-    doc = document.createElement("pre");
+    doc = document.createElement("div");
     doc.className = "skill-doc";
     bubble.append(doc);
   }
-  doc.textContent = clean;
+  renderMarkdown(doc, clean);
   followTranscript();
 }
 

@@ -1350,8 +1350,59 @@ summary:focus-visible {
   75% { transform: rotate(8deg) translateY(-5%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .claude-mark * { animation: none !important; }
+  .claude-mark *,
+  .mini-claude * { animation: none !important; }
 }
+
+/* A small Claude in the chat when a Terminal session starts or finishes. */
+.bubble.agent {
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0.7rem;
+  border-color: rgba(217, 119, 87, 0.45);
+  background: rgba(217, 119, 87, 0.08);
+}
+.bubble.agent .who { color: #d97757; }
+.bubble.agent .text { white-space: pre-wrap; }
+.mini-claude-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 8px;
+  line-height: 0;
+}
+.mini-claude-btn:focus-visible {
+  outline: 2px solid #d97757;
+  outline-offset: 2px;
+}
+.mini-claude { width: 56px; height: 48px; display: block; overflow: visible; pointer-events: none; }
+.mini-claude .critter > rect:not(.mouth) { fill: #d97757; }
+.mini-claude .eyes rect,
+.mini-claude .mouth { fill: #141210; }
+.mini-claude .mouth { transform: scaleY(0); }
+.mini-claude :is(.critter, .arm, .leg, .eyes, .mouth) { transform-box: fill-box; }
+.bubble.agent.working .mini-claude .leg {
+  animation: critter-step 0.45s ease-in-out infinite alternate;
+  animation-delay: calc(var(--i) % 2 * -0.22s);
+}
+.bubble.agent.working .mini-claude .critter { animation: critter-bob 0.45s ease-in-out infinite; }
+.bubble.agent.done .mini-claude .critter { animation: critter-jump 0.6s ease-out 1; }
+.bubble.agent.done .mini-claude .mouth { animation: critter-talk 0.28s ease-in-out 4 alternate; }
+.agent-power {
+  margin-top: 0.4rem;
+  padding: 0.15rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(217, 119, 87, 0.65);
+  background: transparent;
+  color: #d97757;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.agent-power:hover { background: rgba(217, 119, 87, 0.16); }
+.agent-power:disabled { cursor: wait; opacity: 0.6; }
+.agent-power:focus-visible { outline: 2px solid #d97757; outline-offset: 2px; }
 
 /* ---------- Tiny mode: the window app shrinks to Tiny alone (tinymode.js) ---------- */
 /* The window is see-through; the page paints its own background, except in tiny mode. */
@@ -1530,3 +1581,49 @@ body.pdf-drop .pdfdesk, body.pdf-drop #pdfEditBtn { outline: 2px dashed #2fc6a0;
 .pdfbox.qa { border-color: #2fc6a0; box-shadow: 0 0 0 1px #2fc6a0 inset; }
 .pdfbox-status .ghost-btn { min-height: 0; padding: 0.1rem 0.4rem; font-size: 0.72rem; }
 .pdfdesk.is-collapsed .pdfboxes { display: none; }
+
+/* R (rtab.js): a notebook in the right-hand panel, in place of the transcript. */
+.layout.r-on { width: 100%; grid-template-rows: minmax(0, 1fr); }
+.layout.r-on > .transcript-panel { display: none; }
+.rpanel { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; height: 100%; overflow: hidden; padding: 8px; box-sizing: border-box; }
+.rpanel[hidden] { display: none; }
+.rt-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rt-title { font-size: 13px; font-weight: 600; padding: 0 6px; font-family: "SF Mono", Menlo, monospace; color: #2fc6a0; }
+.rt-where, .rt-status { font-size: 12px; opacity: 0.65; }
+.rt-status:empty { display: none; }
+.rt-gap { flex: 1; }
+.rt-out { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; padding: 2px 4px 8px 2px; }
+.rt-cell { flex: none; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel-2); }
+.rt-head { display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 10px; font-size: 12px; color: var(--muted); background: rgba(47, 198, 160, 0.06); }
+.rt-pick { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.rt-pick input { margin: 0; accent-color: #2fc6a0; }
+.rt-code { margin: 0; padding: 6px 12px 8px; font: 12px/1.45 "SF Mono", Menlo, monospace; color: var(--muted); background: rgba(47, 198, 160, 0.06); border-bottom: 1px solid var(--line); white-space: pre-wrap; }
+.rt-body { padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
+.rt-text { margin: 0; font: 12.5px/1.45 "SF Mono", Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+.rt-error { color: var(--danger); }
+.rt-warning { color: #e0a84c; }
+.rt-message { color: var(--muted); }
+.rt-quiet { margin: 0; font-size: 12px; color: var(--muted); }
+.rt-note { flex: none; margin: 0; padding: 6px 10px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; }
+.rt-note.rt-you { align-self: flex-end; max-width: 85%; background: rgba(76, 141, 255, 0.16); }
+.rt-note.rt-brain { background: rgba(255, 255, 255, 0.05); }
+.rt-figure { margin: 0; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.rt-plot { max-width: 100%; height: auto; max-height: 70vh; border-radius: 8px; background: #fff; }
+.rt-tablewrap { display: flex; flex-direction: column; gap: 4px; }
+.rt-table { overflow-x: auto; max-height: 60vh; overflow-y: auto; }
+.rt-table table { border-collapse: collapse; font-size: 12.5px; }
+.rt-table th, .rt-table td { padding: 3px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.rt-table th { position: sticky; top: 0; background: var(--panel-3); text-align: left; }
+.rt-more { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.rt-tools { display: flex; gap: 4px; }
+.ghost-btn.tiny { padding: 1px 8px; font-size: 11px; }
+.rt-editor { display: flex; gap: 6px; align-items: flex-end; flex: none; }
+.rt-input { flex: 1; resize: vertical; min-height: 4.5em; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--panel-2); color: var(--text); font: 13px/1.45 "SF Mono", Menlo, monospace; }
+.rt-input.rt-pulse { animation: rt-pulse 1.2s ease-out 2; }
+@keyframes rt-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(47, 198, 160, 0.9); border-color: #2fc6a0; }
+  70% { box-shadow: 0 0 0 10px rgba(47, 198, 160, 0); border-color: #2fc6a0; }
+  100% { box-shadow: 0 0 0 0 rgba(47, 198, 160, 0); }
+}
+.rt-run { white-space: nowrap; }
+.rpanel.rt-busy .rt-status::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 50%; border: 2px solid #2fc6a0; border-right-color: transparent; animation: de-spin 0.8s linear infinite; vertical-align: -1px; }

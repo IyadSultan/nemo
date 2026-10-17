@@ -19,6 +19,7 @@ async function answerWithBrain(question, extras) {
   if (!writingNotes && window.brainDeck?.command(question)) return;
   if (!writingNotes && window.brainWord?.command(question)) return;
   if (!writingNotes && window.brainSlides?.command(question)) return;
+  if (!writingNotes && window.brainR?.command(question)) return;
   if (!writingNotes && runTerminalAsk(question)) return;
   const tinyMove = writingNotes ? "" : playTinyMove(question);
   if (!connected) setBusy(true);
@@ -194,7 +195,7 @@ async function answerWithBrain(question, extras) {
           if (parts.kind === "skill" && skillLabel) {
             bubble.querySelector(".who").textContent = skillLabel;
           }
-          bubble.querySelector(".text").textContent = spokenShown.trim();
+          renderMarkdown(bubble.querySelector(".text"), spokenShown.trim());
           if (parts.kind === "skill" && parts.written) showSkillDoc(bubble, parts.written);
           followTranscript();
         } else if (event.type === "usage") addBrainUsage(event);
@@ -221,11 +222,11 @@ async function answerWithBrain(question, extras) {
     if (bubble) {
       bubble.classList.remove("partial");
       if (finalParts.kind === "skill") {
-        bubble.querySelector(".text").textContent = spoken || "The plan is on the screen.";
+        renderMarkdown(bubble.querySelector(".text"), spoken || "The plan is on the screen.");
         if (skillLabel) bubble.querySelector(".who").textContent = skillLabel;
         showSkillDoc(bubble, written);
       } else {
-        bubble.querySelector(".text").textContent = spoken || written;
+        renderMarkdown(bubble.querySelector(".text"), spoken || written);
       }
       if (writingNotes) {
         bubble.classList.add(writingLecture ? "lecture-notes" : "minutes");
@@ -446,7 +447,7 @@ function addBubble(role, text, partial) {
     : role === "lecture" ? "Lecture"
     : role === "recap" ? "Recap"
     : "Brain";
-  const body = document.createElement("p");
+  const body = document.createElement("div");
   body.className = "text";
   body.textContent = text;
   bubble.append(who, body);
@@ -489,3 +490,278 @@ function setStatus(text) { statusText.textContent = text; }
 function setCapsuleState(state) { capsule.dataset.state = state; }
 // What Tiny is doing for the answer: "searching", "writing", "saved", or "".
 function setActivity(name) { capsule.dataset.activity = name; }
+
+// The reading bubble for a session, so the summary can replace "Reading what it did…".
+const agentVisits = new Map();
+
+/** The same Claude critter as the big one, drawn small beside a chat line. */
+function miniClaude() {
+  const holder = document.createElement("div");
+  holder.innerHTML = `<svg class="mini-claude" viewBox="20 0 560 470" aria-hidden="true"><g class="critter">
+      <rect class="arm arm-l" x="35" y="140" width="52" height="105"/>
+      <rect class="arm arm-r" x="513" y="140" width="52" height="105"/>
+      ${[85, 180, 370, 465].map((x, i) =>
+        `<rect class="leg" style="--i:${i}" x="${x}" y="340" width="50" height="110"/>`).join("")}
+      <rect class="body" x="85" y="35" width="430" height="310"/>
+      <g class="eyes">
+        <rect x="160" y="120" width="40" height="80"/>
+        <rect x="400" y="120" width="40" height="80"/>
+      </g>
+      <rect class="mouth" x="270" y="235" width="60" height="40"/>
+    </g></svg>`;
+  return holder.firstElementChild;
+}
+
+/**
+ * A Claude session in some Terminal.
+ * phase "start" is the prompt. "reading" waits for the brain. "done" is the summary.
+ */
+function rememberAgentPlace(bubble, data) {
+  if (data.cwd) bubble.dataset.cwd = String(data.cwd);
+  if (data.name) bubble.dataset.name = String(data.name);
+  if (data.place) bubble.dataset.place = String(data.place);
+  if (data.session) bubble.dataset.session = String(data.session);
+}
+
+/**
+ * Exit and Wake are for a Claude in the Terminal.
+ * Exit shows while that Claude is still running. Wake shows after it has quit.
+ * A Cursor agent (Grok and the others) does not get these buttons.
+ */
+function setAgentPower(bubble, action) {
+  if ((bubble.dataset.place || "terminal") === "cursor") {
+    bubble.querySelector(".agent-power")?.remove();
+    return;
+  }
+  let button = bubble.querySelector(".agent-power");
+  if (!button) {
+    button = document.createElement("button");
+    button.type = "button";
+    button.className = "agent-power";
+    button.addEventListener("click", () => runAgentPower(bubble));
+    bubble.querySelector(".agent-copy")?.append(button);
+  }
+  const wake = action === "wake";
+  button.dataset.action = wake ? "wake" : "exit";
+  button.textContent = wake ? "Wake" : "Exit";
+  button.title = wake
+    ? "Start Claude again in this folder, with the last chat remembered"
+    : "Quit this Claude and keep the chat";
+  button.setAttribute("aria-label", wake ? `Wake ${bubble.dataset.name || "Claude"}` : `Exit ${bubble.dataset.name || "Claude"}`);
+  button.disabled = false;
+}
+
+function agentPayload(bubble) {
+  return {
+    cwd: bubble.dataset.cwd || "",
+    name: bubble.dataset.name || "",
+    place: bubble.dataset.place || "terminal",
+    session: bubble.dataset.session || "",
+  };
+}
+
+/** Ask the server if this Claude is still running, then show Exit or Wake. */
+async function refreshAgentPower(bubble, allowWake) {
+  if (!bubble.isConnected) return;
+  if ((bubble.dataset.place || "terminal") === "cursor") return;
+  try {
+    const response = await fetch("/agents/alive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(agentPayload(bubble)),
+    });
+    const data = await response.json();
+    if (!response.ok || !bubble.isConnected) return;
+    if (data.awake) setAgentPower(bubble, "exit");
+    else if (allowWake || bubble.classList.contains("done")) setAgentPower(bubble, "wake");
+  } catch (err) {
+    console.error("Failed while checking if a Claude is awake:", err);
+  }
+}
+
+function bubblesForSession(session) {
+  if (!session) return [];
+  return [...transcriptEl.querySelectorAll(".bubble.agent")].filter((bubble) => bubble.dataset.session === session);
+}
+
+/** Exit quits a running Claude. Wake runs claude --continue so the old chat comes back. */
+async function runAgentPower(bubble) {
+  const button = bubble.querySelector(".agent-power");
+  const action = button?.dataset.action === "wake" ? "wake" : "exit";
+  const name = bubble.dataset.name || "Claude";
+  if (button) button.disabled = true;
+  setStatus(action === "wake" ? `Waking ${name}…` : `Exiting ${name}…`);
+  try {
+    const response = await fetch(action === "wake" ? "/agents/wake" : "/agents/exit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(agentPayload(bubble)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      const gone = data.asleep || /already be closed|already asleep/.test(String(data.error || ""));
+      if (gone) setAgentPower(bubble, "wake");
+      else if (data.awake) setAgentPower(bubble, "exit");
+      else if (button) button.disabled = false;
+      setStatus(data.error || (action === "wake" ? "I could not wake that Claude." : "I could not exit that Claude."));
+      return;
+    }
+    if (action === "wake") {
+      setAgentPower(bubble, "exit");
+      setStatus(`Woke ${name}. The last chat is coming back.`);
+      return;
+    }
+    setAgentPower(bubble, "wake");
+    setStatus(`Told ${name} to exit.`);
+  } catch (err) {
+    console.error("Failed while using Exit or Wake:", err);
+    setStatus(action === "wake" ? "I could not wake that Claude." : "I could not exit that Claude.");
+    if (button) button.disabled = false;
+  }
+}
+
+/** Cursor agents (Grok and the others) open in Cursor. Claude Code opens in Terminal. */
+function labelAgentButton(button, name, place) {
+  const inCursor = place === "cursor";
+  button.title = inCursor ? "Open this agent in Cursor" : "Open this Terminal";
+  button.setAttribute("aria-label", inCursor ? `Open ${name} in Cursor` : `Open the Terminal for ${name}`);
+}
+
+function agentHeading(name, phase, place) {
+  const where = place === "cursor" ? " · Cursor" : "";
+  if (phase === "start") return `${name}${where} · working`;
+  if (phase === "reading") return `${name}${where} · reading`;
+  return `${name}${where} · finished`;
+}
+
+/** Clicking the little Claude opens the Terminal (or Cursor) where that agent is. */
+async function openAgentTerminal(bubble) {
+  const name = bubble.dataset.name || "Claude";
+  setStatus(`Opening ${name}…`);
+  try {
+    const response = await fetch("/agents/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cwd: bubble.dataset.cwd || "",
+        name,
+        place: bubble.dataset.place || "terminal",
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      setStatus(data.error || "I could not find that Terminal.");
+      return;
+    }
+    setStatus(data.where === "Cursor" ? `Opened ${name} in Cursor.` : `Opened ${name} in Terminal.`);
+  } catch (err) {
+    console.error("Failed while opening an agent's Terminal:", err);
+    setStatus("I could not open that Terminal.");
+  }
+}
+
+/**
+ * Say the finished line out loud, like "ipolicies finished. It built the wiki."
+ * Kokoro on this Mac reads it, so it costs nothing; the Mac voice is the fallback.
+ * One at a time, after the brain stops talking. Quiet while a meeting or lecture is written down.
+ */
+let agentSpeech = Promise.resolve();
+function sayAgentDone(name, text) {
+  const line = forSpeech(`${name} finished. ${String(text || "").replace(/\[REDACTED-DIGITS\]/g, "a number")}`);
+  agentSpeech = agentSpeech.then(async () => {
+    while (brainBusy) await sleep(200);
+    if (meetingOn) return;
+    try {
+      const response = await fetch("/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: line, voice: localStorage.getItem("voice:kokoro") || "af_heart" }),
+      });
+      if (!response.ok) throw new Error(`Kokoro returned ${response.status}`);
+      const url = URL.createObjectURL(await response.blob());
+      const audio = new Audio(url);
+      await new Promise((resolve) => {
+        audio.onended = resolve;
+        audio.onerror = resolve;
+        audio.play().catch(resolve);
+      });
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed while speaking an agent's summary with Kokoro, using the Mac voice:", err);
+      await new Promise((resolve) => {
+        const utterance = new SpeechSynthesisUtterance(line);
+        utterance.onend = resolve;
+        utterance.onerror = resolve;
+        speechSynthesis.speak(utterance);
+      });
+    }
+  }).catch((err) => console.error("Failed while speaking an agent's summary:", err));
+}
+
+function showAgentVisit(data) {
+  const phase = data.phase === "done" ? "done" : data.phase === "reading" ? "reading" : "start";
+  const name = String(data.name || "Claude");
+  const session = String(data.session || "");
+  const text = String(data.text || "");
+  if (phase === "done" && session && agentVisits.has(session)) {
+    const bubble = agentVisits.get(session);
+    agentVisits.delete(session);
+    rememberAgentPlace(bubble, data);
+    bubble.classList.remove("working");
+    bubble.classList.add("done");
+    const who = bubble.querySelector(".who");
+    if (who) who.textContent = agentHeading(name, "done", bubble.dataset.place || "");
+    labelAgentButton(bubble.querySelector(".mini-claude-btn"), name, bubble.dataset.place || "");
+    renderMarkdown(bubble.querySelector(".text"), text);
+    setAgentPower(bubble, "wake");
+    refreshAgentPower(bubble);
+    for (const other of bubblesForSession(session)) {
+      if (other === bubble) continue;
+      refreshAgentPower(other, true);
+    }
+    followTranscript();
+    sayAgentDone(name, text);
+    return;
+  }
+  clearEmptyHint();
+  const bubble = document.createElement("article");
+  bubble.className = `bubble agent ${phase === "done" ? "done" : "working"}`;
+  rememberAgentPlace(bubble, data);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "mini-claude-btn";
+  labelAgentButton(button, name, bubble.dataset.place || "");
+  button.append(miniClaude());
+  button.addEventListener("click", () => openAgentTerminal(bubble));
+  const copy = document.createElement("div");
+  copy.className = "agent-copy";
+  const who = document.createElement("div");
+  who.className = "who";
+  who.textContent = agentHeading(name, phase, bubble.dataset.place || "");
+  const body = document.createElement("div");
+  body.className = "text";
+  // The finished summary is Claude's own words, often with lists and bold. The prompt stays plain.
+  if (phase === "done") renderMarkdown(body, text);
+  else body.textContent = text;
+  copy.append(who, body);
+  bubble.append(button, copy);
+  transcriptEl.appendChild(bubble);
+  if (phase === "done") setAgentPower(bubble, "wake");
+  else setAgentPower(bubble, "exit");
+  refreshAgentPower(bubble);
+  if (phase === "reading" && session) agentVisits.set(session, bubble);
+  followTranscript();
+  if (phase === "done") sayAgentDone(name, text);
+}
+
+// The server sends these when a Claude in a Terminal starts or finishes.
+control.addEventListener("agent", (event) => {
+  let data = {};
+  try {
+    data = JSON.parse(event.data || "{}");
+  } catch (err) {
+    console.error("Failed while reading an agent visit:", err);
+    return;
+  }
+  showAgentVisit(data);
+});

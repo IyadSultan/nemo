@@ -20,7 +20,7 @@ use std::rc::Rc;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use tao::{
-    dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
+    dpi::{LogicalPosition, LogicalSize, PhysicalPosition},
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
     platform::macos::WindowExtMacOS,
@@ -159,10 +159,12 @@ fn snapshot() -> Option<Vec<u8>> {
 }
 
 /// Shrink to Tiny in the bottom-right corner. Returns where the full window was.
-fn go_tiny(window: &Window) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
-    let was = (window.outer_position().ok()?, window.inner_size());
+/// Kept in points, not pixels: restoring pixels while Tiny is showing used the wrong scale
+/// and brought the app back at half size (the narrow phone layout).
+fn go_tiny(window: &Window) -> Option<(LogicalPosition<f64>, LogicalSize<f64>)> {
     let monitor = window.current_monitor()?;
     let scale = monitor.scale_factor();
+    let was = (window.outer_position().ok()?.to_logical(scale), window.inner_size().to_logical(scale));
     window.set_decorations(false);
     window.set_has_shadow(false);
     window.set_resizable(false);
@@ -177,7 +179,7 @@ fn go_tiny(window: &Window) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)
 }
 
 /// Back to the full window, where it was before.
-fn go_full(window: &Window, was: (PhysicalPosition<i32>, PhysicalSize<u32>)) {
+fn go_full(window: &Window, was: (LogicalPosition<f64>, LogicalSize<f64>)) {
     window.set_always_on_top(false);
     window.set_decorations(true);
     window.set_has_shadow(true);

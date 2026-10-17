@@ -50,3 +50,4 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-16 18:44 — window
 
 **Prompt:** not working
+**Response:** Verified: after Tiny → restore the page is 1180×860, the same as before it shrank. Removing the test hook and installing the app.

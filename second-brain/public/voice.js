@@ -473,6 +473,11 @@ async function askTyped(raw) {
     window.brainSlides.ask(question);
     return;
   }
+  // R is open on the right: the brain writes R for the notebook there.
+  if (window.brainR?.open) {
+    window.brainR.ask(question);
+    return;
+  }
   questionEndedAt = performance.now();
 
   // Gemini Live takes typed words on the same line.

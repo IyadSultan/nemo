@@ -195,12 +195,15 @@ Three different memories:
 | This chat | In the browser, sent with the next question | Until you end the call or press Clear |
 | Memories | `~/.brain/memories.md` | Until you say “forget that…” |
 | Day summary | `~/.brain/brain.md` | Kept. Newest part is put into every answer. Older days can still be found by search. |
+| Agent visits | `~/.brain/agents.md` | Kept. Who started work, the prompt, and a short summary when they finished. |
 
 Every question and answer is also appended to `second-brain/daylog/YYYY-MM-DD.md`.
 
 Each night at 23:30 the default model writes one section of `~/.brain/brain.md` for that day: people, work, decisions, preferences, open items. It reads the day’s calls, saved meetings, saved memos, and dated lines on agent wiki pages. It is told not to copy medical record numbers or patient names. You can run one day by hand with `POST /brain/summarize`.
 
 **Clear & save** writes an extra section for this conversation only: `## <day> — conversation at HH:MM`.
+
+When a Claude in a Terminal starts working, a small Claude appears in this chat with that agent's name and your prompt. Click that small Claude to open where it is working: the Terminal, or Cursor when the agent (Grok or another) is in Cursor. On a Terminal Claude, Exit quits it while it is still running, and Wake starts it again with `claude --continue` (the same as `claude -c`) so the last chat comes back. When it finishes, the brain reads what it did and the small Claude comes back with a short summary. Both moments are saved in `~/.brain/agents.md`, so you can ask who worked and when.
 
 Say **“learn that …”**, **“from now on …”**, or **“remember: always …”** to add a preference (up to 40 lines). **“Forget that …”** removes the closest line. **“What have you learned?”** reads them back.
 
@@ -549,6 +552,21 @@ It is a normal login shell in your home folder, inside the page (`terminal.js`).
 
 ---
 
+## R
+
+**R** in the top bar opens an R notebook in the right-hand panel, in place of the transcript, like Word and Slides. Type R in the box at the bottom and press **Run** (or Cmd+Enter). The output appears above it as a cell: printed text, data frames as tables (the first 200 rows), plots as pictures, and messages, warnings, and errors, in the order they happened, like running an `.R` file. One R session keeps your variables between runs. It works in `~/.brain/r`, so files you write land there.
+
+- **Open files** picks one or more CSV, Excel, RDS, RData, SPSS, Stata, or JSON files, copies them into `~/.brain/r`, and reads each into a variable named after the file (`survey.xlsx` becomes `survey`), showing its size and first rows.
+- Every plot and table has **Copy** (to the clipboard: a picture, or a table that pastes into Excel or Word) and **Save** (PNG, or CSV).
+- Each cell has a checkbox. **Export** writes the ticked cells (or all of them when none is ticked) to one HTML file, with the questions, replies, code, text, tables, and plots inside it, and asks where to save it. **Run again** on a cell puts its code back in the box and runs it.
+- When the brain fills the code box, the box pulses green so you know the code came from it.
+- **Clear** empties the output; R keeps its variables. **Restart R** starts a fresh session (variables gone, files stay). **Transcript** and **Close** bring the conversation back; R keeps running.
+- **The orb and the question box talk to the notebook while it is open.** Type or say “Hey, plot age by gender” and the brain writes the R, the notebook runs it, and the brain’s one-line reply sits above the cell. “What does that show?” is answered from the recent cells without running anything. The brain sees object names, sizes, and column names, never the values. Say “open R” from the main chat to open the panel.
+
+The session is `rserver.R` run by `rsession.js` (`POST /r/run`); plots are PNG files under `~/.brain/r/.out`. For a plain console, type `arf` in the Terminal (`brew install arf`).
+
+---
+
 ## Mascot
 
 **Settings → Mascot:**
@@ -673,6 +691,7 @@ You do not need this to use the app. It is here so a later change goes in the ri
 | `skills.js` | Find and run skills |
 | `shell.js` | Run a single local command (open a file or a site) |
 | `brain.js` | Day log and `brain.md` |
+| `agents.js` | Claude session visits, saved in `agents.md` |
 | `learnings.js` | “Learn that…” |
 | `pdf.js` | Turn the model’s HTML into a PDF and serve it |
 | `pdftools.js` | Edit existing PDFs |

@@ -308,7 +308,7 @@ async function answerDuringMeeting(question) {
         const event = JSON.parse(line.slice(6));
         if (event.type === "delta") {
           answer += event.text || "";
-          text.textContent = answer;
+          renderMarkdown(text, answer);
           followTranscript();
         } else if (event.type === "error") {
           throw new Error(event.message || "The selected model failed.");

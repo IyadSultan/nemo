@@ -9,7 +9,7 @@
  * ~/.brain/memories.md is separate: those are rules the user says out loud.
  */
 
-import { BRAIN_FILE } from "./config.js";
+import { AGENTS_FILE, BRAIN_FILE } from "./config.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -120,6 +120,7 @@ export function gatherDay(day, { meetingDir, notesDir, lectureDir }) {
     ["Lectures", lectureDir ? filesOfDay(lectureDir, day) : ""],
     ["Memos", filesOfDay(notesDir, day)],
     ["Claude Code sessions", wikiOfDay(day)],
+    ["Agent visits", agentsOfDay(day)],
   ];
   return sources
     .filter(([, text]) => text.trim())
@@ -212,6 +213,32 @@ export function brainNotes() {
 export function inBrainBlock(rel, block) {
   if (!rel.startsWith("brain.md#")) return false;
   return block.includes(`\n## ${rel.slice("brain.md#".length)}\n`);
+}
+
+/** Today's agent visits in agents.md, for the nightly memory. */
+function agentsOfDay(day) {
+  const text = readText(AGENTS_FILE);
+  if (!text) return "";
+  const parts = [];
+  for (const block of text.split(/\n(?=## )/)) {
+    if (block.startsWith(`## ${day}`)) parts.push(block.trim());
+  }
+  return parts.join("\n\n");
+}
+
+/** The newest agent visits, so "who worked today" can be answered from the prompt. */
+export function agentsBlock() {
+  let text = readText(AGENTS_FILE);
+  if (!text.includes("\n## ")) return "";
+  const cap = 3500;
+  if (text.length > cap) {
+    const tail = text.slice(-cap);
+    const start = tail.indexOf("\n## ");
+    text = start >= 0 ? tail.slice(start) : tail;
+  } else {
+    text = text.slice(text.indexOf("\n## "));
+  }
+  return `Claude sessions on this Mac, from agents.md (newest last). When the user asks who was working, what an agent did, or when something was finished, answer from this log:\n${text.trim()}`;
 }
 
 /** The newest days of brain.md, for the prompt. */

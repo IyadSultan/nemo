@@ -18,6 +18,7 @@
  */
 
 import { DEFAULT_MODEL, DEFAULT_REASONING, BRAIN_DIR, MEMORY_MODEL, OLLAMA_URL, PORT, WIKI_PATH, __dirname } from "./config.js";
+import { installAgentHooks, registerAgents, startAgentWatch } from "./agents.js";
 import { appendDayLog, dayKey, saveConversation, summarizeDay } from "./brain.js";
 import { parseMeeting, spokenCalendar, spokenMeetingWaiting } from "./calendar.js";
 import { controlClients, registerControl, sendControl } from "./control.js";
@@ -44,6 +45,7 @@ import { registerDeck, rememberDocument } from "./deck.js";
 import { pdfCatcher, registerPdf } from "./pdf.js";
 import { answerPdfTool, qaBlock, registerPdfTools, rememberPdf, wantsPdfTool } from "./pdftools.js";
 import { saveUploadedDocument } from "./upload.js";
+import { registerR } from "./rsession.js";
 import { registerWordcraft } from "./wordcraft.js";
 import { registerDeckweb } from "./deckweb.js";
 import { MODELS, REASONING_LEVELS, VOICE_MODELS, getModel } from "./pricing.js";
@@ -123,6 +125,7 @@ app.get("/notes", async (req, res) => {
  */
 registerLive(app);
 registerControl(app);
+registerAgents(app);
 
 app.post("/medgem/warm", (_req, res) => {
   warmMedgem().catch((err) => console.error("Failed while loading GPT-OSS:", err?.message || err));
@@ -698,6 +701,8 @@ registerIMessage(app, askBrain);
 
 registerPdf(app);
 registerPdfTools(app);
+
+registerR(app);
 registerWordcraft(app);
 registerDeckweb(app);
 registerDeck(app);
@@ -907,6 +912,8 @@ try {
 
 // Only this Mac can connect; other machines on the network cannot.
 app.listen(PORT, "127.0.0.1", () => {
+  installAgentHooks();
+  startAgentWatch();
   console.log(`\nSecond brain → http://localhost:${PORT}`);
   console.log(`Default model: ${DEFAULT_MODEL} (thinking ${DEFAULT_REASONING}). Change it on the page.`);
   if (!process.env.OPENAI_API_KEY) {

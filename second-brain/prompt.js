@@ -3,7 +3,7 @@
  * ~/.brain/code.md, and the prompt built from notes, web pages and the chat so far.
  */
 
-import { brainBlock, inBrainBlock } from "./brain.js";
+import { agentsBlock, brainBlock, inBrainBlock } from "./brain.js";
 import { CODE_FILE, MANUAL_FILE } from "./config.js";
 import { DECK_ABILITY } from "./deck.js";
 import { isVaultQuestion, wantsEmail, wantsFile, wantsNews } from "./intents.js";
@@ -129,6 +129,7 @@ export function buildPrompt(question, hits, pages = [], history = [], memory = "
     `Here and now: ${hereAndNow()}`,
     learningsBlock(),
     learned,
+    agentsBlock(),
     memoryBlock,
     meetingBlock,
     "Earlier in this conversation:",
@@ -299,6 +300,7 @@ export function voiceInstructions() {
     "",
     learningsBlock(),
     brainBlock(),
+    agentsBlock(),
     guideBlock(),
   ].join("\n");
 }

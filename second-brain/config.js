@@ -75,6 +75,8 @@ export const FOLDERS_FILE = path.join(__dirname, "folders.json");
 // The four files the app always reads. They live together in the home folder.
 export const BRAIN_DIR = path.join(os.homedir(), ".brain");
 export const BRAIN_FILE = path.join(BRAIN_DIR, "brain.md");
+// Who worked, and when. One block when a Claude session starts, another when it finishes.
+export const AGENTS_FILE = path.join(BRAIN_DIR, "agents.md");
 export const MEMORIES_FILE = path.join(BRAIN_DIR, "memories.md");
 export const MANUAL_FILE = path.join(BRAIN_DIR, "manual.md");
 export const CODE_FILE = path.join(BRAIN_DIR, "code.md");
