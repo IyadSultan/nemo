@@ -140,6 +140,22 @@ enum UserEvent {
     PhonePhoto(Vec<u8>),
     /// The iPhone camera was not offered, so the page uses this Mac's camera instead.
     PhonePhotoMissing,
+    /// JPEG bytes of the part of the screen the user dragged over. None when they pressed Esc.
+    Snapshot(Option<Vec<u8>>),
+}
+
+/// Let the user drag over part of the screen; macOS draws the crosshair. Blocks until done.
+fn snapshot() -> Option<Vec<u8>> {
+    let file = std::env::temp_dir().join(format!("second-brain-snapshot-{}.jpg", std::process::id()));
+    let ok = Command::new("/usr/sbin/screencapture")
+        .args(["-i", "-x", "-t", "jpg"])
+        .arg(&file)
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    let bytes = if ok { std::fs::read(&file).ok() } else { None };
+    let _ = std::fs::remove_file(&file);
+    bytes.filter(|jpeg| !jpeg.is_empty())
 }
 
 /// Shrink to Tiny in the bottom-right corner. Returns where the full window was.
@@ -235,6 +251,14 @@ fn main() -> wry::Result<()> {
                 }
                 return;
             }
+            // Snapshot waits for the drag, so it runs off the main thread.
+            if req.body() == "snapshot" {
+                let proxy = proxy.clone();
+                std::thread::spawn(move || {
+                    let _ = proxy.send_event(UserEvent::Snapshot(snapshot()));
+                });
+                return;
+            }
             let event = match req.body().as_str() {
                 "tiny" => UserEvent::Tiny(true),
                 "full" => UserEvent::Tiny(false),
@@ -277,6 +301,11 @@ fn main() -> wry::Result<()> {
                     "window.receivePhonePhoto&&window.receivePhonePhoto(\"{}\")",
                     iphone_photo::data_url(&jpeg)
                 );
+                let _ = webview.evaluate_script(&js);
+            }
+            Event::UserEvent(UserEvent::Snapshot(jpeg)) => {
+                let data = jpeg.map(|jpeg| iphone_photo::data_url(&jpeg)).unwrap_or_default();
+                let js = format!("window.receiveSnapshot&&window.receiveSnapshot(\"{data}\")");
                 let _ = webview.evaluate_script(&js);
             }
             Event::UserEvent(UserEvent::PhonePhotoMissing) => {

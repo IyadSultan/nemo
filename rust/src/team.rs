@@ -5,6 +5,8 @@
 //!    splits the question into up to four separate jobs, or none when it is simple.
 //! 2. One named helper per job runs at the same time on Claude Sonnet 5.5,
 //!    never Opus. Helpers may read (never write) the selected folders.
+//!    In build mode ("write code", "make an app") they also write and run code,
+//!    but only inside one workspace folder (Claude Code's sandbox enforces it).
 //! 3. The lead reads what the helpers found and writes the answer, streamed.
 //!
 //! Every model call goes through Claude Code (`claude -p`) on the logged-in
@@ -54,6 +56,8 @@ pub const CREW: &[(&str, &str)] = &[
 
 const HELPER_TIMEOUT: Duration = Duration::from_secs(240);
 const LEAD_TIMEOUT: Duration = Duration::from_secs(300);
+/// Writing and testing code takes longer than reading notes.
+const BUILD_TIMEOUT: Duration = Duration::from_secs(900);
 
 /// Path of the Claude Code program. The server may start without ~/.local/bin on its PATH.
 pub fn claude_bin() -> PathBuf {
@@ -91,10 +95,15 @@ pub struct ClaudeCli {
     pub on_doing: Option<OnDoing>,
     /// Everything it writes and every tool it uses, for the helper's terminal on the page.
     pub on_log: Option<OnDoing>,
+    /// Build mode: it may write files and run commands, only inside this folder.
+    pub workspace: Option<PathBuf>,
 }
 
 impl ClaudeCli {
     fn args(&self, system: &str) -> Vec<String> {
+        if let Some(ws) = &self.workspace {
+            return build_args(&self.model, system, ws, &self.dirs, self.effort.as_deref());
+        }
         let tools = if self.dirs.is_empty() { "" } else { "Read,Glob,Grep" };
         let mut a: Vec<String> = [
             "-p", "--model", &self.model, "--tools", tools, "--no-session-persistence",
@@ -122,7 +131,7 @@ impl ClaudeCli {
         let (system, prompt) = split_messages(messages);
         let mut cmd = tokio::process::Command::new(&self.bin);
         cmd.args(self.args(&system))
-            .current_dir(self.dirs.first().cloned().unwrap_or_else(std::env::temp_dir))
+            .current_dir(self.workspace.clone().or_else(|| self.dirs.first().cloned()).unwrap_or_else(std::env::temp_dir))
             // An API key here would bill the API instead of the subscription.
             .env_remove("ANTHROPIC_API_KEY")
             .stdin(std::process::Stdio::piped())
@@ -195,6 +204,28 @@ impl ClaudeCli {
             }
         }
     }
+}
+
+/// Claude Code arguments for build mode. The workspace is the only working folder:
+/// Write and Edit are auto-accepted there and refused anywhere else, and Bash runs in
+/// the sandbox, which cannot write outside it. The note folders may only be read.
+pub fn build_args(model: &str, system: &str, ws: &std::path::Path, dirs: &[PathBuf], effort: Option<&str>) -> Vec<String> {
+    let sandbox = r#"{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false}}"#;
+    let mut a: Vec<String> = [
+        "-p", "--model", model, "--tools", "Read,Glob,Grep,Write,Edit,Bash", "--no-session-persistence",
+        "--setting-sources", "", "--strict-mcp-config", "--system-prompt", system,
+        "--output-format", "stream-json", "--include-partial-messages", "--verbose",
+        "--permission-mode", "acceptEdits", "--settings", sandbox, "--allowedTools", "Glob", "Grep",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    a.push(format!("Read(/{}/**)", ws.display()));
+    a.extend(dirs.iter().map(|d| format!("Read(/{}/**)", d.display())));
+    if let Some(e) = effort {
+        a.extend(["--effort".into(), e.into()]);
+    }
+    a
 }
 
 /// System messages become the system prompt; the rest is the prompt.
@@ -311,6 +342,7 @@ impl ClaudeCli {
             timeout: self.timeout,
             tokens: self.tokens.clone(),
             on_doing: self.on_doing.clone(),
+            workspace: self.workspace.clone(),
             on_log: self.on_log.clone(),
         }
     }
@@ -353,6 +385,20 @@ pub struct Planner {}
 pub struct Helper {}
 
 #[agent(
+    name = "build_planner",
+    description = "You lead a small team of programmers who write code and make files (apps, web pages, scripts, documents) in one shared workspace folder. Read the user's request. Decide whether the work splits into separate parts that helpers can write at the same time without touching each other's files, for example the page layout, the styles, the data, and a script. A small job needs no helpers: you will write it yourself. Reply with JSON only, no other text: {\"helpers\": [{\"task\": \"one clear, self-contained part in one sentence, naming the exact file or files this helper owns\"}]}. Use at most 4 helpers and never give two helpers the same file. Use an empty list for a small job. The helpers are named Ada, Milo, Juno, Kai, Nova and Remy. When the request speaks to one of them by name, reply with exactly that one helper and its name: {\"helpers\": [{\"name\": \"Ada\", \"task\": \"...\"}]}."
+)]
+#[derive(Clone, AgentHooks)]
+pub struct BuildPlanner {}
+
+#[agent(
+    name = "builder",
+    description = "You are one programmer in a small team. The current folder is the shared workspace: write your files there, and only the files your job names. You can read the user's note folders but never change them. Write complete, working code, not sketches. Run quick checks with Bash when they help (syntax check, a test run). Reply with a short report: the files you wrote, what each does, and anything the lead must connect or fix. Do not write the final answer for the user."
+)]
+#[derive(Clone, AgentHooks)]
+pub struct Builder {}
+
+#[agent(
     name = "lead",
     description = "You lead a research team and write the final answer."
 )]
@@ -375,6 +421,9 @@ pub struct Request {
     pub effort: Option<String>,
     #[serde(default)]
     pub dirs: Vec<PathBuf>,
+    /// Build mode: the folder where code and files are written. Nothing is written elsewhere.
+    #[serde(default)]
+    pub workspace: Option<PathBuf>,
 }
 
 fn default_lead() -> String {
@@ -451,7 +500,21 @@ pub fn parse_plan(text: &str) -> Plan {
 }
 
 /// The lead's prompt for the final answer: Node's prompt plus each helper's findings.
-pub fn final_prompt(prompt: &str, found: &[(String, String, String)], asked: &[String]) -> String {
+pub fn final_prompt(prompt: &str, found: &[(String, String, String)], asked: &[String], building: bool) -> String {
+    if building {
+        let mut out = format!("{prompt}\n\n---\nYou are the main author. The current folder is the workspace; write and run code only there.\n");
+        if found.is_empty() {
+            out.push_str("\nNo helpers were needed. Write the whole thing yourself.");
+        } else {
+            out.push_str("\nYour helpers already wrote their parts in the workspace. Their reports:\n");
+            for (name, task, text) in found {
+                out.push_str(&format!("\n### {name}: {task}\n{}\n", text.trim()));
+            }
+            out.push_str("\nRead their files, connect the parts, and fix anything broken or missing.");
+        }
+        out.push_str(" Check that it works (run it, or a syntax check). For anything shown in a browser, the main file must be index.html. Then tell the user in a few sentences what you made, the main file, and how to use it. Do not paste the code into the answer.");
+        return out;
+    }
     if found.is_empty() {
         return prompt.to_string();
     }
@@ -473,7 +536,13 @@ pub fn final_prompt(prompt: &str, found: &[(String, String, String)], asked: &[S
 pub type Send_ = mpsc::UnboundedSender<Value>;
 
 fn provider(model: &str, dirs: &[PathBuf], effort: Option<String>, timeout: Duration, tokens: &Arc<Mutex<Tokens>>, on_doing: Option<OnDoing>, on_log: Option<OnDoing>) -> Arc<ClaudeCli> {
+    builder_provider(model, dirs, effort, timeout, tokens, on_doing, on_log, None)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn builder_provider(model: &str, dirs: &[PathBuf], effort: Option<String>, timeout: Duration, tokens: &Arc<Mutex<Tokens>>, on_doing: Option<OnDoing>, on_log: Option<OnDoing>, workspace: Option<PathBuf>) -> Arc<ClaudeCli> {
     Arc::new(ClaudeCli {
+        workspace,
         bin: claude_bin(),
         model: model.into(),
         dirs: dirs.to_vec(),
@@ -502,11 +571,18 @@ pub async fn run(req: Request, tx: Send_) {
     let tokens = Arc::new(Mutex::new(Tokens::default()));
     let send = |v: Value| { let _ = tx.send(v); };
     let dirs: Vec<PathBuf> = req.dirs.iter().filter(|d| d.is_dir()).cloned().collect();
+    let ws = req.workspace.clone().filter(|w| w.is_dir());
+    let building = ws.is_some();
 
     // 1. Plan.
     send(json!({ "type": "status", "message": "Deciding whether helpers are needed…" }));
     let planner = provider(HELPER_MODEL, &[], Some("low".into()), LEAD_TIMEOUT, &tokens, None, None);
-    let plan = match run_once(Planner {}, planner, Task::new(req.prompt.clone())).await {
+    let planned = if building {
+        run_once(BuildPlanner {}, planner, Task::new(req.prompt.clone())).await
+    } else {
+        run_once(Planner {}, planner, Task::new(req.prompt.clone())).await
+    };
+    let plan = match planned {
         Ok(text) => parse_plan(&text),
         Err(err) => {
             eprintln!("Team planner failed: {err}");
@@ -538,7 +614,8 @@ pub async fn run(req: Request, tx: Send_) {
                 let (tx, id) = (tx.clone(), id.clone());
                 Arc::new(move |text: String| { let _ = tx.send(json!({ "type": "agent", "id": id, "log": text })); })
             };
-            let llm = provider(HELPER_MODEL, &dirs, None, HELPER_TIMEOUT, &tokens, Some(on_doing), Some(on_log.clone()));
+            let timeout = if building { BUILD_TIMEOUT } else { HELPER_TIMEOUT };
+            let llm = builder_provider(HELPER_MODEL, &dirs, None, timeout, &tokens, Some(on_doing), Some(on_log.clone()), ws.clone());
             let short = task_text(task);
             let earlier = recall(name)
                 .map(|(t, f)| format!("\n\nEarlier in this chat your job was: {t}\nWhat you found then:\n{f}"))
@@ -551,7 +628,8 @@ pub async fn run(req: Request, tx: Send_) {
             async move {
                 let _ = tx.send(json!({ "type": "agent", "id": id, "state": "working", "doing": "Starting" }));
                 on_log(format!("\x1b[1m{name}\x1b[0m on {HELPER_MODEL}\n\x1b[2mJob: {short_task}\x1b[0m\n\n"));
-                match run_once(Helper {}, llm, task).await {
+                let result = if building { run_once(Builder {}, llm, task).await } else { run_once(Helper {}, llm, task).await };
+                match result {
                     Ok(text) => {
                         on_log("\n\n\x1b[32m✓ Done\x1b[0m\n".into());
                         remember(&name, &short_task, &text);
@@ -572,9 +650,14 @@ pub async fn run(req: Request, tx: Send_) {
     }
 
     // 3. The lead writes the answer, streamed. With no helpers, the lead may read the folders itself.
-    let lead_dirs = if crew.is_empty() { dirs.clone() } else { Vec::new() };
-    let lead = provider(&req.lead_model, &lead_dirs, req.effort.clone(), LEAD_TIMEOUT, &tokens, None, None);
-    let mut task = Task::new(final_prompt(&req.prompt, &found, &asked));
+    // In build mode the lead is the main author: it writes, joins and tests in the workspace.
+    let lead_dirs = if crew.is_empty() || building { dirs.clone() } else { Vec::new() };
+    let lead_timeout = if building { BUILD_TIMEOUT } else { LEAD_TIMEOUT };
+    if building {
+        send(json!({ "type": "status", "message": if crew.is_empty() { "Writing the code…" } else { "Putting the parts together and testing…" } }));
+    }
+    let lead = builder_provider(&req.lead_model, &lead_dirs, req.effort.clone(), lead_timeout, &tokens, None, None, ws.clone());
+    let mut task = Task::new(final_prompt(&req.prompt, &found, &asked, building));
     task.system_prompt = Some(req.system.clone());
     let handle = AgentBuilder::<_, DirectAgent>::new(BasicAgent::new(Lead {}))
         .llm(lead)

@@ -252,6 +252,10 @@ Same idea as Meeting, for a talk. When you turn it off, the app asks who present
 
 **Photo** uses your iPhone camera when the phone is unlocked and nearby (Continuity Camera). Otherwise it uses this Mac’s camera. The picture is attached to the next question. Cloud models that accept images can describe it. Local models and Claude are told they cannot see the picture, so they will not invent what is in it.
 
+### Snapshot
+
+**Snapshot** captures part of the screen. Press it, drag over the area to keep (press Esc to cancel), and the picture is used exactly like a Photo: attached to the next question, or saved with the open meeting or lecture. The first time, macOS asks to allow Screen Recording for Second Brain. It works only in the Second Brain window, not in a browser tab.
+
 ### Document (add to the notes)
 
 **Document** (not the same as PDF tools) accepts a PDF, Word file, PowerPoint, RTF, or text file. A copy and a wiki page are saved under `raw/meetings`, and you can ask about that file right away. The code is `upload.js` (`POST /document`).
@@ -519,6 +523,21 @@ Speech in the editor needs Hey. The same words repeated within 30 seconds are ig
 Default model for these edits is Claude Sonnet (`DECK_ENHANCE_MODEL` and `DECK_LIVE_MODEL` can override).
 
 Routes: `GET /deck/themes`, `POST /deck/new`, `GET /deck/:id`, `POST /deck/:id/live`, `POST /deck/:id/enhance`, `POST /deck/:id/slide`, `POST /deck/:id/undo`, `GET /deck/:id/pptx`, `POST /deck/:id/save`, `POST /deck/:id/open`.
+
+---
+
+## Writing code and making artifacts
+
+Say or type **write**, **make**, or **build**, then what you want: “make a tip calculator app”, “write a python script that renames my photos by date”, “build a web page about my week”. “How do I write…” is still a question, not a build.
+
+- **Questions first.** When a request is too vague to build well (“build me a dashboard for my clinic”), the brain asks up to 3 short questions and waits. Your next reply answers them: say the answers, “you decide”, or “cancel”. A new build request instead drops the questions. They wait 15 minutes. Clear requests (“make a simple game”) start right away.
+- A planner splits big jobs into up to 4 parts; helpers (Ada, Milo, Juno, Kai…) on Claude Sonnet write their own files at the same time. Their avatars show live; click one to watch its terminal.
+- The lead (your picked Claude model, or Claude Opus when another model is picked) is the main author: it reads the helpers' files, joins them, fixes what does not fit, runs a check, and tells you what it made.
+- **Skills can build too.** Pick a skill with / and ask it to make something: “/hyperframes make a 10 second mp4 about this app”. The team reads the skill (and the skills next to it) and writes in the workspace. “This app” means Talk to your brain.
+- **Videos.** For a HyperFrames video the team writes the composition and checks it with `hyperframes lint`. Then the app renders `video.mp4` itself, outside the sandbox, because Chrome cannot record inside it, and opens it. A 10-second video takes about 15 s to render. Needs `npm i -g hyperframes` once.
+- Everything goes in a new folder, `~/.brain/workspace/yyyymmdd_title`. The team cannot write anywhere else: Claude Code's sandbox blocks Bash and file edits outside that folder. Your notes folders can be read but never changed.
+- When it is done, `index.html` opens in the browser (or the folder opens in Finder), and a card lists the files.
+- Code: `second-brain/build.js` (when to build, the folder, the finish), `rust/src/team.rs` (`build_args`, `BuildPlanner`, `Builder`). A build can take up to about 30 minutes; most take 30 s to 2 min.
 
 ---
 

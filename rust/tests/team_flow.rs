@@ -48,6 +48,7 @@ async fn plan_helpers_and_streamed_answer() {
         lead_model: "opus".into(),
         effort: Some("low".into()),
         dirs: vec![dir.clone()],
+        workspace: None,
     };
     team::run(req, tx).await;
     let mut events = Vec::new();
@@ -92,11 +93,11 @@ fn plans_are_read_even_with_words_around_them() {
 
 #[test]
 fn final_prompt_lists_each_helpers_findings() {
-    assert_eq!(team::final_prompt("Q", &[], &[]), "Q");
-    let p = team::final_prompt("Q", &[("Ada".into(), "notes".into(), " fact \n".into())], &[]);
+    assert_eq!(team::final_prompt("Q", &[], &[], false), "Q");
+    let p = team::final_prompt("Q", &[("Ada".into(), "notes".into(), " fact \n".into())], &[], false);
     assert!(p.starts_with("Q\n\n---\n") && p.contains("### Ada: notes\nfact\n"));
     assert!(p.contains("Do not mention the helpers by name"));
-    let p = team::final_prompt("Q", &[("Ada".into(), "notes".into(), "fact".into())], &["Ada".into()]);
+    let p = team::final_prompt("Q", &[("Ada".into(), "notes".into(), "fact".into())], &["Ada".into()], false);
     assert!(p.contains("The user asked Ada by name") && !p.contains("Do not mention"));
 }
 
@@ -108,4 +109,18 @@ fn a_helper_asked_by_name_gets_that_name() {
     // Milo keeps his name; the unnamed job and the unknown "Zed" get the next free names.
     assert_eq!(names, [("Ada", false), ("Milo", true), ("Juno", false)]);
     assert_eq!(crew[1].2, "check email");
+}
+
+#[test]
+fn build_mode_writes_only_in_the_workspace() {
+    let a = team::build_args("sonnet", "S", std::path::Path::new("/w/job"), &["/notes".into()], Some("low"));
+    let after = |flag: &str| a[a.iter().position(|x| x == flag).unwrap() + 1].clone();
+    assert_eq!(after("--permission-mode"), "acceptEdits");
+    assert!(after("--settings").contains("\"allowUnsandboxedCommands\":false"));
+    assert!(a.contains(&"Read(//w/job/**)".to_string()) && a.contains(&"Read(//notes/**)".to_string()));
+    // No --add-dir: the note folders must not become writable working folders.
+    assert!(!a.iter().any(|x| x == "--add-dir"));
+    assert!(!a.iter().any(|x| x == "Write" || x == "Edit" || x == "Bash"));
+    let p = team::final_prompt("Q", &[("Ada".into(), "page".into(), "wrote index.html".into())], &[], true);
+    assert!(p.contains("main author") && p.contains("### Ada: page") && p.contains("index.html"));
 }

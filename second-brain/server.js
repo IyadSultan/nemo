@@ -17,7 +17,7 @@
  * tokens, and those are billed at the output price.
  */
 
-import { DEFAULT_MODEL, DEFAULT_REASONING, MEMORY_MODEL, OLLAMA_URL, PORT, WIKI_PATH, __dirname } from "./config.js";
+import { DEFAULT_MODEL, DEFAULT_REASONING, BRAIN_DIR, MEMORY_MODEL, OLLAMA_URL, PORT, WIKI_PATH, __dirname } from "./config.js";
 import { appendDayLog, dayKey, saveConversation, summarizeDay } from "./brain.js";
 import { parseMeeting, spokenCalendar, spokenMeetingWaiting } from "./calendar.js";
 import { controlClients, registerControl, sendControl } from "./control.js";
@@ -35,6 +35,7 @@ import { cleanMailAddress, findRawEmails, indexRawMail, polishReply, replyWithOr
 import { cleanMedical, warmMedgem } from "./medgem.js";
 import { cleanMeetingNotes, lectureSummaryPrompt, meetingSummaryPrompt, oneLine, openCaptureFolder, photoDataUrl, registerMeetings } from "./meetings.js";
 import { lectureFolder, meetingFolder, memoFolder, memosForPrompt, runMemoryJob, spokenSavedMemo, vaultRoot } from "./memos.js";
+import { BUILD_NOTES, answerToPending, finishBuild, holdBuild, makeWorkspace, questionsFirst, skillBuildPrompt, wantsBuild } from "./build.js";
 import { askModelOnce, clientError, finishPdf, ollamaNamesMatch, replyNow, safeJson, stopAllOllamaModels, stopOllamaModel, streamAnswer, streamClaudeAnswer, streamLocalAnswer, writeEvent } from "./models.js";
 import { excerpt, notesForQuestion, parseNote, semantic } from "./notes.js";
 import { findOnMacJob, openFileJob, runFindOnMac, runOpenFile } from "./openfile.js";
@@ -366,6 +367,12 @@ app.post("/ask", async (req, res) => {
   if (tinyLine) return replyNow(res, tinyLine);
   // A skill is a saved set of instructions. "Use the PRD skill" loads that file.
   const skills = await listSkills();
+  // The answers to the questions asked before a build (with the skill it used, if any).
+  const buildReply = answerToPending(question);
+  if (buildReply === "cancel") return replyNow(res, "OK, I won't build it.");
+  if (buildReply) {
+    return answerBuild(req, res, buildReply.request, true, skills.find((s) => s.id === buildReply.skillId));
+  }
   const requestedId = typeof req.body?.skill === "string" ? req.body.skill : "";
   if (mentionsSkillStop(question)) return replySkillStop(res);
   const named = matchSkill(question, skills);
@@ -379,7 +386,10 @@ app.post("/ask", async (req, res) => {
       return replyNow(res, `I have ${skills.length} skills. Type / and the skill name.`);
     }
   }
-  if (activeSkill && (named || asksForASkill || !looksLikeOwnJob(question))) {
+  // "/hyperframes make a 10 second video": a skill that has to write files and run commands.
+  const skillTurn = activeSkill && (named || asksForASkill || !looksLikeOwnJob(question));
+  if (skillTurn && wantsBuild(question)) return answerBuild(req, res, question, false, activeSkill);
+  if (skillTurn) {
     const notes = cleanMeetingNotes(req.body?.meetingNotes);
     const prompt = skillInstructions(
       activeSkill,
@@ -401,6 +411,8 @@ app.post("/ask", async (req, res) => {
     }, readDirs);
     return;
   }
+  // "Write me a script", "make an app".
+  if (wantsBuild(question)) return answerBuild(req, res, question, false);
   if (isNoise(question)) {
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.flushHeaders?.();
@@ -615,6 +627,53 @@ app.post("/ask", async (req, res) => {
     res.end();
   }
 });
+
+/**
+ * The team writes code in a new workspace folder (build.js, rust/src/team.rs).
+ * An unclear request first gets up to 3 questions; the next reply answers them.
+ * Only Claude can build, so another picked model hands the job to Claude Opus.
+ */
+async function answerBuild(req, res, request, answered, skill = null) {
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  res.flushHeaders?.();
+  const history = cleanHistory(req.body?.history);
+  if (skill) writeEvent(res, { type: "skill", id: skill.id, name: skill.name });
+  try {
+    if (!answered) {
+      writeEvent(res, { type: "status", message: "Checking what you want…" });
+      const questions = await questionsFirst(request, history);
+      if (questions.length) {
+        holdBuild(request, questions, skill?.id || "");
+        const said = `Before I build it: ${questions.join(" ")} Or say you decide, or cancel.`;
+        writeEvent(res, { type: "work", card: { title: "Questions before building", lines: questions } });
+        writeEvent(res, { type: "delta", text: said });
+        writeEvent(res, { type: "done" });
+        return res.end();
+      }
+    }
+    const picked = getModel(req.body?.model) || getModel(DEFAULT_MODEL);
+    const builder = picked.subscription ? picked : getModel("claude-opus");
+    const asked = typeof req.body?.reasoning === "string" ? req.body.reasoning : DEFAULT_REASONING;
+    const effort = builder.reasoning.includes(asked) ? asked : "medium";
+    const prompt = skill
+      ? skillBuildPrompt(skill, request, history)
+      : `${buildPrompt(request, await notesForQuestion(request), [], history, cleanMemory(req.body?.memory), "", "")}\n\n${BUILD_NOTES}`;
+    // Read only: the notes, the app manual, and the skill with the skills next to it.
+    const readDirs = [...selected, BRAIN_DIR, ...(skill?.dir ? [path.dirname(skill.dir)] : [])];
+    const workspace = await makeWorkspace(request);
+    writeEvent(res, { type: "status", message: "Planning the code…" });
+    await streamClaudeAnswer(prompt, res, builder, effort, req.body?.spoken === true, readDirs, workspace);
+    const card = await finishBuild(workspace, (message) => writeEvent(res, { type: "status", message }));
+    writeEvent(res, { type: "work", card });
+    if (card.said) writeEvent(res, { type: "delta", text: ` ${card.said}` });
+  } catch (err) {
+    console.error("Failed while building:", err?.message || err);
+    writeEvent(res, { type: "error", message: clientError(err?.message, "Something went wrong while building.") });
+  }
+  writeEvent(res, { type: "done" });
+  res.end();
+}
 
 /** Ask through /ask, the same way the page does, and return the whole answer as text. */
 async function askBrain(question, history = []) {

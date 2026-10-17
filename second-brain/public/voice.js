@@ -55,6 +55,7 @@ const meetingBtn = document.getElementById("meetingBtn");
 const lectureBtn = document.getElementById("lectureBtn");
 const recapBtn = document.getElementById("recapBtn");
 const photoBtn = document.getElementById("photoBtn");
+const snapshotBtn = document.getElementById("snapshotBtn");
 const documentBtn = document.getElementById("documentBtn");
 const documentFile = document.getElementById("documentFile");
 const photoSheet = document.getElementById("photoSheet");

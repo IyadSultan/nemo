@@ -354,10 +354,12 @@ export function askClaude(model, system, prompt, effort, onText, timeoutMs = 120
   });
 }
 
-export async function streamClaudeAnswer(prompt, res, model, reasoning, spoken, readDirs) {
+export async function streamClaudeAnswer(prompt, res, model, reasoning, spoken, readDirs, workspace) {
   const dirs = Array.isArray(readDirs) && readDirs.length ? readDirs : selected;
   // Every Claude answer goes to the helper team first; it decides whether helpers are needed.
-  if (model.team !== false) return streamTeamAnswer(prompt, res, model, reasoning, spoken, dirs);
+  if (model.team !== false) return streamTeamAnswer(prompt, res, model, reasoning, spoken, dirs, workspace);
+  // Only the Rust team can write code; without it the answer would just describe the code.
+  if (workspace) throw new Error("The helper team is not running, so I cannot write code right now. Restart the app and try again.");
   const files = [
     `You can read these folders with the Read, Glob and Grep tools: ${dirs.join(", ")}.`,
     "Use them when the question is about a folder or file that the note excerpts do not cover. Read can open PDFs.",
@@ -383,8 +385,12 @@ const TEAM_TOKEN_FILE = path.join(path.dirname(new URL(import.meta.url).pathname
  * (rust/src/team.rs, on AutoAgents). The page gets `team` and `agent` events
  * for the helpers' avatars. If the Rust team is not running, the lead answers alone.
  */
-async function streamTeamAnswer(prompt, res, model, reasoning, spoken, dirs) {
-  const rules = [
+async function streamTeamAnswer(prompt, res, model, reasoning, spoken, dirs, workspace) {
+  const rules = workspace ? [
+    `You can write files and run commands with Write, Edit and Bash, but only in the workspace folder ${workspace}. You can read these folders but never change them: ${dirs.join(", ")}.`,
+    "Never type tool-call markup such as <invoke> in your answer.",
+    "Do not narrate your work.",
+  ].join(" ") : [
     dirs.length ? `When no helper findings are given, you can read these folders with the Read, Glob and Grep tools: ${dirs.join(", ")}. Read can open PDFs.` : "",
     "You cannot write files or run commands. To give the user a file, make a PDF with PDF_BODY and the app saves it. Never type tool-call markup such as <invoke> in your answer.",
     "Do not narrate your searching.",
@@ -396,13 +402,14 @@ async function streamTeamAnswer(prompt, res, model, reasoning, spoken, dirs) {
     upstream = await fetch(TEAM_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-team-token": token },
-      body: JSON.stringify({ system, prompt, lead_model: model.cliModel, effort: reasoning || null, dirs }),
-      signal: AbortSignal.timeout(600000),
+      body: JSON.stringify({ system, prompt, lead_model: model.cliModel, effort: reasoning || null, dirs, workspace: workspace || null }),
+      // Building: up to 15 min of helpers, then up to 15 min for the lead.
+      signal: AbortSignal.timeout(workspace ? 1900000 : 600000),
     });
     if (!upstream.ok) throw new Error(`status ${upstream.status}`);
   } catch (err) {
     console.error("The helper team is not available; the lead answers alone:", err?.message || err);
-    return streamClaudeAnswer(prompt, res, { ...model, team: false }, reasoning, spoken, dirs);
+    return streamClaudeAnswer(prompt, res, { ...model, team: false }, reasoning, spoken, dirs, workspace);
   }
   const decoder = new TextDecoder();
   let buffer = "";

@@ -108,10 +108,14 @@ define_class!(
         #[unsafe(method(readSelectionFromPasteboard:))]
         fn read_selection(&self, pasteboard: &NSPasteboard) -> Bool {
             log_line("picture arrived from the iPhone");
-            // Give the keyboard back to the page now that the picture is here.
-            if let Some((win, previous)) = BEFORE.with(|slot| slot.borrow_mut().take()) {
-                win.makeFirstResponder(previous.as_deref());
-            }
+            // Give the keyboard back to the page on the next turn, not now: macOS sends
+            // importFromDevice: to whatever is focused after this returns, and the page
+            // does not have that method, so focusing it here crashes the app.
+            DispatchQueue::main().exec_async(|| {
+                if let Some((win, previous)) = BEFORE.with(|slot| slot.borrow_mut().take()) {
+                    win.makeFirstResponder(previous.as_deref());
+                }
+            });
             let Some(image) = NSImage::initWithPasteboard(NSImage::alloc(), pasteboard) else {
                 return false.into();
             };
@@ -379,7 +383,11 @@ fn invoke(item: &NSMenuItem) -> bool {
             log_line(&format!("focused={focused} first={who}"));
         }
     }
-    menu.performActionForItemAtIndex(index);
+    // An Objective-C exception from the iPhone code would abort the whole app. Log it instead.
+    let result = objc2::exception::catch(std::panic::AssertUnwindSafe(|| menu.performActionForItemAtIndex(index)));
+    if let Err(err) = result {
+        log_line(&format!("iPhone command failed: {err:?}"));
+    }
     true
 }
 

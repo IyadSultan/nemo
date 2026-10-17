@@ -107,10 +107,8 @@ async function openPhotoCamera(deviceId) {
   await photoVideo.play();
 }
 
-/** A smaller JPEG of the current camera picture. */
-function shotFromVideo(video) {
-  const width = video.videoWidth;
-  const height = video.videoHeight;
+/** A smaller JPEG of a picture: a camera frame or a snapshot of the screen. */
+function shotFrom(source, width, height) {
   if (!width || !height) return "";
   const scale = Math.min(1, 1280 / Math.max(width, height));
   const canvas = document.createElement("canvas");
@@ -118,7 +116,7 @@ function shotFromVideo(video) {
   canvas.height = Math.max(1, Math.round(height * scale));
   const pen = canvas.getContext("2d");
   if (!pen) return "";
-  pen.drawImage(video, 0, 0, canvas.width, canvas.height);
+  pen.drawImage(source, 0, 0, canvas.width, canvas.height);
   let quality = 0.72;
   let data = canvas.toDataURL("image/jpeg", quality);
   while (data.length > 1_200_000 && quality > 0.4) {
@@ -126,6 +124,21 @@ function shotFromVideo(video) {
     data = canvas.toDataURL("image/jpeg", quality);
   }
   return data.startsWith("data:image/jpeg") ? data : "";
+}
+
+/** A smaller JPEG of the current camera picture. */
+function shotFromVideo(video) {
+  return shotFrom(video, video.videoWidth, video.videoHeight);
+}
+
+/** Shrink a picture that came as a file (a screen snapshot is large on a Retina screen). */
+function shrinkShot(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(shotFrom(img, img.naturalWidth, img.naturalHeight) || dataUrl);
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 }
 
 /** Show the picture in the transcript. */
@@ -202,6 +215,15 @@ window.receivePhonePhoto = (dataUrl) => {
   if (!dataUrl || !String(dataUrl).startsWith("data:image/jpeg")) return;
   keepPhoto(dataUrl);
   closePhotoSheet();
+};
+
+/** The window app calls this with the part of the screen that was dragged over. Empty when Esc was pressed. */
+window.receiveSnapshot = async (dataUrl) => {
+  if (!dataUrl || !String(dataUrl).startsWith("data:image/jpeg")) {
+    setStatus("No snapshot was taken.");
+    return;
+  }
+  keepPhoto(await shrinkShot(dataUrl));
 };
 
 /** The window app calls this when the iPhone camera is not available. */
@@ -378,6 +400,16 @@ photoBtn.addEventListener("click", () => {
   // A browser tab cannot hear the phone's shutter, so it uses the preview instead.
   if (window.ipc?.postMessage) askIphoneShutter();
   else startPhotoSheet();
+});
+
+snapshotBtn.addEventListener("click", () => {
+  // macOS draws the crosshair; the window app runs it (screencapture -i).
+  if (!window.ipc?.postMessage) {
+    setStatus("Snapshot works in the Second Brain window. In a browser tab, use Photo instead.");
+    return;
+  }
+  setStatus("Drag over the part of the screen to keep. Press Esc to cancel.");
+  window.ipc.postMessage("snapshot");
 });
 
 photoCancelBtn.addEventListener("click", closePhotoSheet);

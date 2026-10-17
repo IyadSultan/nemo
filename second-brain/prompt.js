@@ -197,6 +197,7 @@ export const APP_ABILITIES = [
   "Open a file: say open, then the file name. It looks in the notes first, then the whole Mac. A Word file opens in LibreOffice, where the user can read and edit it. Say open, then what it is about, then word document. This works when the file name is Arabic and the user asks in English. Never say you cannot open a file. Never tell the user to rename it or to save a PDF just so it can be opened.",
   "Find an email: say find the email from, or about, then the name or subject. Then say open number one, two, or three, and Outlook searches for it.",
   "Search the whole Mac like the Finder: say find, then the file name, then on my Mac. Then say open number one, two, or three.",
+  "Write code or make an artifact (a script, an app, a web page, a game, a tool): say write, make, or build, then what it is, such as make a tip calculator app. A team of helpers writes the parts at the same time and Claude puts them together and tests them, in a new folder under ~/.brain/workspace. If the request is unclear, the app first asks up to 3 questions; the next reply answers them. A web page opens in the browser when it is done. Never say you cannot write code.",
   "Read today's or tomorrow's calendar, today's emails, and which emails need an urgent reply.",
   "The app never sends an email by itself.",
   "When the user asks what you can do, or how one function works, the prompt includes the app manual (manual.md). Answer only from that manual.",
