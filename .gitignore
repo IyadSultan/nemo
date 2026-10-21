@@ -12,6 +12,9 @@ second-brain/desk.json.tmp
 second-brain/stickies.json
 second-brain/stickies.json.tmp
 
+# Fan reader binary (built from second-brain/fanread.c when the server starts)
+second-brain/bin/
+
 # iMessage bridge binary (built by voice/imessage-bridge/build.sh)
 voice/imessage-bridge/imessage-bridge
 
@@ -35,3 +38,9 @@ __pycache__/
 # PDFCraft tools bundle and web app (voice/install-pdfcraft.sh)
 second-brain/vendor/
 voice/pdf2docx-venv/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+graft/
+second-brain/plans.json
+second-brain/plans.json.tmp
+second-brain/plan-files/

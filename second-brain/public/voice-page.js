@@ -93,6 +93,7 @@ function humanError(err) {
   const msg = err?.message || String(err);
   if (/Permission|NotAllowed/i.test(msg)) return "Microphone permission denied. Allow the mic for this window.";
   if (/NotFound|DevicesNotFound|Overconstrained/i.test(msg)) return "That microphone is not connected. Pick Local or iPhone again.";
+  if (/mistral_api_key/i.test(msg)) return "The Mistral key is missing from the .env file.";
   if (/OPENAI_API_KEY|Missing/i.test(msg)) return "The API key is missing from the .env file.";
   if (/Failed to fetch|NetworkError/i.test(msg)) return "The voice app is not running. Start it, then press Start talking again.";
   return msg;
@@ -188,6 +189,7 @@ function renderWaits() {
   lastWaitEl.textContent = answerWaits.length ? seconds(answerWaits.at(-1)) : "–";
   avgWaitEl.textContent = answerWaits.length ? seconds(total / answerWaits.length) : "–";
   avgWaitEl.parentElement.title = `Average over ${answerWaits.length} answer${answerWaits.length === 1 ? "" : "s"} this call`;
+  if (typeof paintUsagePill === "function") paintUsagePill();
 }
 
 function renderChat() {
@@ -199,6 +201,7 @@ function renderChat() {
   outTokensEl.textContent = shownOut.toLocaleString();
   thinkTokensEl.textContent = chat.thinking.toLocaleString();
   chatPriceEl.textContent = formatUsd(usd);
+  if (typeof paintUsagePill === "function") paintUsagePill();
   const bits = [`${shownIn.toLocaleString()} input`, `${shownOut.toLocaleString()} output`];
   if (chat.audioIn || chat.audioOut) {
     bits.push(`${chat.audioIn.toLocaleString()} of the input was audio`);
@@ -244,6 +247,27 @@ function fillReasoning() {
   reasoningSelect.value = model.reasoning.includes(previous) ? previous : fallback;
 }
 
+/**
+ * Grey the settings the picked model does not use, so it is clear who hears, thinks, and speaks.
+ * A model that hears for itself (Voice, Gemini Live) needs no Listening or Wake.
+ * Gemini Live also thinks and speaks on its own.
+ */
+function markUnusedSettings() {
+  const model = selectedModel();
+  const unused = [
+    [reasoningSelect, model?.gemini],
+    [earsSelect, model?.hears],
+    [mouthSelect, model?.gemini],
+    [wakeSelect, model?.hears],
+  ];
+  for (const [select, off] of unused) {
+    const field = select.closest(".field");
+    field.classList.toggle("is-unused", Boolean(off));
+    if (off) field.title = `${model.label} hears you itself${model.gemini ? ", thinks, and speaks in its own voice" : ""}. This setting is not used. Pick another model to use it.`;
+    else field.removeAttribute("title");
+  }
+}
+
 function fillModels() {
   modelSelect.replaceChildren();
   for (const model of catalog.models) {
@@ -263,6 +287,7 @@ function fillModels() {
   fillReasoning();
   fillVoices();
   showRates();
+  markUnusedSettings();
 }
 
 async function releasePreviousLocalModel(previousId) {
@@ -1047,6 +1072,7 @@ modelSelect.addEventListener("change", () => {
   fillReasoning();
   fillVoices();
   showRates();
+  markUnusedSettings();
   releasePreviousLocalModel(previousId);
 });
 reasoningSelect.addEventListener("change", showRates);
@@ -1092,7 +1118,7 @@ reasoningSelect.addEventListener("change", showRates);
 
   btn.addEventListener("click", () => setFull(!full));
   bar.addEventListener("click", (event) => {
-    if (event.target.closest("button, a, input, select, textarea, label")) return;
+    if (event.target.closest("button, a, input, select, textarea, label, .clock-pill")) return;
     setFull(!full);
   });
   // Esc, or the browser leaving full screen on its own, puts the button back.

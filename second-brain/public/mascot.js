@@ -58,6 +58,18 @@
     </g>`;
   }
 
+  // A blink every 4-7 s: the eyes redraw for those few frames only.
+  function blinkLater() {
+    setTimeout(() => {
+      if (!document.hidden) {
+        mark.classList.add("blink");
+        setTimeout(() => mark.classList.remove("blink"), 150);
+      }
+      blinkLater();
+    }, 4000 + Math.random() * 3000);
+  }
+  if (mark) blinkLater();
+
   function applyChoice() {
     capsule.classList.toggle("is-claude", choice === "claude");
     if (choice === "claude") {

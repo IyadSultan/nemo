@@ -73,6 +73,7 @@ async function answerWithBrain(question, extras) {
   if (!writingNotes && runStickiesAsk(question)) return;
   if (!writingNotes && runCalendarAsk(question)) return;
   if (!writingNotes && runTerminalAsk(question)) return;
+  if (!writingNotes && runFanAsk(question)) return;
   const tinyMove = writingNotes ? "" : playTinyMove(question);
   if (!connected) setBusy(true);
   compressAbort?.abort();
@@ -155,7 +156,7 @@ async function answerWithBrain(question, extras) {
         if (cut < 0) return;
         const piece = forSpeech(unspoken.slice(0, cut));
         unspoken = unspoken.slice(cut);
-        if (!speech && !voiceBlocked && !macOnly) {
+        if (!speech && !voiceBlocked && !macOnly && !voxtralMouth()) {
           try {
             speech = speakStream(await speakerReady);
             setStatus(`Speaking as ${voiceLabel()}…`);
@@ -167,7 +168,7 @@ async function answerWithBrain(question, extras) {
         }
         // OpenAI voice is out of credits, or this model lives on the Mac.
         // Kokoro speaks for free. If Kokoro cannot say a line, it uses the Mac voice.
-        speech ??= (macOnly || voiceBlocked) ? kokoroVoice() : macVoice("Speaking with the Mac voice.");
+        speech ??= (voxtralMouth() || macOnly || voiceBlocked) ? kokoroVoice() : macVoice("Speaking with the Mac voice.");
         activeSpeech = speech;
         if (!heardCue) {
           heardCue = true;
@@ -851,12 +852,15 @@ function sayAgentDone(name, text, bubble) {
     bubble.classList.add("is-talking");
     group?.classList.add("is-talking");
     try {
+      const useVoxtral = voxtralMouth();
       const response = await fetch("/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: line, voice: localStorage.getItem("voice:kokoro") || "af_heart" }),
+        body: JSON.stringify(useVoxtral
+          ? { text: line, voice: voxtralVoiceFor(line), engine: "voxtral" }
+          : { text: line, voice: localStorage.getItem("voice:kokoro") || "af_heart" }),
       });
-      if (!response.ok) throw new Error(`Kokoro returned ${response.status}`);
+      if (!response.ok) throw new Error(`${useVoxtral ? "Voxtral" : "Kokoro"} returned ${response.status}`);
       const url = URL.createObjectURL(await response.blob());
       const audio = new Audio(url);
       try {
@@ -869,7 +873,7 @@ function sayAgentDone(name, text, bubble) {
         URL.revokeObjectURL(url);
       }
     } catch (err) {
-      console.error("Failed while speaking an agent's summary with Kokoro, using the Mac voice:", err);
+      console.error(`Failed while speaking an agent's summary with ${useVoxtral ? "Voxtral" : "Kokoro"}, using the Mac voice:`, err);
       await new Promise((resolve) => {
         const utterance = new SpeechSynthesisUtterance(line);
         utterance.onend = resolve;

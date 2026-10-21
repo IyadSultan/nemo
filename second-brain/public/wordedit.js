@@ -427,6 +427,7 @@
     window.brainPhoto?.close();
     window.brainCalendar?.close();
     window.brainStickies?.close();
+    window.brainPlans?.close();
     show(true);
     clearInterval(we.poll);
     we.poll = setInterval(pollSelection, 800);

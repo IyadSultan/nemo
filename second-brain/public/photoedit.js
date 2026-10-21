@@ -322,6 +322,7 @@
     window.brainR?.close();
     window.brainCalendar?.close();
     window.brainStickies?.close();
+    window.brainPlans?.close();
     show(true);
     if (!installed.tools) status("PhotoCraft is open. The one-step buttons need the photo tools. Run voice/install-photocraft.sh, then reload.");
   }

@@ -42,6 +42,11 @@ export const EMBED_MODEL = "embeddinggemma";
 export const DEFAULT_VOICE = "marin";
 export const PORT = Number(process.env.BRAIN_PORT) || 3001;
 
+/** Mistral key for Voxtral. The .env line may be MISTRAL_API_KEY or mistral_api_key. */
+export function mistralApiKey() {
+  return (process.env.MISTRAL_API_KEY || process.env.mistral_api_key || "").trim();
+}
+
 // Higher reasoning needs room for hidden thinking tokens.
 // Those tokens count toward this cap and toward the bill.
 export const OUTPUT_CAP = {

@@ -97,3 +97,22 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-21 06:41 — second-brain
 
 **Prompt:** <task-notification> <task-id>a8ac57b94cb8fc406</task-id> <tool-use-id>toolu_01YcTFpa8ubZ8iBvy4FMB3oq</tool-use-id> <output-file>/private/tmp/claude-501/-Users-USER-code-talk-to-your-brain/d5ae93f5-a271-4174-badb-1a7a5f7d810c/tasks/a8ac57b94cb8fc406.output</output-file> <status>completed</status> <summary>Agent "Review+optimize repeating jobs and watches" finished</summary> <note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note> <result>I fixe […]
+
+## 2026-10-21 07:07 — second-brain
+
+**Prompt:** [Image #1] are we sure the fan is not broken
+**Response:** Most of the heat comes from macOS and Chrome. Second Brain adds a moderate share. Here is the 6-second sample: | Process | CPU | What it is | |---|---|---| | `mediaanalysisd` | **90–100%** | macOS scanning your Photos library for faces and objects. It runs after a reboot (yours was 15 min ago) and stops when it finishes. | | WindowServer | 43–52% | macOS drawing the screen. It goes up when any app […]
+
+## 2026-10-21 07:08 — second-brain
+
+**Prompt:** [Image #2]
+**Response:** Loading the app page in a test browser to check the voice picker and look for JS errors.
+
+## 2026-10-21 07:22 — second-brain
+
+**Prompt:** B
+**Response:** Testing the voice switch in a test browser, with the OpenAI call stubbed out, to see which voice each session asks for.
+
+## 2026-10-21 07:29 — second-brain
+
+**Prompt:** voice is working but still nto chaning

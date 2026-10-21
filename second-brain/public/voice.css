@@ -94,7 +94,7 @@ summary:focus-visible {
   clip: rect(0 0 0 0);
 }
 
-/* Top bar: the cost meter fills the left side, tools stay on the right */
+/* Top bar: usage, clock, and fan sit with the tools. The empty middle stays clickable. */
 .topbar {
   display: flex;
   align-items: center;
@@ -106,8 +106,138 @@ summary:focus-visible {
   -webkit-backdrop-filter: blur(12px);
 }
 
+/* Pushes the clock, fan, and tools to the right. A click here still fills the screen. */
+.topbar-spacer { flex: 1 1 auto; min-width: 0.5rem; align-self: stretch; }
+
+/* Clock and weather sit together, just left of the fan speed. */
+.bar-cluster { display: flex; align-items: center; gap: 0.4rem; flex: 0 0 auto; }
+.clock-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  height: 1.85rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: 500 0.8rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+button.clock-pill { cursor: pointer; }
+.clock-pill.is-on {
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-strong), inset 0 -2px 0 var(--listen);
+}
+.clock-pill svg {
+  width: 14px; height: 14px; flex: 0 0 auto;
+  fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round;
+  color: var(--muted);
+}
+
+/* The closed weather button: a small sky icon and the outside temperature. */
+.weather-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 1.85rem;
+  padding: 0 0.65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: 500 0.8rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.weather-pill.is-on { box-shadow: inset 0 0 0 1px var(--line-strong), inset 0 -2px 0 var(--listen); }
+.weather-icon { display: inline-flex; width: 16px; height: 16px; flex: 0 0 auto; }
+.weather-icon svg { width: 100%; height: 100%; display: block; }
+
+/* The open card is meant to feel like the iPhone weather screen. */
+.weather-card {
+  z-index: 80;
+  max-height: min(82vh, 740px);
+  overflow: auto;
+  border-radius: 22px;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.4);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+}
+.weather-card[data-sky="clear-day"] { background: linear-gradient(180deg, #1f7fe0 0%, #63b4f6 58%, #b7ddfb 100%); }
+.weather-card[data-sky="clear-night"] { background: linear-gradient(180deg, #0c1730 0%, #1b2d55 70%, #243864 100%); }
+.weather-card[data-sky="partly-day"] { background: linear-gradient(180deg, #3b84c4 0%, #7eb0dc 100%); }
+.weather-card[data-sky="partly-night"] { background: linear-gradient(180deg, #17243f 0%, #3a4d70 100%); }
+.weather-card[data-sky="cloudy"] { background: linear-gradient(180deg, #667888 0%, #9aafc0 100%); }
+.weather-card[data-sky="fog"] { background: linear-gradient(180deg, #8b939c 0%, #c5ccd3 100%); }
+.weather-card[data-sky="rain"] { background: linear-gradient(180deg, #3c5268 0%, #6d879e 100%); }
+.weather-card[data-sky="snow"] { background: linear-gradient(180deg, #7d93a8 0%, #d7e4ef 100%); color: #102033; }
+.weather-card[data-sky="storm"] { background: linear-gradient(180deg, #262a42 0%, #4c466c 58%, #6d5d7c 100%); }
+.wx-hero { padding: 18px 18px 6px; }
+.wx-city { margin: 0; font-size: 17px; font-weight: 600; }
+.wx-now { margin: 0; font-size: 84px; font-weight: 200; letter-spacing: -3px; line-height: 0.88; }
+.wx-cond { margin: 2px 0 0; font-size: 18px; font-weight: 500; }
+.wx-range { margin: 2px 0 12px; font-size: 16px; font-weight: 600; }
+.wx-glass {
+  margin: 0 12px 10px;
+  padding: 8px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+.weather-card[data-sky="snow"] .wx-glass,
+.weather-card[data-sky="fog"] .wx-glass { background: rgba(255, 255, 255, 0.35); }
+.wx-hours { display: flex; gap: 2px; overflow-x: auto; padding: 4px 0 6px; scrollbar-width: none; }
+.wx-hour {
+  flex: 0 0 auto;
+  width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.wx-glyph, .wx-day-icon { display: inline-flex; }
+.wx-glyph { width: 26px; height: 26px; }
+.wx-glyph svg, .wx-day-icon svg { width: 100%; height: 100%; display: block; }
+.wx-pop { min-height: 13px; color: #d7efff; font-size: 11px; font-weight: 600; }
+.weather-card[data-sky="snow"] .wx-pop { color: #1d4e89; }
+.wx-day {
+  display: grid;
+  grid-template-columns: 4.2rem 1.5rem 1.8rem 1fr 1.8rem;
+  gap: 0.4rem;
+  align-items: center;
+  min-height: 2.15rem;
+  font-size: 15px;
+  font-weight: 500;
+}
+.wx-day + .wx-day { border-top: 1px solid rgba(255, 255, 255, 0.18); }
+.wx-day-icon { width: 22px; height: 22px; }
+.wx-lo, .wx-hi { font-variant-numeric: tabular-nums; }
+.wx-lo { text-align: right; opacity: 0.78; }
+.wx-track { position: relative; height: 4px; border-radius: 99px; background: rgba(255, 255, 255, 0.24); }
+.wx-fill {
+  position: absolute; top: 0; bottom: 0; border-radius: inherit;
+  background: linear-gradient(90deg, #64d2ff, #ffd60a 72%, #ff9f0a);
+}
+.wx-facts { display: grid; grid-template-columns: 1fr 1fr 1fr; text-align: center; padding-top: 10px; padding-bottom: 10px; }
+.wx-fact-label { display: block; font-size: 11px; font-weight: 500; opacity: 0.78; }
+.wx-fact b { display: block; margin-top: 2px; font-size: 18px; font-weight: 600; }
+.wx-foot { margin: 0; padding: 0 16px 14px; font-size: 11px; opacity: 0.75; }
+.wx-wait { margin: 0; padding: 28px 18px; font-size: 16px; }
+.fan-list li.is-place .fan-rpm { color: var(--text); }
+.fan-list li.is-sun { margin-top: 0.45rem; }
+.usage-monitor { position: relative; flex: 0 0 auto; }
+.fan-list li.is-cost .fan-rpm { color: var(--speak); }
+
 /* The chat meter stretches across the space the title used to take, so every
-   figure (including Cost) stays on one line. */
+   figure (including Cost) stays on one line. Kept for the plain ask page. */
 .meter {
   flex: 1 1 auto;
   min-width: 0;
@@ -897,6 +1027,11 @@ summary:focus-visible {
   min-width: 0;
   gap: 0.3rem;
 }
+/* A setting the picked model does not use (voice-page.js markUnusedSettings). */
+.field.is-unused { opacity: 0.4; }
+.field.is-unused > span::after { content: " · not used"; }
+.field.is-unused > span::after,
+.field-note { font-style: normal; text-transform: none; letter-spacing: 0; font-weight: 500; }
 
 .field.wide,
 .rates {
@@ -1552,6 +1687,14 @@ summary:focus-visible {
 .claude-mark .arm { transform-origin: 50% 50%; }
 .claude-mark .mouth { transform-origin: 50% 50%; }
 .claude-mark .eyes { transform-origin: 50% 50%; }
+/* At rest the whole SVG bobs: a GPU layer move, so the drawing is never repainted.
+   mascot.js adds .blink for 150 ms now and then. */
+.capsule.is-claude:is([data-state="idle"], [data-state="listening"], [data-state="muted"]):not([data-activity^="move-"]) .claude-mark {
+  will-change: transform;
+  animation: mark-bob 3s ease-in-out infinite;
+}
+@keyframes mark-bob { 50% { transform: translateY(-5px); } }
+.claude-mark.blink .eyes { transform: scaleY(0.15); }
 /* Listening: arms wave a few times, then rest (listening can last for hours). */
 .capsule.is-claude[data-state="listening"] .arm { animation: critter-arm 0.8s ease-in-out 6 alternate; }
 .capsule.is-claude[data-state="listening"] .arm-r { animation-delay: -0.4s; }
@@ -1587,6 +1730,7 @@ summary:focus-visible {
   75% { transform: rotate(8deg) translateY(-5%); }
 }
 @media (prefers-reduced-motion: reduce) {
+  .claude-mark,
   .claude-mark *,
   .mini-claude * { animation: none !important; }
 }
@@ -1730,6 +1874,57 @@ body.tiny-mode .capsule.has-mascot .claude-mark { width: 180px; height: 180px; }
 @media (prefers-reduced-motion: reduce) {
   .mate .critter, .mate .leg, .mate .eyes { animation: none !important; }
 }
+
+/* Fan speed, between the chat meter and the tool buttons. */
+.fan-monitor { position: relative; flex: 0 0 auto; }
+.fan-btn { border: 1px solid var(--line-strong); background: var(--panel-2); border-radius: 10px; }
+.fan-btn[data-effort="quiet"] { color: var(--listen); }
+.fan-btn[data-effort="easy"] { color: var(--text); }
+.fan-btn[data-effort="busy"] { color: var(--speak); }
+.fan-btn[data-effort="hard"] { color: var(--danger); }
+.fan-icon { transform-origin: 8px 8px; }
+.fan-btn[data-effort="busy"] .fan-icon,
+.fan-btn[data-effort="hard"] .fan-icon { animation: fan-spin 0.7s linear infinite; }
+.fan-btn[data-effort="hard"] .fan-icon { animation-duration: 0.35s; }
+@keyframes fan-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .fan-icon { animation: none !important; }
+}
+.fan-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  width: 260px;
+  padding: 0.75rem 0.85rem 0.65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+}
+.fan-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fan-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+.fan-list li { display: grid; grid-template-columns: 1fr auto auto; gap: 0.35rem 0.6rem; align-items: baseline; }
+.fan-list li.fan-temp { grid-template-columns: 1fr auto; }
+.fan-name { color: var(--muted); font-size: 0.8rem; }
+.fan-rpm { font: 500 0.85rem/1.2 var(--font-mono); font-variant-numeric: tabular-nums; }
+.fan-how { font-size: 0.72rem; color: var(--muted); }
+.fan-list li[data-effort="quiet"] .fan-rpm { color: var(--listen); }
+.fan-list li[data-effort="busy"] .fan-rpm { color: var(--speak); }
+.fan-list li[data-effort="hard"] .fan-rpm { color: var(--danger); }
+.fan-bar { grid-column: 1 / -1; height: 4px; border-radius: 999px; background: var(--panel-3); overflow: hidden; }
+.fan-bar span { display: block; height: 100%; border-radius: inherit; background: var(--listen); }
+.fan-list li[data-effort="easy"] .fan-bar span { background: var(--text); }
+.fan-list li[data-effort="busy"] .fan-bar span { background: var(--speak); }
+.fan-list li[data-effort="hard"] .fan-bar span { background: var(--danger); }
+.fan-note { margin: 0.55rem 0 0; font-size: 0.72rem; color: var(--muted); }
 
 /* Tools: one segmented group in the top bar. Each button turns on a view or a dock. */
 .tools {
@@ -1929,6 +2124,75 @@ body.pdf-drop .pdfdesk, body.pdf-drop #pdfEditBtn { outline: 2px dashed #2fc6a0;
 .cal-where { margin: 2px 0 0; font-size: 12px; opacity: 0.7; }
 .cal-empty { margin: 0; font-size: 12px; opacity: 0.65; }
 .calpanel.cal-busy .cal-status::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 50%; border: 2px solid #2fc6a0; border-right-color: transparent; animation: de-spin 0.8s linear infinite; vertical-align: -1px; }
+/* Plans tab: conferences, trips, and talks. */
+.layout.plans-on { width: 100%; }
+.layout.plans-on > .transcript-panel { display: none; }
+.plpanel { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; height: 100%; overflow: hidden; padding: 8px; box-sizing: border-box; }
+.plpanel[hidden] { display: none; }
+.pl-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pl-tabs, .pl-nav { display: flex; gap: 2px; }
+.pl-nav[hidden] { display: none; }
+.pl-tabs .ghost-btn.is-on { background: rgba(47, 198, 160, 0.16); border-color: #2fc6a0; }
+.pl-title { font-size: 13px; font-weight: 600; padding: 0 4px; }
+.pl-status { font-size: 12px; opacity: 0.7; }
+.pl-status:empty { display: none; }
+.pl-form { display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.pl-form[hidden] { display: none; }
+.pl-form-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.pl-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pl-field.is-wide { flex: 1 1 200px; }
+.pl-label { font-size: 11px; opacity: 0.7; }
+.pl-input { height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: 500 13px/1 var(--font-body); padding: 0 8px; box-sizing: border-box; }
+textarea.pl-input { height: auto; min-height: 60px; padding: 6px 8px; line-height: 1.4; resize: vertical; width: 100%; }
+.pl-field.is-wide .pl-input { width: 100%; }
+.pl-form-actions { display: flex; gap: 6px; }
+.pl-form-actions [hidden] { display: none; }
+.pl-form .ghost-btn.primary { background: #2fc6a0; border-color: #2fc6a0; color: #0b0d10; }
+.pl-body { flex: 1; min-height: 0; overflow: auto; }
+.pl-list { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
+.pl-past-toggle { align-self: flex-start; }
+.pl-month-label { margin: 8px 0 0; font-size: 12px; font-weight: 600; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.04em; }
+.pl-empty { margin: 0; font-size: 12px; opacity: 0.65; }
+.pl-card { padding: 8px 10px; border: 1px solid var(--line); border-left: 3px solid #2fc6a0; border-radius: 8px; background: var(--panel-2); }
+.pl-card.is-talk { border-left-color: #f0a742; }
+.pl-card.is-past { opacity: 0.55; }
+.pl-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.pl-when { margin: 0; font-size: 12px; opacity: 0.75; }
+.pl-name { margin: 2px 0 0; font-size: 14px; font-weight: 600; }
+.pl-place { margin: 2px 0 0; font-size: 12px; opacity: 0.75; }
+.pl-comment { margin: 4px 0 0; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; opacity: 0.85; }
+.pl-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: auto; grid-auto-rows: minmax(84px, 1fr); gap: 4px; min-height: 100%; }
+.pl-weekday { font-size: 11px; font-weight: 600; opacity: 0.65; padding: 0 4px; }
+.pl-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); cursor: pointer; overflow: hidden; }
+.pl-cell.is-other { opacity: 0.45; }
+.pl-cell.is-today { border-color: #2fc6a0; box-shadow: inset 0 0 0 1px #2fc6a0; }
+.pl-num { font-size: 11px; opacity: 0.7; }
+.pl-chip { display: block; width: 100%; text-align: left; border: 0; border-radius: 5px; padding: 2px 5px; background: rgba(47, 198, 160, 0.22); color: var(--text); font: 500 11px/1.3 var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.pl-chip.is-talk { background: rgba(240, 167, 66, 0.25); }
+.pl-year { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.pl-mini { padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.pl-mini-name { font-weight: 600; }
+.pl-mini-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; margin-top: 4px; text-align: center; font-size: 10px; }
+.pl-mini-head { opacity: 0.5; }
+.pl-mini-day { padding: 2px 0; border-radius: 4px; opacity: 0.8; }
+.pl-mini-day.has-plan { background: rgba(47, 198, 160, 0.35); opacity: 1; font-weight: 600; }
+.pl-mini-day.is-today { box-shadow: inset 0 0 0 1px #2fc6a0; }
+.pl-mini-count { margin: 4px 0 0; font-size: 11px; opacity: 0.7; }
+.pl-files { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.pl-file-list { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.pl-file-list:empty { display: none; }
+.pl-file { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 12px; }
+.pl-file.is-pending { border-style: dashed; }
+.pl-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pl-file-size { opacity: 0.65; white-space: nowrap; }
+.pl-card-files { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.pl-card.is-clash { border-color: rgba(240, 82, 82, 0.6); border-left-color: #f05252; }
+.pl-clash { margin: 4px 0 0; font-size: 12px; font-weight: 600; color: #f05252; }
+.pl-chip.is-clash { background: rgba(240, 82, 82, 0.35); box-shadow: inset 2px 0 0 #f05252; }
+.pl-cell.has-clash { border-color: #f05252; }
+.pl-cell.has-clash .pl-num::after { content: ""; display: inline-block; width: 7px; height: 7px; margin-left: 5px; border-radius: 50%; background: #f05252; vertical-align: 1px; }
+.pl-mini-day.has-clash { background: rgba(240, 82, 82, 0.55); }
+
 
 /* R (rtab.js): a notebook in the right-hand panel, in place of the transcript. */
 .layout.r-on { width: 100%; grid-template-rows: minmax(0, 1fr); }

@@ -18,17 +18,89 @@
   </head>
   <body>
     <header class="topbar">
-      <section class="meter" aria-label="Tokens for this whole chat">
-        <h2 class="sr-only">This chat</h2>
-        <dl class="counts">
-          <div title="From the end of your question to the first spoken word"><dt>Last answer</dt><dd id="lastWait">–</dd></div>
-          <div><dt>Avg answer</dt><dd id="avgWait">–</dd></div>
-          <div><dt>In</dt><dd id="inTokens">0</dd></div>
-          <div><dt>Out</dt><dd id="outTokens">0</dd></div>
-          <div><dt>Thinking</dt><dd id="thinkTokens">0</dd></div>
-          <div><dt>Cost</dt><dd id="chatPrice">$0.00</dd></div>
-        </dl>
-      </section>
+      <div class="usage-monitor" id="usageMonitor">
+        <button type="button" class="term-btn fan-btn" id="usageBtn" aria-expanded="false" aria-controls="usagePanel" title="Answer time and tokens for this chat">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="9" r="4.6"></circle>
+            <path d="M8 6.6V9l1.7 1"></path>
+            <path d="M6.4 2.6h3.2"></path>
+          </svg>
+          <span id="usageSummary">– · $0.00</span>
+        </button>
+        <div class="fan-panel" id="usagePanel" hidden>
+          <p class="fan-title">This chat</p>
+          <ul class="fan-list">
+            <li title="From the end of your question to the first spoken word">
+              <span class="fan-name">Last answer</span>
+              <span class="fan-rpm" id="lastWait">–</span>
+            </li>
+            <li>
+              <span class="fan-name">Average</span>
+              <span class="fan-rpm" id="avgWait">–</span>
+            </li>
+            <li>
+              <span class="fan-name">Input tokens</span>
+              <span class="fan-rpm" id="inTokens">0</span>
+            </li>
+            <li>
+              <span class="fan-name">Output tokens</span>
+              <span class="fan-rpm" id="outTokens">0</span>
+            </li>
+            <li>
+              <span class="fan-name">Thinking</span>
+              <span class="fan-rpm" id="thinkTokens">0</span>
+            </li>
+            <li class="is-cost">
+              <span class="fan-name">Cost</span>
+              <span class="fan-rpm" id="chatPrice">$0.00</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <span class="topbar-spacer"></span>
+
+      <div class="bar-cluster">
+      <div class="fan-monitor" id="clockMonitor">
+        <button type="button" class="clock-pill" id="clockBtn" aria-expanded="false" aria-controls="clockPanel" title="Amman, Iowa, and sunrise here">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="5.4"></circle>
+            <path d="M8 4.6V8l2.1 1.3"></path>
+          </svg>
+          <time id="clockTime">–:–</time>
+        </button>
+        <div class="fan-panel" id="clockPanel" hidden>
+          <p class="fan-title">Amman and Iowa</p>
+          <ul class="fan-list" id="clockList"></ul>
+          <p class="fan-note" id="clockNote">Sunrise and sunset follow this Mac’s clock.</p>
+        </div>
+      </div>
+
+      <div class="fan-monitor" id="weatherMonitor">
+        <button type="button" class="weather-pill" id="weatherBtn" aria-expanded="false" aria-controls="weatherPanel" title="Weather outside">
+          <span class="weather-icon" id="weatherIcon" aria-hidden="true"></span>
+          <span id="weatherTemp">–°</span>
+        </button>
+        <div class="weather-card" id="weatherPanel" hidden></div>
+      </div>
+      </div>
+
+      <div class="fan-monitor" id="fanMonitor">
+        <button type="button" class="term-btn fan-btn" id="fanBtn" aria-expanded="false" aria-controls="fanPanel" title="Mac fan speed">
+          <svg class="fan-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="1.15"></circle>
+            <path d="M8 6.7c.15-2.2 2-3.7 3.5-3-1.5.55-2.4 2-2.6 3"></path>
+            <path d="M9.15 8.7c2 1.1 3 3 2.2 4.1-1.1-1.1-2.4-1.7-3.1-1.5"></path>
+            <path d="M6.85 8.65C4.8 9.7 3.1 9.1 2.9 7.8c1.3.35 2.6.15 3.3-.25"></path>
+          </svg>
+          <span id="fanSpeed">Fans</span>
+        </button>
+        <div class="fan-panel" id="fanPanel" hidden>
+          <p class="fan-title">Mac fans</p>
+          <ul class="fan-list" id="fanList"></ul>
+          <p class="fan-note" id="fanNote"></p>
+        </div>
+      </div>
 
       <nav class="tools" aria-label="Tools">
         <button type="button" class="term-btn" id="pdfEditBtn" title="Upload PDFs to edit (or drop them on the window)">
@@ -48,6 +120,9 @@
         </button>
         <button type="button" class="term-btn" id="calendarBtn" title="Show the Outlook calendar that is ready on this Mac">
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3" width="13" height="11.5" rx="1.2"/><path d="M1.5 6.5h13M5 1.5v3M11 1.5v3"/></svg>Calendar
+        </button>
+        <button type="button" class="term-btn" id="plansBtn" title="Conferences, trips, and talks. An iMessage reminds you the day before.">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14.5s-4.5-4.6-4.5-8a4.5 4.5 0 0 1 9 0c0 3.4-4.5 8-4.5 8z"/><circle cx="8" cy="6.5" r="1.6"/></svg>Plans
         </button>
         <button type="button" class="term-btn" id="photoEditBtn" title="Edit a photo with PhotoCraft. Buttons rotate, brighten, and more. The editor also opens for crop and layers.">
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.2"/><circle cx="5.5" cy="6" r="1.2"/><path d="M14.5 10.5 11 7l-5 6.5"/></svg>Photo
@@ -334,7 +409,7 @@
               <select id="reasoningSelect" aria-label="Thinking level"></select>
             </label>
             <label class="field">
-              <span>Mascot</span>
+              <span>Mascot<em class="field-note"> · picture only</em></span>
               <select id="mascotSelect" aria-label="Mascot">
                 <option value="claude" selected>Claude</option>
                 <option value="tiny">Tiny</option>
@@ -346,6 +421,14 @@
                 <option value="whisper-auto" selected>Whisper on this Mac, English + Arabic</option>
                 <option value="whisper-both">Whisper English and Arabic together</option>
                 <option value="whisper">Whisper on this Mac, English only</option>
+                <option value="voxtral">Voxtral (Mistral cloud), English + Arabic</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Speaking</span>
+              <select id="mouthSelect" aria-label="Who reads the answer" title="Gemini still uses its own voice. Other models use this choice.">
+                <option value="model" selected>Follow the model</option>
+                <option value="voxtral">Voxtral (Mistral cloud), English + Arabic</option>
               </select>
             </label>
             <label class="field">
@@ -445,6 +528,8 @@
     <script src="/voice-events.js"></script>
     <script src="/voice-brain.js"></script>
     <script src="/voice-page.js"></script>
+    <script src="/fan.js"></script>
+    <script src="/weather.js"></script>
     <script src="/gemini.js"></script>
     <script src="/mascot.js"></script>
     <script src="/tinymode.js"></script>
@@ -457,6 +542,7 @@
     <script src="/photoedit.js"></script>
     <script src="/rtab.js"></script>
     <script src="/calendartab.js"></script>
+    <script src="/planstab.js"></script>
     <script src="/stickiestab.js"></script>
     <script type="module" src="/deck.js"></script>
   </body>

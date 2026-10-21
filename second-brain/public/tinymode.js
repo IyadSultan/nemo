@@ -44,6 +44,10 @@
     setTiny(false);
   }, true);
 
+  // A reload while small starts the page full-size; without this the window stayed
+  // 200 px and showed the top bar's clock instead of Tiny. The window ignores it when already full.
+  window.ipc.postMessage("full");
+
   setInterval(() => {
     if (busy()) touch();
     else if (!tiny && Date.now() - lastActive >= IDLE_MS) setTiny(true);

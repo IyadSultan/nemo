@@ -237,6 +237,7 @@
     window.brainR?.close();
     window.brainPhoto?.close();
     window.brainStickies?.close();
+    window.brainPlans?.close();
     show(true);
     load();
   }

@@ -15,7 +15,10 @@ async function hangUp({ keepStatus = false, keepMeeting = false } = {}) {
   connected = false;
   localStop = true;
   closeLectureForm(null);
-  voiceBlocked = "";
+  if (voiceBlocked) {
+    voiceBlocked = "";
+    fillVoices();
+  }
   muted = false;
   try { dc?.close(); } catch { /* already closed */ }
   dc = null;
@@ -250,6 +253,7 @@ function handleServerEvent(event) {
       lastQuestion = question;
       if (runCalendarAsk(question)) return;
       if (runTerminalAsk(question)) return;
+      if (runFanAsk(question)) return;
       playTinyMove(question);
       sendEvent({ type: "response.create" });
     }

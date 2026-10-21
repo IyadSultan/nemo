@@ -1,9 +1,9 @@
 /**
- * Local ears and voice: whisper servers for English and Arabic, Kokoro for speaking,
- * and the /transcribe and /speak routes.
+ * Ears and voice: whisper on this Mac for English and Arabic, Kokoro for speaking,
+ * and Voxtral at Mistral when the page asks for it. Routes: /transcribe and /speak.
  */
 
-import { FFMPEG_BIN, KOKORO_PYTHON, KOKORO_SCRIPT, KOKORO_URL, LOCAL_VOICE_MODEL, MULTI_VOICE_MODEL, WHISPER_AR_URL, WHISPER_BIN, WHISPER_MULTI_URL, WHISPER_SERVER_BIN, WHISPER_SERVER_URL, __dirname } from "./config.js";
+import { FFMPEG_BIN, KOKORO_PYTHON, KOKORO_SCRIPT, KOKORO_URL, LOCAL_VOICE_MODEL, MULTI_VOICE_MODEL, WHISPER_AR_URL, WHISPER_BIN, WHISPER_MULTI_URL, WHISPER_SERVER_BIN, WHISPER_SERVER_URL, __dirname, mistralApiKey } from "./config.js";
 import { runCommand } from "./shell.js";
 import express from "express";
 import { spawn } from "node:child_process";
@@ -143,6 +143,83 @@ export function combineLanguages(english, arabic) {
   };
 }
 
+// Voxtral 3 at Mistral. One model hears English and Arabic. Another reads them aloud.
+const MISTRAL_AUDIO = "https://api.mistral.ai/v1/audio";
+const VOXTRAL_HEAR = "voxtral-mini-transcribe-3-0";
+const VOXTRAL_SAY = "voxtral-mini-tts-3-0";
+const VOXTRAL_SARAH = "voice_478";
+
+/** A short message from a Mistral error body, never the audio and never the key. */
+function mistralError(data, status) {
+  const raw = data?.message || data?.error?.message || data?.detail || data?.error;
+  const text = typeof raw === "string" ? raw : "";
+  return text.slice(0, 180) || `Voxtral returned ${status}.`;
+}
+
+/**
+ * Send one wav clip to Voxtral and get the words back.
+ * Language is left unset so Mistral decides English or Arabic.
+ */
+export async function voxtralHear(wavPath) {
+  const key = mistralApiKey();
+  if (!key) throw new Error("Missing mistral_api_key. Add it to the .env file.");
+  const bytes = await fs.readFile(wavPath);
+  const form = new FormData();
+  form.append("model", VOXTRAL_HEAR);
+  form.append("file", new Blob([bytes], { type: "audio/wav" }), "clip.wav");
+  const response = await fetch(`${MISTRAL_AUDIO}/transcriptions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}` },
+    body: form,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    console.error("Failed while transcribing with Voxtral:", response.status);
+    throw new Error(mistralError(data, response.status));
+  }
+  const text = String(data.text || "").trim();
+  const language = typeof data.language === "string" && data.language
+    ? data.language
+    : (/[\u0600-\u06FF]/.test(text) ? "ar" : "en");
+  return { text, language };
+}
+
+/**
+ * Read one line with Voxtral. Returns wav bytes.
+ * voiceId is a Mistral voice such as voice_478 (Sarah) or voice_479 (Linda, Arabic).
+ */
+export async function voxtralSay(text, voiceId) {
+  const key = mistralApiKey();
+  if (!key) throw new Error("Missing mistral_api_key. Add it to the .env file.");
+  const voice = /^voice_\d+$/.test(String(voiceId || "")) ? voiceId : VOXTRAL_SARAH;
+  const response = await fetch(`${MISTRAL_AUDIO}/speech`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: VOXTRAL_SAY,
+      input: text,
+      voice_id: voice,
+      response_format: "wav",
+    }),
+  });
+  const type = response.headers.get("content-type") || "";
+  if (type.includes("audio")) {
+    if (!response.ok) throw new Error(`Voxtral returned ${response.status}.`);
+    return Buffer.from(await response.arrayBuffer());
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    console.error("Failed while speaking with Voxtral:", response.status);
+    throw new Error(mistralError(data, response.status));
+  }
+  const packed = data.audio_data || data.audio;
+  if (typeof packed !== "string" || !packed) throw new Error("Voxtral sent no audio.");
+  return Buffer.from(packed, "base64");
+}
+
 /** Ask the warm whisper server. Returns null if it is not up, so the caller can use whisper-cli. */
 export async function transcribeWithServer(wav, url = WHISPER_SERVER_URL) {
   try {
@@ -185,6 +262,12 @@ export function registerSpeech(app) {
         await fs.mkdir(dir, { recursive: true });
         await fs.writeFile(source, req.body);
         await runCommand(FFMPEG_BIN, ["-y", "-loglevel", "error", "-i", source, "-ac", "1", "-ar", "16000", wav]);
+        // ?engine=voxtral sends the clip to Mistral. Whisper on this Mac stays the default.
+        if (req.query.engine === "voxtral") {
+          const heard = await voxtralHear(wav);
+          console.log(`Transcribed (voxtral): ${heard.language}, ${heard.text.length} chars, wake ${WAKE_HEARD.test(heard.text) ? "yes" : "no"}`);
+          return res.json(heard);
+        }
         let text = "";
         let language = "en";
         if (hearBoth) {
@@ -231,8 +314,13 @@ export function registerSpeech(app) {
         console.log(`Transcribed (${mode}): ${language}, ${text.length} chars, wake ${WAKE_HEARD.test(text) ? "yes" : "no"}`);
         res.json({ text, language });
       } catch (err) {
-        console.error("Failed while transcribing locally:", err?.message || err);
-        res.status(500).json({ error: "The local voice model could not hear that clip." });
+        console.error("Failed while transcribing:", err?.message || err);
+        const voxtral = req.query.engine === "voxtral";
+        res.status(voxtral && /Missing mistral_api_key/.test(err?.message || "") ? 500 : voxtral ? 502 : 500).json({
+          error: voxtral
+            ? (err?.message || "Voxtral could not hear that clip.")
+            : "The local voice model could not hear that clip.",
+        });
       } finally {
         await fs.rm(source, { force: true }).catch(() => {});
         await fs.rm(wav, { force: true }).catch(() => {});
@@ -247,10 +335,22 @@ export function registerSpeech(app) {
     res.json({ ok: true });
   });
 
-  /** Turn one piece of the answer into speech with Kokoro, on this Mac. */
+  /** Turn one piece of the answer into speech. Kokoro on this Mac, or Voxtral when asked. */
   app.post("/speak", async (req, res) => {
     const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
     if (!text) return res.status(400).json({ error: "No text to speak." });
+    if (req.body?.engine === "voxtral") {
+      try {
+        const wav = await voxtralSay(text, req.body?.voice);
+        return res.type("audio/wav").send(wav);
+      } catch (err) {
+        console.error("Failed while speaking with Voxtral:", err?.message || err);
+        const missing = /Missing mistral_api_key/.test(err?.message || "");
+        return res.status(missing ? 500 : 502).json({
+          error: err?.message || "Voxtral could not speak that.",
+        });
+      }
+    }
     // A Kokoro voice name, like af_heart. Anything else gets Kokoro's default.
     const voice = /^[ab][fm]_[a-z]+$/.test(req.body?.voice) ? req.body.voice : undefined;
     try {

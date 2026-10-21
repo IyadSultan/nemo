@@ -49,6 +49,7 @@ const lastWaitEl = document.getElementById("lastWait");
 const avgWaitEl = document.getElementById("avgWait");
 const breakdownEl = document.getElementById("breakdown");
 const earsSelect = document.getElementById("earsSelect");
+const mouthSelect = document.getElementById("mouthSelect");
 const wakeSelect = document.getElementById("wakeSelect");
 const micSelect = document.getElementById("micSelect");
 const meetingBtn = document.getElementById("meetingBtn");
@@ -446,6 +447,7 @@ control.addEventListener("job", (event) => {
   loadDesk();
 });
 control.addEventListener("desk", () => loadDesk());
+control.addEventListener("plans", () => window.brainPlans?.refresh());
 
 // A typed question skips the wake phrase. Use it when the mic or dictation fails.
 typeForm.addEventListener("submit", (event) => {

@@ -12,6 +12,8 @@ let voiceBlocked = "";
 
 function ensureSpeaker() {
   if (voiceBlocked) return Promise.reject(new Error(voiceBlocked));
+  // The voice is fixed when the session opens, so a new pick needs a new session.
+  if (speaker && !speaker.closed && speaker.voice !== speakingVoice()) closeSpeaker(speaker);
   if (!speaker || speaker.closed) speaker = openSpeaker();
   return speaker.ready;
 }
@@ -22,7 +24,7 @@ function openSpeaker() {
   const ctx = new AudioContext();
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
-  const s = { peer, channel, ctx, analyser, remoteStream: null, closed: false, listener: null };
+  const s = { peer, channel, ctx, analyser, remoteStream: null, closed: false, listener: null, voice: speakingVoice() };
 
   peer.ontrack = (event) => {
     s.remoteStream = event.streams[0];
@@ -48,7 +50,7 @@ function openSpeaker() {
     await peer.setLocalDescription(offer);
     await waitForIceGathering(peer, 1500);
     const sdpResponse = await fetch(
-      `/session?voice=${encodeURIComponent(speakingVoice())}&model=gpt-realtime-2.1-mini&speak=1`,
+      `/session?voice=${encodeURIComponent(s.voice)}&model=gpt-realtime-2.1-mini&speak=1`,
       {
         method: "POST",
         body: peer.localDescription?.sdp || offer.sdp,
@@ -70,6 +72,7 @@ function openSpeaker() {
       }
       if (noCredits || /credit|quota|billing/i.test(message)) {
         voiceBlocked = "OpenAI has no credits left. The voice on this Mac will speak instead. Add credits, then start again.";
+        fillVoices();
         throw new Error(voiceBlocked);
       }
       throw new Error(message || "Voice control could not speak.");
@@ -301,6 +304,21 @@ const VOICES = {
       ]],
     ],
   },
+  voxtral: {
+    label: "Voxtral voice",
+    fallback: "voice_478",
+    groups: [
+      ["English", [
+        ["voice_478", "Sarah"],
+        ["voice_447", "Yael"],
+        ["voice_485", "Eric"],
+        ["voice_484", "Jesse"],
+      ]],
+      ["Arabic", [
+        ["voice_479", "Linda"],
+      ]],
+    ],
+  },
   gemini: {
     label: "Gemini voice",
     fallback: "Aoede",
@@ -325,24 +343,41 @@ if (!localStorage.getItem("voice:kokoro") && localStorage.getItem("kokoroVoice")
   localStorage.setItem("voice:kokoro", localStorage.getItem("kokoroVoice"));
 }
 
+/** True when Settings → Speaking is Voxtral. Gemini still talks with its own voice. */
+function voxtralMouth() {
+  return mouthSelect?.value === "voxtral";
+}
+
 /** Which speaker will read the answer for the model picked right now. */
 function speakerKind() {
   const model = typeof selectedModel === "function" ? selectedModel() : null;
   if (model?.gemini) return "gemini";
-  if (model?.local) return "kokoro";
+  if (voxtralMouth()) return "voxtral";
+  // No OpenAI credits: Kokoro speaks instead, so the menu offers Kokoro voices.
+  if (model?.local || voiceBlocked) return "kokoro";
   return "openai";
 }
 
-/** The name shown in the Voice menu, such as Cedar or Heart. */
-function voiceLabel() {
-  const value = speakingVoice();
+/** The name shown in the Voice menu, such as Cedar, Heart, or Sarah. */
+function voiceName(id) {
   for (const book of Object.values(VOICES)) {
     for (const [, options] of book.groups) {
-      const found = options.find(([id]) => id === value);
+      const found = options.find(([value]) => value === id);
       if (found) return found[1];
     }
   }
-  return value;
+  return id;
+}
+
+function voiceLabel() {
+  return voiceName(speakingVoice());
+}
+
+/** English Voxtral voices cannot read Arabic, so an Arabic line uses Linda. */
+function voxtralVoiceFor(text) {
+  const chosen = speakingVoice();
+  if (ARABIC.test(text) && chosen !== "voice_479") return "voice_479";
+  return chosen;
 }
 
 /** The voice name to send. Always one the current speaker knows. */
@@ -394,13 +429,19 @@ function kokoroVoice() {
     // markWait is false for a cue that should not reset the wait clock.
     push(text, markWait = true) {
       // Kokoro reads English only. Arabic goes to the Mac's Arabic voice.
+      // Voxtral reads both. An Arabic line uses Linda even if an English voice is picked.
+      const useVoxtral = voxtralMouth();
       const arabic = ARABIC.test(text);
-      const clip = arabic ? Promise.reject(new Error("Kokoro reads English only")) : fetch("/speak", {
+      const voiceId = useVoxtral ? voxtralVoiceFor(text) : speakingVoice();
+      const clip = (!useVoxtral && arabic) ? Promise.reject(new Error("Kokoro reads English only")) : fetch("/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voice: speakingVoice() }),
-      }).then((response) => {
-        if (!response.ok) throw new Error(`Kokoro returned ${response.status}`);
+        body: JSON.stringify(useVoxtral ? { text, voice: voiceId, engine: "voxtral" } : { text, voice: voiceId }),
+      }).then(async (response) => {
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || `${useVoxtral ? "Voxtral" : "Kokoro"} returned ${response.status}`);
+        }
         return response.blob();
       });
       clip.catch(() => {});
@@ -413,7 +454,7 @@ function kokoroVoice() {
           playing.onplaying = () => {
             if (!markWait) return;
             markAnswerStarted();
-            setStatus(`Speaking as ${voiceLabel()}.`);
+            setStatus(`Speaking as ${voiceName(voiceId)}.`);
             setCapsuleState("speaking");
           };
           await new Promise((resolve) => {
@@ -425,7 +466,9 @@ function kokoroVoice() {
           release = null;
           URL.revokeObjectURL(url);
         } catch (err) {
-          if (!arabic) console.error("Failed while speaking with Kokoro, using the Mac voice:", err);
+          if (!arabic || useVoxtral) {
+            console.error(`Failed while speaking with ${useVoxtral ? "Voxtral" : "Kokoro"}, using the Mac voice:`, err);
+          }
           if (stopped) return;
           const utterance = new SpeechSynthesisUtterance(text);
           if (arabic) utterance.lang = "ar-SA";

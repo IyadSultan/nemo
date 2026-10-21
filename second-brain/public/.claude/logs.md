@@ -58,3 +58,28 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-16 22:55 — public
 
 **Prompt:** try again
+**Response:** Your fans are working. Both are spinning, and they are at their slowest speed because the chip is still cool. Raw reading from the fan sensor: | | Speed now | Slowest | Fastest | |---|---|---|---| | Left fan | 2,319 rpm | 2,317 | 7,826 | | Right fan | 2,502 rpm | 2,317 | 7,826 | - A broken fan would show **0 rpm**, or would stay at the slowest speed while the CPU climbs past 90°. - Your CPU is at […]
+
+## 2026-10-21 07:09 — public
+
+**Prompt:** go ahead and fix it
+**Response:** Yes. The motion wasn't what cost power. The problem was how it was drawn. The old animation moved shapes inside the SVG, so WebKit had to redraw the critter 60 times a second. If the whole `<svg>` moves as one piece instead, WebKit draws the critter once, and the GPU just slides that finished image around. That costs very little power. What I'd do: 1. **Bob**: put the gentle idle bob on the `.clau […]
+
+## 2026-10-21 07:17 — public
+
+**Prompt:** voice is stuck again, i cannot change the voice.
+**Response:** The speech session opens once and is reused. It is only closed when a call ends, so after a typed question the old voice stays. I'll make the session reopen whenever the chosen voice changes.
+
+## 2026-10-21 07:24 — public
+
+**Prompt:** voice did not stop
+**Response:** I've fixed the voice change, but haven't tested it with real speech, since that needs a live OpenAI session. **Cause:** answers are spoken through an OpenAI voice session. The app opens that session once and keeps using it, and the voice is set when the session opens. The session was only closed when a call ended. If you typed questions, or never ended a call, every answer kept the first voice no […]
+
+## 2026-10-21 07:26 — public
+
+**Prompt:** A
+**Response:** Sorry, I misread your message as a request for a clock. I've removed it, so the corner shows the avatar again. I also found what I think made it show the time, and fixed that. **Likely cause:** if the app page reloads while the window is shrunk to the corner, the page goes back to its full-size layout but the window stays 200×200. That small box then shows the top-left of the full page, which is t […]
+
+## 2026-10-21 18:06 — public
+
+**Prompt:** agree.

@@ -21,7 +21,9 @@ function wakeStatus() {
   }
   // Voice mini hears you itself, so no listener runs on this page.
   if (!needsVoiceControl(selectedModel())) return WAKE_STATUS;
-  const who = earsSelect.value === "whisper"
+  const who = earsSelect.value === "voxtral"
+    ? "Voxtral at Mistral, English and Arabic. The clip leaves this Mac."
+    : earsSelect.value === "whisper"
     ? "Whisper on this Mac, English only"
     : earsSelect.value === "whisper-both"
       ? "Whisper twice, English and Arabic, both lines shown"
@@ -207,7 +209,9 @@ async function transcribeClip(clip, meeting) {
   // A meeting always uses the model that can write Arabic and English together.
   // both: English whisper and Arabic whisper listen to the same clip.
   // any: one whisper picks the language. English only cannot write Arabic.
-  const query = meeting
+  const query = earsSelect.value === "voxtral"
+    ? "?engine=voxtral"
+    : meeting
     ? "?lang=any"
     : earsSelect.value === "whisper-both"
     ? "?lang=both"
@@ -220,7 +224,11 @@ async function transcribeClip(clip, meeting) {
     body: clip,
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "The local voice model could not hear that.");
+  if (!response.ok) {
+    throw new Error(data.error || (earsSelect.value === "voxtral"
+      ? "Voxtral could not hear that."
+      : "The local voice model could not hear that."));
+  }
   return (data.text || "").trim();
 }
 
@@ -261,6 +269,8 @@ function warmJudge() {
   if (wakeSelect.value === "gemma") fetch("/jev/warm", { method: "POST" }).catch(() => {});
   if (wakeSelect.value === "medical") fetch("/medgem/warm", { method: "POST" }).catch(() => {});
   // The bigger whisper is slow to load the first time. Start it before they talk.
+  // Voxtral is a cloud call. There is no local model to warm up.
+  if (earsSelect.value === "voxtral") return;
   if (earsSelect.value === "whisper-both") {
     fetch("/transcribe/warm?lang=both", { method: "POST" }).catch(() => {});
   } else if (wakeSelect.value === "medical" || earsSelect.value !== "whisper") {
@@ -388,7 +398,9 @@ function heardWords(text) {
 
 // Chrome and Google cloud only heard English. A saved choice of either becomes English + Arabic.
 const savedEars = localStorage.getItem("ears");
-earsSelect.value = savedEars === "whisper" || savedEars === "whisper-both" ? savedEars : "whisper-auto";
+earsSelect.value = savedEars === "whisper" || savedEars === "whisper-both" || savedEars === "voxtral"
+  ? savedEars
+  : "whisper-auto";
 if (!earsSelect.value) earsSelect.value = "whisper-auto";
 localStorage.setItem("ears", earsSelect.value);
 wakeSelect.value = localStorage.getItem("wake") || "hey";
@@ -402,6 +414,11 @@ earsSelect.addEventListener("change", () => {
   localStorage.setItem("ears", earsSelect.value);
   warmJudge();
   if (connected && needsVoiceControl(selectedModel())) setStatus(listenStatus());
+});
+mouthSelect.value = localStorage.getItem("mouth") === "voxtral" ? "voxtral" : "model";
+mouthSelect.addEventListener("change", () => {
+  localStorage.setItem("mouth", mouthSelect.value);
+  fillVoices();
 });
 warmJudge();
 

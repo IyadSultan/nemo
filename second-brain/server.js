@@ -21,11 +21,13 @@ import { DEFAULT_MODEL, DEFAULT_REASONING, BRAIN_DIR, MEMORY_MODEL, OLLAMA_URL, 
 import { installAgentHooks, registerAgents, startAgentWatch } from "./agents.js";
 import { appendDayLog, dayKey, saveConversation, summarizeDay } from "./brain.js";
 import { parseMeeting, registerCalendar, spokenCalendar, spokenMeetingWaiting } from "./calendar.js";
+import { deliverPlanReminders, planJob, registerPlans, runPlanJob } from "./plans.js";
 import { chatMemorySticky, parseSticky, placeChatSticky, registerStickies, runStickyCommand } from "./stickies.js";
 import { controlClients, registerControl, sendControl } from "./control.js";
 import * as desk from "./desk.js";
 import { checkWatches, deliverReminders, deliverSchedules, registerDeskjobs, runDeskCommand, syncSuggestions } from "./deskjobs.js";
 import { emailSearchJob, runEmailSearch } from "./emailsearch.js";
+import { registerFans } from "./fans.js";
 import { readSavedFolders, refreshBrainNotes, refreshDayLogNotes, registerFolders, reloadNotes } from "./folders.js";
 import { imessageHandle, registerIMessage, runTextMe, sendIMessage, textMeJob } from "./imessage.js";
 import { BRAIN_COMMANDS, wantsCommandTable } from "./commands.js";
@@ -303,6 +305,7 @@ function looksLikeOwnJob(question) {
     || wantsEmail(question)
     || asksAboutThisApp(question)
     || parseSticky(question)
+    || planJob(question)
   );
 }
 
@@ -433,6 +436,7 @@ app.post("/ask", async (req, res) => {
     console.error("Failed while changing a sticky note:", err?.message || err);
     return replyNow(res, "I could not change the sticky notes.");
   }
+  if (planJob(question)) return replyNow(res, await runPlanJob(question, stickyAsk(req)));
   const learning = learningJob(question);
   if (learning) {
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -764,6 +768,8 @@ registerDeckweb(app);
 registerDeck(app);
 registerDeskjobs(app);
 registerCalendar(app);
+registerPlans(app);
+registerFans(app);
 registerStickies(app, {
   askModel: (instruction, text) => askModelOnce(getModel(DEFAULT_MODEL), instruction, text, process.env.OPENAI_API_KEY, 300),
 });
@@ -801,11 +807,13 @@ async function deliverBriefing() {
 setInterval(() => {
   deliverReminders().catch((err) => console.error("Failed while sending reminders:", err?.message || err));
   deliverSchedules(askBrain).catch((err) => console.error("Failed while running scheduled jobs:", err?.message || err));
+  deliverPlanReminders().catch((err) => console.error("Failed while sending plan reminders:", err?.message || err));
 }, 20_000);
 
 setTimeout(() => {
   deliverReminders().catch((err) => console.error("Failed while sending reminders:", err?.message || err));
   deliverSchedules(askBrain).catch((err) => console.error("Failed while running scheduled jobs:", err?.message || err));
+  deliverPlanReminders().catch((err) => console.error("Failed while sending plan reminders:", err?.message || err));
 }, 5_000);
 
 setInterval(() => {

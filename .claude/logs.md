@@ -1228,3 +1228,84 @@ Grouped the seven tool buttons into one segmented control (`nav.tools`) with inl
 **Prompt:** <task-notification> <task-id>a0e7c6869b61b247e</task-id> <tool-use-id>toolu_013aZxcKgNDVvPu9fd3bCUCZ</tool-use-id> <output-file>/private/tmp/claude-501/-Users-USER-code-talk-to-your-brain/d5ae93f5-a271-4174-badb-1a7a5f7d810c/tasks/a0e7c6869b61b247e.output</output-file> <status>completed</status> <summary>Agent "Review+optimize Stickies feature" finished</summary> <note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note> <result>I found and fixe […]
 
 - Desk repeating jobs/watches review (subagent): fixed got-it killing email/meeting watches, empty-first-check mail watch, card Pause/Resume by title, parse hijacks (move/pause/every), stopped-watch resurrection, Rust DST parity; ported mail/meeting watch fns to Rust; desk_parity fixture regenerated, cargo test green. Not committed.
+**Commit:** 7576e66 Stickies, Calendar tab, Photo editor, repeating jobs and watches; review fixes
+**Response:** All Rust and Node tests pass (39 Node). Final secrets scan, then commit and push.
+
+## 2026-10-21 07:00 — talk_to_your_brain
+
+**Prompt:** this app is consuming lots of CPU/GPU and making the machine hot. What is happening in the background
+- Fixed idle GPU heat in Second Brain: removed unconditional critter bob/blink animations, listening arm-wave now finite (6), all CSS animations pause when window hidden (voice.css, mascot.js).
+**Response:** Removed the endless idle animations from the CSS. Next, adding the pause-when-hidden switch.
+
+## 2026-10-21 07:12 — talk_to_your_brain
+
+**Prompt:** it dropped to 4%, commit it
+**Commit:** 1ed2b31 Stop idle mascot animations heating the Mac
+**Response:** The mascot fix is in, but I haven't seen it running yet. Press ⌘R in the Second Brain window to load it, then check the % CPU line in that Activity Monitor window. If the fix works, it should drop from about 46% to under 5% when the app sits idle. **What changed:** - **Idle mascot (`voice.css`)**: the Claude critter's endless bob and eye-blink are gone, and so are the blinks on the agent faces. At […]
+
+## 2026-10-21 07:14 — talk_to_your_brain
+
+**Prompt:** can i rstore moskit motion without consuming that much power
+**Response:** I committed the fix as `1ed2b31` on `rust-port`. Second Brain's graphics process now sits at about 4% when idle, down from about 46%. The commit contains only the animation fix, in `voice.css` and `mascot.js`. Your unfinished fan-monitor work is still uncommitted, including its rules in `voice.css`. I did not push. I also added this session to your wiki page. Next step: when the fan monitor is rea […]
+
+## 2026-10-21 07:14 — talk_to_your_brain
+
+**Prompt:** go ahead
+- Voice menu stuck: cause was OpenAI out of credits -> Kokoro fallback received OpenAI voice names. Menu now switches to Kokoro voices while blocked; speech session also reopens on voice change. Verified in Playwright with stubbed 429.
+**Response:** The fix works when tested in a browser, so your app window is probably still running the old code. **What I checked:** - In a test browser with the new code, the first answer opened the voice session with `marin`. After I picked a new voice, the next answer opened a new session with `cedar`. A third answer with no change reused the session instead of reopening it. - The server passes whatever voic […]
+
+## 2026-10-21 07:35 — talk_to_your_brain
+
+**Prompt:** how frequesnt are saving our memories, only 11:30 PM?
+
+## 2026-10-21 09:12 — talk_to_your_brain
+
+**Prompt:** add to the top icons next to calendar plans, and here I can choose a date from to where I will be on a conference, or a certain time date where I'll be giving a talk or something like this. This can have a list view or monthly or yearly views. And for every plan, I will enter the date from to or specific date and time if this is a special lecture, and place, and the contact who contacted me, or any comment. Leave it open, so I just leave the comments, the name of person, email, etc. in the comment section. And send me a reminder by iMessages the day before that I will have I'm having a meeting […]
+
+- 2026-10-21: Added Plans tab (second-brain/plans.js, public/planstab.js, plans.test.js): list/month/year views, plans.json store, day-before iMessage reminder at PLANS_REMIND_AT (09:00 default). Not committed yet.
+**Response:** Edit/save works. Cleaning up the scratch server and screenshots.
+
+## 2026-10-21 09:27 — talk_to_your_brain
+
+**Prompt:** Plan is not being saved when I asked it.
+**Response:** The Rust front on :3001 forwards `/plans` to Node, so only Node needs new code. Restarting the app with the documented launchd command:
+
+## 2026-10-21 09:28 — talk_to_your_brain
+
+**Prompt:** yes
+- 2026-10-21: Plans can now be added by chat/voice ("add a plan: ...") via planJob/runPlanJob in plans.js (model extracts JSON, cleanPlan validates). Restarted app via launchctl kickstart.
+**Response:** Tests pass. Restarting and trying a real request end to end:
+
+## 2026-10-21 09:31 — talk_to_your_brain
+
+**Prompt:** ability to attach files to each plan
+- 2026-10-21: Plans can now carry attached files (stored in second-brain/plan-files/<id>/, gitignored); Open launches the file on the Mac, Remove is two-click. Tested via UI + curl, including path-traversal names.
+**Response:** Works. Removing the test plan:
+
+## 2026-10-21 09:35 — talk_to_your_brain
+
+**Prompt:** there are conflicting plans, label the new conflicting plan with red, and also place on the calendar a red mark so I know.
+- 2026-10-21: Plans clash detection: overlapping days (two same-day talks clash only if <1 h apart); the later-added plan is marked red in list/month/year, clash days get a red mark; voice replies mention clashes.
+**Response:** Red chip, red day border and red dot all show. Removing the test plan:
+
+## 2026-10-21 16:58 — talk_to_your_brain
+
+**Prompt:** app shows time instead of claude avatar on right lower corner when app minimzes
+- 2026-10-21: Tiny mode (app minimized to bottom-right) now shows the time in a dark disc instead of the mascot/Claude mark (tinymode.js + voice.css).
+**Response:** Checking the look in a browser at the tiny window's 200×200 size:
+
+## 2026-10-21 17:03 — talk_to_your_brain
+
+**Prompt:** I asked for the avatar to show not the time
+- 2026-10-21: Reverted the tiny-mode clock (misread request). Real bug: page reload while window was tiny left a 200px window showing the top bar's clock; tinymode.js now posts "full" on load so the window restores.
+**Response:** That matches: a small box showing the time. Fix: when the page loads, it tells the window to go back to full size, so the two can't get out of step.
+
+## 2026-10-21 18:04 — talk_to_your_brain
+
+**Prompt:** [Image #1] I'm confused. Who's talking? Who's thinking? Please clarify.
+- 2026-10-21: Settings clarity: "Mascot · picture only" label; settings the picked model ignores are greyed with "· not used" (Gemini Live: Thinking/Listening/Speaking/Wake; Voice/Voice mini: Listening/Wake). voice-page.js markUnusedSettings.
+**Response:** "Mascot (picture only)" wraps onto two lines and pushes the row out of line. Restyling it to match the "· not used" note:
+
+## 2026-10-21 18:10 — talk_to_your_brain
+
+**Prompt:** yes, commit it all

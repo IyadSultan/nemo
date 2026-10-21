@@ -1197,6 +1197,7 @@
     window.brainR?.close();
     window.brainPhoto?.close();
     window.brainCalendar?.close();
+    window.brainPlans?.close();
     show(true);
     load().catch((err) => {
       console.error("Failed while opening sticky notes:", err);

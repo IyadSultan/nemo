@@ -445,6 +445,7 @@
     window.brainPhoto?.close();
     window.brainCalendar?.close();
     window.brainStickies?.close();
+    window.brainPlans?.close();
     show(true);
     clearInterval(sl.poll);
     sl.poll = setInterval(pollState, 800);
