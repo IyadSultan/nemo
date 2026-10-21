@@ -8,6 +8,7 @@
 process.env.TZ = "Asia/Amman";
 
 import fs from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -80,10 +81,12 @@ const steps = [
   ["addWatch", ["ftp://example.com/", ""]],
   ["addWatch", ["https://Example.COM", ""]],
   ["addWatch", ["https://news.example.org/a b", "  The   news "]],
-  ["recordWatch", ["00000004", "", "Timed out after 20 s"]],
+  ["recordWatch", ["old00002", "", "Timed out after 20 s"]],
+  ["recordWatch", ["00000006", "hashA", ""]],
+  ["recordWatch", ["00000006", "hashA", ""]],
+  ["recordWatch", ["00000006", "hashB", ""]],
+  // A draft is not a watch: it is left alone.
   ["recordWatch", ["00000005", "hashA", ""]],
-  ["recordWatch", ["00000005", "hashA", ""]],
-  ["recordWatch", ["00000005", "hashB", ""]],
   ["watchesToCheck", []],
   ["addWatch", ["https://example.com/", "Again"]],
   ["jobsSentence", []],
@@ -113,7 +116,55 @@ const steps = [
   ["publicDesk", []],
   ["forgetChat", []],
   ["jobsSentence", []],
+  // Email and meeting watches.
+  ["addMailWatch", ["  Eman  "]],
+  ["addMailWatch", ["eman"]],
+  ["addMailWatch", ["E"]],
+  ["addMeetingWatch", [9]],
+  ["addMeetingWatch", [0]],
+  ["addMeetingWatch", [8]],
+  ["setWatchMark", [() => idOf("Email from Eman"), "a.txt", { tell: false, receipt: "Watching." }]],
+  ["setWatchMark", [() => idOf("Email from Eman"), "a.txt\nb.txt", { tell: true, receipt: "A new email was saved." }]],
+  ["jobsSentence", []],
+  // "Got it" ends a page alert but keeps an email watch going.
+  ["clearAlerts", []],
+  ["jobsSentence", []],
+  ["stopWatch", ["meetings"]],
+  // A watch stopped while it was being checked stays stopped.
+  ["setWatchMark", [() => idOf("Meetings before 8:00 AM", true), "x", { tell: true, receipt: "r" }]],
+  ["recordWatch", ["00000006", "hashC", ""]],
+  ["stopWatch", ["Eman Sultan"]],
+  ["stopWatch", ["nobody"]],
+  // Repeating jobs. T is a Thursday afternoon.
+  ["addSchedule", [{ days: [1, 2, 3, 4, 5], hour: 8, minute: 0, mode: "ask", ask: "which emails need a reply" }, T]],
+  ["addSchedule", [{ days: [5, 4, 3, 2, 1, 1], hour: 8, minute: 0, mode: "ask", ask: "Which emails need a REPLY" }, T]],
+  ["addSchedule", [{ days: [1], hour: "8", minute: 0, ask: "x" }, T]],
+  ["addSchedule", [{ days: [1], hour: 8.5, minute: 0, ask: "x" }, T]],
+  ["addSchedule", [{ days: [6, 6, 9], hour: 21, minute: 30, mode: "remind", ask: "take the medicine" }, T]],
+  ["pauseSchedule", ["email"]],
+  ["pauseSchedule", ["email"]],
+  // Two weeks asleep: the medicine job runs once, the paused one not at all.
+  ["takeDueSchedules", [T + 14 * 86_400_000]],
+  ["takeDueSchedules", [T + 14 * 86_400_000]],
+  // Resumed on a Friday evening: the next run is Monday, not a missed one.
+  ["resumeSchedule", ["email", RealDate.UTC(2026, 9, 16, 17, 0)]],
+  ["addSchedule", [{ days: [0, 1, 2, 3, 4, 5, 6], hour: 0, minute: 0, mode: "ask", ask: "which emails need a reply from Sara" }, T]],
+  ["pauseSchedule", ["emails reply"]],
+  ["pauseSchedule", [() => ({ id: idOf("which emails need a reply") })]],
+  ["resumeSchedule", [{ id: "nope" }, T]],
+  ["moveSchedule", ["need reply", 9, 0, T]],
+  ["moveSchedule", [() => ({ id: idOf("which emails need a reply") }), 12, 15, T]],
+  ["jobsSentence", []],
+  ["dropSchedule", ["sara"]],
+  ["dropSchedule", ["missing words here"]],
+  ["dropSchedule", ["the job"]],
 ];
+
+/** The id of the newest job with this title. stopped also finds one that is no longer open. */
+function idOf(title, stopped = false) {
+  const jobs = JSON.parse(readFileSync(file, "utf8")).jobs;
+  return jobs.filter((job) => job?.title === title && (stopped || job.status !== "skipped")).at(-1)?.id;
+}
 
 const parses = [
   "stop watching", "Please cancel the watch.", "got it", "what's waiting?", "What should I do",
@@ -123,6 +174,19 @@ const parses = [
   "remind me in 9999 hours x", "remind me at 3 pm to call Sara", "remind me at 1:15 pm to eat", "remind me at 12 am to sleep",
   "remind me at 12 pm lunch", "remind me tomorrow at 9:30 am to round", "remind me at 13 pm x", "remind me at 9:75 am x",
   "remind me about it", "“open the file”", "", "   ",
+  "every weekday at 8 am, text me which emails need a reply",
+  "Every day at 9:30 pm remind me to take the medicine",
+  "every weekday at 8 text me the emails",
+  "pause the email job",
+  "change the email job to 9:30 am",
+  "tell me when Eman emails", "Tell me when Eman emails me", "let me know when I get new emails",
+  "watch for email from Dr. Sara", "please tell me when there is a new email from the dean",
+  "text me if I have a meeting before 9", "tell me if there's a meeting before 7:30 am",
+  "text me if I have a meeting before 12 am", "text me if I have a meeting before 5 pm",
+  "stop watching emails from Eman", "stop watching for email from Eman", "stop watching meetings",
+  "move the meeting to 3 pm", "pause the music", "resume the email job", "drop the email job", "cancel the meeting",
+  "change the email job to 13 pm", "every cell in the body has DNA", "every Monday morning at 8 am text me x",
+  "every weekends at 10 am remind me to call mom", "every Sunday at 12 am ask what is due this week",
 ];
 
 const log = console.log;
@@ -130,8 +194,10 @@ const error = console.error;
 console.log = () => {};
 console.error = () => {};
 const results = [];
-for (const [i, [fn, args]] of steps.entries()) {
+for (let [i, [fn, args]] of steps.entries()) {
   globalThis.__now = T + i * 1000;
+  // An id only known once earlier steps ran is filled in now, and recorded as the value.
+  args = args.map((arg) => (typeof arg === "function" ? arg() : arg));
   let callArgs = args;
   if (fn === "saveMeetingDraft" && args[0].date === "2026-10-16T06:00:00.000Z") {
     callArgs = [{ ...args[0], date: new globalThis.Date(args[0].date) }, args[1]]; // the patched Date, so instanceof works

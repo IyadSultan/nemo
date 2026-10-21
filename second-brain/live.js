@@ -66,6 +66,15 @@ export function registerLive(app) {
             },
           },
           {
+            name: "sticky_notes",
+            description: "Create, find, edit, arrange, archive, or delete sticky notes on the bulletin board. Pass the user's request in plain words.",
+            parameters: {
+              type: "OBJECT",
+              properties: { request: { type: "STRING", description: "What to do with the sticky notes, in the user's words." } },
+              required: ["request"],
+            },
+          },
+          {
             name: "app_manual",
             description: "Read the app manual. Call this when the user asks what you can do, or how one function works, such as PDF tools, the Word editor, or slides. Answer only from the text it returns.",
           },
@@ -135,6 +144,18 @@ export function registerLive(app) {
           name: "here_and_now",
           description: "Read this Mac's clock. Returns the current time and place in words the voice can say.",
           parameters: { type: "object", properties: {} },
+        },
+        {
+          type: "function",
+          name: "sticky_notes",
+          description: "Create, find, edit, arrange, archive, or delete sticky notes on the bulletin board. Pass the user's request in plain words.",
+          parameters: {
+            type: "object",
+            properties: {
+              request: { type: "string", description: "What to do with the sticky notes, in the user's words." },
+            },
+            required: ["request"],
+          },
         },
         {
           type: "function",

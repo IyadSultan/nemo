@@ -21,7 +21,8 @@ const FILE = process.env.BRAIN_MEMORIES_FILE || MEMORIES_FILE;
 const MAX_LINES = 40;
 const MAX_CHARS = 3000;
 
-const ADD = /^(?:please\s+)?(?:(?:learn|keep in mind|bear in mind)\s+(?:that\s+)?|from now on,?\s+)(.+)$/i;
+// "Save a memory that…" is the same kind of standing rule as "from now on".
+const ADD = /^(?:please\s+)?(?:(?:learn|keep in mind|bear in mind)\s+(?:that\s+)?|from now on,?\s+|(?:save|add|keep)\s+(?:me\s+)?(?:a\s+|this\s+)?memor(?:y|ies)\s*[:,-]?\s*(?:that\s+|about\s+|saying\s+)?)(.+)$/i;
 const FORGET = /^(?:please\s+)?(?:forget|unlearn|stop remembering)\s+(?:that\s+|about\s+)?(.+)$/i;
 const LIST = /\b(?:what (?:have you|did you) (?:learn(?:ed|t)|remember(?:ed)?)|what do you (?:know about me|remember)|what (?:are|is) (?:your|my) memor(?:y|ies)|(?:list|read|show)(?: me)? (?:your|my|the) (?:learnings|memories))\b/i;
 // "Remember: do not be lazy" is a rule for the brain, not a memo. Memos are facts ("remember that Sara owes me slides").

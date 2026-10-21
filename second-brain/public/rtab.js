@@ -272,6 +272,11 @@
     addNote("you", request);
     setBusy(true);
     status("Thinking…");
+    const started = Date.now();
+    const tick = setInterval(() => {
+      const seconds = Math.round((Date.now() - started) / 1000);
+      if (seconds >= 3) status(`Still writing the R… ${seconds}s`);
+    }, 1000);
     try {
       const recent = r.cells.slice(-4).map((c) => ({ code: c.code, output: c.output }));
       const response = await fetch("/r/ai", {
@@ -280,6 +285,7 @@
         body: JSON.stringify({ request, recent, model: document.getElementById("modelSelect")?.value || "" }),
       });
       const data = await response.json().catch(() => ({}));
+      clearInterval(tick);
       if (!response.ok) throw new Error(data.error || "The model did not answer.");
       if (data.say) addNote("brain", data.say);
       setBusy(false);
@@ -289,6 +295,7 @@
         await run(data.code);
       }
     } catch (err) {
+      clearInterval(tick);
       addNote("brain", err.message);
       setBusy(false);
       status("");
@@ -461,6 +468,9 @@ ${parts.join("\n")}
     if (!r.root) build();
     window.brainWord?.close();
     window.brainSlides?.close();
+    window.brainPhoto?.close();
+    window.brainCalendar?.close();
+    window.brainStickies?.close();
     show(true);
   }
 

@@ -76,6 +76,7 @@ async function startGeminiCall() {
     micCtx,
     micSource,
     playCtx: new AudioContext({ sampleRate: 24000 }),
+    playGain: null,
     worklet,
     playing: new Set(),
     playAt: 0,
@@ -85,9 +86,12 @@ async function startGeminiCall() {
     userHeardAt: 0,
   };
   gemini = g;
+  g.playGain = g.playCtx.createGain();
+  g.playGain.gain.value = answerVolume();
+  g.playGain.connect(g.playCtx.destination);
 
   worklet.port.onmessage = (event) => {
-    if (!g.ready || muted || paused || g.ws.readyState !== WebSocket.OPEN) return;
+    if (!g.ready || muted || paused || dictateHold || g.ws.readyState !== WebSocket.OPEN) return;
     g.ws.send(JSON.stringify({ realtimeInput: { audio: { data: pcmToBase64(event.data), mimeType: "audio/pcm;rate=16000" } } }));
   };
 
@@ -171,7 +175,7 @@ function playGeminiPcm(g, b64) {
   for (let i = 0; i < pcm.length; i += 1) channel[i] = pcm[i] / 0x8000;
   const source = g.playCtx.createBufferSource();
   source.buffer = buffer;
-  source.connect(g.playCtx.destination);
+  source.connect(g.playGain);
   const now = g.playCtx.currentTime;
   g.playAt = Math.max(g.playAt, now + 0.05);
   source.start(g.playAt);
@@ -196,7 +200,17 @@ async function answerGeminiTools(g, calls) {
   for (const call of calls) {
     let result = "";
     try {
-      if (call.name === "here_and_now") {
+      if (call.name === "sticky_notes") {
+        setStatus("Updating sticky notes…");
+        const response = await fetch("/stickies/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: String(call.args?.request || "") }),
+        });
+        const data = await response.json().catch(() => ({}));
+        result = data.text || data.error || "I could not change the sticky notes.";
+        window.brainStickies?.apply({ open: true });
+      } else if (call.name === "here_and_now") {
         result = (await (await fetch("/here")).json()).text;
       } else if (call.name === "app_manual") {
         setStatus("Checking the manual…");

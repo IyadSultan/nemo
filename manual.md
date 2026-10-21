@@ -56,7 +56,7 @@ Top bar:
 | Last answer / Avg answer | How long until the first spoken word |
 | In / Out / Thinking | Token counts for this whole chat |
 | Cost | Estimated price for cloud models. Claude (subscription) and local models show $0. |
-| **PDF tools** | Upload PDFs to edit. You can also drop PDF files on the window. |
+| **PDF** | Upload PDFs to edit. You can also drop PDF files on the window. |
 | **Word** | Opens the Word editor. |
 | **Terminal** | Opens or closes a terminal on this Mac. |
 
@@ -205,6 +205,8 @@ Each night at 23:30 the default model writes one section of `~/.brain/brain.md` 
 
 When a Claude in a Terminal starts working, a small Claude appears in this chat with that agent's name and your prompt. Click that small Claude to open where it is working: the Terminal, or Cursor when the agent (Grok or another) is in Cursor. On a Terminal Claude, Exit quits it while it is still running, and Wake starts it again with `claude --continue` (the same as `claude -c`) so the last chat comes back. When it finishes, the brain reads what it did and the small Claude comes back with a short summary. Both moments are saved in `~/.brain/agents.md`, so you can ask who worked and when.
 
+Every 6 hours the brain looks at every Claude that is still open in the Terminal. It also looks once, shortly after the app starts. If that Claude has had nothing new for 30 hours — no new chat, no typing in its tab, and it was not just started — the brain tells it to quit and then closes that Terminal tab. A tab still running something else is left open. Other tabs in the same window stay open. A Claude opened more recently is left alone. Claudes in Cursor, iTerm, or tmux are left alone. The close is written in `~/.brain/agents.md` and spoken, the same way a finished Claude is.
+
 Say **“learn that …”**, **“from now on …”**, or **“remember: always …”** to add a preference (up to 40 lines). **“Forget that …”** removes the closest line. **“What have you learned?”** reads them back.
 
 ---
@@ -253,7 +255,7 @@ Same idea as Meeting, for a talk. When you turn it off, the app asks who present
 
 ### Photo
 
-**Photo** uses your iPhone camera when the phone is unlocked and nearby (Continuity Camera). Otherwise it uses this Mac’s camera. The picture is attached to the next question. Cloud models that accept images can describe it. Local models and Claude are told they cannot see the picture, so they will not invent what is in it.
+**Photo** uses your iPhone camera when the phone is unlocked and nearby (Continuity Camera). Otherwise it uses this Mac’s camera. The picture is attached to the next question. Cloud models that accept images can describe it. Local models and Claude are told they cannot see the picture, so they will not invent what is in it. **Edit** under the picture, or **Photo** in the top bar, opens PhotoCraft to change it.
 
 ### Snapshot
 
@@ -279,11 +281,43 @@ Saved emails live as text files under `raw/` in the notes folder. The app re-rea
 | “Send an email to Haitham about the budget” | A new draft. “Reply” is not treated as a new email. |
 | “Open the email from Sara” | Opens that message in Outlook. |
 | “What meetings do I have today / tomorrow?” | Spoken from the calendar. |
+| “What did I ask this morning?” | Answered from today’s calls, before the nightly summary. Yesterday is included until that night’s summary is written. |
+| “Tell me when Eman emails” | A watch. When a new saved email from that person shows up, it is read aloud and texted. The first check only learns what is already saved. Say “stop watching email from Eman” to stop. |
+| “Text me if I have a meeting before 9” | A watch for a meeting that starts before that hour, later today or tomorrow. Say “stop watching meetings” to stop. |
+| “Open the calendar” | The Calendar button in the top bar. It shows the days Outlook has ready on this Mac, in place of the transcript. Refresh reads them again. Open in Outlook launches the Outlook app. Say “close the calendar” to go back. |
+| “Open the stickies” | The Stickies button. A wooden board of paper notes. Say “close the stickies” to go back. |
+| “Stop” or “make it shorter” | While an answer is still being written. Stop ends it. “Make it shorter”, “instead …”, or “do the slides first” continues from the words already written. |
+| “Add an appointment” | A form on the Calendar tab. Type a title, day, start, and end. Add in Outlook opens it. Press Add in that window to put it on the calendar. Nothing is saved before that. The + on a day starts the form on that day. |
 | “Schedule a meeting tomorrow at 3 pm called budget” | A draft event. It waits on the Work list until you say “send it” or “don’t send it”. |
 
 Memos are short notes you ask to keep. “Write a memo that …” saves a file in `raw/notes`, named with the date. “Recent memos” is the past two weeks. “All memos” is every one. “Did you save the memo about …” looks one up. A complaint (“stop saving”) does not create a file.
 
-Work cards on the page are the same jobs: reply ideas (a short summary is added), drafts waiting for yes, web pages you said “watch …”, and reminders (“remind me in 20 minutes to …”, or “remind me at 3 pm to …”). Say “what jobs”, “do number two”, or “skip number one”.
+Work cards on the page are the same jobs: reply ideas (a short summary is added), drafts waiting for yes, web pages you said “watch …”, reminders (“remind me in 20 minutes to …”, or “remind me at 3 pm to …”), and repeating jobs. Say “what jobs”, “do number two”, or “skip number one”.
+
+### Repeating jobs
+
+Say **“every weekday at 8 am, text me which emails need a reply”**. On those days the brain answers that question, reads it aloud if the voice page is open and quiet, and texts it when iMessage is on. **“Every day at 9 pm, remind me to …”** only sends those words. It does not ask the brain.
+
+The card shows the next time. **Pause** and **Resume** are on the card. You can also say “pause the email job”, “resume the email job”, “drop the email job”, or “change the email job to 9 am”. A paused job stays on the list and does not run. If the Mac was asleep at the clock time, the job runs once when the Mac wakes, then waits for the next day. Up to 8 repeating jobs. They are kept in `second-brain/desk.json` and still run after a restart.
+
+---
+
+## Sticky notes
+
+**Stickies** is a board of paper notes. Press **Stickies** in the top bar, or say “open the stickies”.
+
+- **+ New note**, double-click an empty spot, or right-click and choose New note. Press **n** while the board is open.
+- Drag a note by its title. Drag the corner to resize. Scroll to move around the board. Pinch, or hold Control and scroll, to zoom.
+- The writing can look handwritten or typed. Arabic uses an Arabic handwriting font when the note is in Arabic.
+- A title, a few hashtags, and a priority are filled in after you stop typing. The note is saved first. If you edit the title, press **Lock** and later labeling will not rename it.
+- **Settings** changes the wood, cork, dark wood, plain colors, or your own photo. Light, dark, or match the Mac. Those choices stay after a restart.
+- Sort and group from the row under the buttons. Alphabetical order lines the notes up. Switch back to manual and the old spots return.
+- Archive hides a note. Trash is the first stop for delete. Restore puts it back in the same place.
+- A note can become a task and become a note again. The words stay. Task views: today, upcoming, overdue, completed, high priority.
+- Select text, right-click, **Add link**. **Link to a note** stores a link by the note’s id, not by where it sits.
+- Say “create a yellow sticky note reminding me to …”, “show all my pink sticky notes”, “arrange the notes alphabetically”, or “delete the sticky note about …”. If two notes match, you get a numbered list. Say “number 1”, then “yes” before a delete.
+
+The notes are in `second-brain/stickies.json` on this Mac. They are not in git. Details of the tools are in `docs/stickies-api.md`.
 
 ---
 
@@ -305,7 +339,7 @@ There are three different PDF jobs. Do not mix them up.
 |---|---|---|
 | **Make a new PDF** | “Make a one-page summary as a PDF” | The model writes a page. You see it in the chat with Save and Open. |
 | **Change a PDF you already have, by talking** | “Rotate the PDF”, “merge the last two PDFs” | The app picks a tool and a file, then shows the result as a card. |
-| **Change a PDF with the buttons** | PDF tools button, or drop files on the window | Boxes above the transcript. No model until you press Q/A. |
+| **Change a PDF with the buttons** | PDF button, or drop files on the window | Boxes above the transcript. No model until you press Q/A. |
 
 ### Make a new PDF
 
@@ -356,7 +390,7 @@ Results show as PDF cards (up to 3). More than 3 files (a big split) go into a n
 
 This path does not ask a model, except **Q/A**.
 
-1. Click **PDF tools** (or **Add PDFs**), or drop PDFs onto the window.
+1. Click **PDF** (or **Add PDFs**), or drop PDFs onto the window.
 2. Each file becomes a box: thumbnail, name, page count.
 3. The **PDFs** section can be collapsed. Uploading a file opens it again.
 4. **‹ ›** move a box left or right. **×** removes the box. The file stays saved. **Clear** removes every box.
@@ -418,6 +452,31 @@ Routes:
 | `GET /pdf/:id` | The PDF bytes |
 | `POST /pdf/:id/save` | Copy to Downloads or a folder you pick |
 | `POST /pdf/:id/open` | Open in Preview |
+
+---
+
+## Photo editor
+
+Click **Photo** in the top bar, or **Edit** under a picture in the chat. This needs PhotoCraft installed (`voice/install-photocraft.sh`). If it is missing, the button will say so.
+
+The large area is PhotoCraft, the same editor as the desktop app: crop, layers, colour, and the rest. If the picture does not show up inside it, choose **File**, then **Open**. PhotoCraft fills in the picture you were editing.
+
+The buttons above the editor, the ask box, and spoken requests use PhotoCraft's engine. Type the change in the box under the orb, for example "make the image white and black". Say it after Hey while the editor is open. A picture already in the chat is used if the editor is still closed.
+
+| You press or say (after Hey) | What happens |
+|---|---|
+| Rotate right / "rotate it right" | Turns the picture a quarter turn clockwise |
+| Rotate left / "rotate it left" | Turns it the other way |
+| "turn it upside down" | Half turn |
+| Flip / "flip it" | Mirror image |
+| Brighter / Darker | Lifts or lowers the brightness |
+| Black & white / "make the image white and black" | Removes the colour |
+| Sharpen | Sharpens the picture |
+| Auto color | Lets PhotoCraft correct the colour |
+| Undo | Puts the previous picture back |
+| Save | Writes a JPEG in Pictures |
+
+A question that is not a change, such as "what is in this photo", still goes to the brain, and the picture goes with it. PhotoCraft's own Save also downloads a file and updates the picture in the chat.
 
 ---
 
@@ -611,6 +670,7 @@ These are separate from `npm install`. Without them, that one feature says it is
 | `voice/pdf_to_word.py` in `voice/pdf2docx-venv` | PDF → Word |
 | `voice/install-deckcraft.sh` | PowerPoint export |
 | `voice/install-wordcraft.sh` | Word editor |
+| `voice/install-photocraft.sh` | Photo editor |
 | Ollama with `embeddinggemma` | Meaning search |
 | Whisper models under `voice/models/` | Turning speech into text |
 | `voice/kokoro_server.py` | Speaking answers for text models |
@@ -697,6 +757,7 @@ You do not need this to use the app. It is here so a later change goes in the ri
 | `pdftools.js` | Edit existing PDFs |
 | `public/pdfedit.js` | The PDF boxes on the page |
 | `wordcraft.js` / `public/wordedit.js` | Word editor |
+| `photocraft.js` / `public/photoedit.js` | Photo editor |
 | `deck.js` / `deckcraft.js` / `public/deck.js` | Slides, presenter, PowerPoint |
 | `public/deck-edit.js` | “Edit with brain” |
 | `upload.js` | Add a document to the notes |

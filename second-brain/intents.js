@@ -183,12 +183,12 @@ export function asksAboutThisApp(question) {
   const q = String(question || "").toLowerCase().replace(/\s+/g, " ").trim();
   if (asksForAppOverview(question)) return true;
   // A named function from the manual, asked about rather than ordered.
-  const feature = /\b(?:pdf tools?|word editor|wordcraft|presentations?|slide decks?|powerpoints?|the terminal|tiny mode|mascot|morning briefing|watermark|page numbers|bookmarks|q\/a)\b/;
+  const feature = /\b(?:pdf tools?|word editor|wordcraft|photo editor|photocraft|presentations?|slide decks?|powerpoints?|the terminal|tiny mode|mascot|morning briefing|watermark|page numbers|bookmarks|q\/a|sticky notes|stickies|bulletin board)\b/;
   const asking = /\b(?:how|what|which|can you|do you|does (?:it|the app)|are you able|explain|tell me about)\b/;
   if (feature.test(q) && asking.test(q)) return true;
   // "How do I split a PDF?" names the job in either order.
   const howTo = /\bhow (?:do|can|does|to)\b/;
-  const job = /\b(?:pdfs?|word|slides?|presentation|deck|terminal|meetings?|lectures?|memos?|watermark|signature|bookmarks?|compress|ocr)\b/;
+  const job = /\b(?:pdfs?|word|photos?|pictures?|slides?|presentation|deck|terminal|meetings?|lectures?|memos?|watermark|signature|bookmarks?|compress|ocr|sticky notes|stickies)\b/;
   return howTo.test(q) && job.test(q);
 }
 

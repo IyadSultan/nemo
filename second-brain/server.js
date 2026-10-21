@@ -20,12 +20,13 @@
 import { DEFAULT_MODEL, DEFAULT_REASONING, BRAIN_DIR, MEMORY_MODEL, OLLAMA_URL, PORT, WIKI_PATH, __dirname } from "./config.js";
 import { installAgentHooks, registerAgents, startAgentWatch } from "./agents.js";
 import { appendDayLog, dayKey, saveConversation, summarizeDay } from "./brain.js";
-import { parseMeeting, spokenCalendar, spokenMeetingWaiting } from "./calendar.js";
+import { parseMeeting, registerCalendar, spokenCalendar, spokenMeetingWaiting } from "./calendar.js";
+import { chatMemorySticky, parseSticky, placeChatSticky, registerStickies, runStickyCommand } from "./stickies.js";
 import { controlClients, registerControl, sendControl } from "./control.js";
 import * as desk from "./desk.js";
-import { checkWatches, deliverReminders, registerDeskjobs, runDeskCommand, syncSuggestions } from "./deskjobs.js";
+import { checkWatches, deliverReminders, deliverSchedules, registerDeskjobs, runDeskCommand, syncSuggestions } from "./deskjobs.js";
 import { emailSearchJob, runEmailSearch } from "./emailsearch.js";
-import { readSavedFolders, refreshBrainNotes, registerFolders, reloadNotes } from "./folders.js";
+import { readSavedFolders, refreshBrainNotes, refreshDayLogNotes, registerFolders, reloadNotes } from "./folders.js";
 import { imessageHandle, registerIMessage, runTextMe, sendIMessage, textMeJob } from "./imessage.js";
 import { BRAIN_COMMANDS, wantsCommandTable } from "./commands.js";
 import { asksAboutThisApp, asksForAppOverview, asksForOutlookCalendar, calendarRead, isChatQuestion, isNoise, meetingJob, memoJob, wantsEmail } from "./intents.js";
@@ -46,6 +47,7 @@ import { pdfCatcher, registerPdf } from "./pdf.js";
 import { answerPdfTool, qaBlock, registerPdfTools, rememberPdf, wantsPdfTool } from "./pdftools.js";
 import { saveUploadedDocument } from "./upload.js";
 import { registerR } from "./rsession.js";
+import { registerPhotocraft } from "./photocraft.js";
 import { registerWordcraft } from "./wordcraft.js";
 import { registerDeckweb } from "./deckweb.js";
 import { MODELS, REASONING_LEVELS, VOICE_MODELS, getModel } from "./pricing.js";
@@ -262,6 +264,28 @@ app.post("/open-outlook", async (req, res) => {
   }
 });
 
+/** The same model the page is using, for labeling a new sticky after it is saved. */
+function stickyAsk(req) {
+  return (instruction, text) => askModelOnce(
+    getModel(req.body?.model) || getModel(DEFAULT_MODEL),
+    instruction,
+    text,
+    process.env.OPENAI_API_KEY,
+    300,
+  );
+}
+
+/** Put a saved memory on the sticky board too, and say so. */
+function alsoOnBoard(said, content, req) {
+  try {
+    placeChatSticky(content, "claude", stickyAsk(req));
+    return `${said.replace(/[.]?$/, ".")} I put it on the board.`;
+  } catch (err) {
+    console.error("Failed while putting a memory on the board:", err?.message || err);
+    return said;
+  }
+}
+
 /** Calendar, email, and the other built-in jobs still win unless the user named a skill. */
 function looksLikeOwnJob(question) {
   return Boolean(
@@ -278,7 +302,17 @@ function looksLikeOwnJob(question) {
     || memoJob(question)
     || wantsEmail(question)
     || asksAboutThisApp(question)
+    || parseSticky(question)
   );
+}
+
+/** Stop the model when the page hangs up, so "stop" does not keep writing. */
+function stopWhenClientLeaves(res) {
+  const stop = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) stop.abort();
+  });
+  return stop.signal;
 }
 
 /**
@@ -313,6 +347,7 @@ async function streamSpokenPrompt(req, res, prompt, firstEvent, readDirs, tail) 
   if (model.local) setLoadedLocalId(model.id);
 
   res.locals.pdf = pdfCatcher();
+  res.locals.stop = stopWhenClientLeaves(res);
   try {
     // longSpoken so a real meeting can be more than three sentences.
     if (model.local) await streamLocalAnswer(prompt, res, model, reasoning, true, true);
@@ -324,6 +359,7 @@ async function streamSpokenPrompt(req, res, prompt, firstEvent, readDirs, tail) 
     writeEvent(res, { type: "done" });
     res.end();
   } catch (err) {
+    if (err?.name === "AbortError") return;
     console.error("Failed while summarizing the meeting:", err?.message || err);
     writeEvent(res, {
       type: "error",
@@ -389,6 +425,24 @@ app.post("/ask", async (req, res) => {
       return replyNow(res, `I have ${skills.length} skills. Type / and the skill name.`);
     }
   }
+  // A sticky or a memory can mention the word "code". Save the note before a skill or the code builder sees it.
+  try {
+    const sticky = await runStickyCommand(question, { ask: stickyAsk(req) });
+    if (sticky) return replyNow(res, sticky.text);
+  } catch (err) {
+    console.error("Failed while changing a sticky note:", err?.message || err);
+    return replyNow(res, "I could not change the sticky notes.");
+  }
+  const learning = learningJob(question);
+  if (learning) {
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.flushHeaders?.();
+    let said = await runMemoryJob(learning);
+    if (learning.kind === "add") said = alsoOnBoard(said, learning.text, req);
+    writeEvent(res, { type: "delta", text: said });
+    writeEvent(res, { type: "done" });
+    return res.end();
+  }
   // "/hyperframes make a 10 second video": a skill that has to write files and run commands.
   const skillTurn = activeSkill && (named || asksForASkill || !looksLikeOwnJob(question));
   if (skillTurn && wantsBuild(question)) return answerBuild(req, res, question, false, activeSkill);
@@ -447,14 +501,6 @@ app.post("/ask", async (req, res) => {
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.flushHeaders?.();
     writeEvent(res, { type: "delta", text: await runTextMe(textMe, askBrain) });
-    writeEvent(res, { type: "done" });
-    return res.end();
-  }
-  const learning = learningJob(question);
-  if (learning) {
-    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    res.flushHeaders?.();
-    writeEvent(res, { type: "delta", text: await runMemoryJob(learning) });
     writeEvent(res, { type: "done" });
     return res.end();
   }
@@ -597,13 +643,20 @@ app.post("/ask", async (req, res) => {
       return res.end();
     }
     if (memo === "save") {
-      const said = await spokenSavedMemo(question, model, apiKey);
+      let said = await spokenSavedMemo(question, model, apiKey);
+      const memory = chatMemorySticky(question);
+      if (memory) said = alsoOnBoard(said, memory.content, req);
       writeEvent(res, { type: "delta", text: said });
       writeEvent(res, { type: "done" });
       return res.end();
     }
     const notesKind = req.body?.notesKind === "lecture" ? "lecture" : "";
-    let prompt = buildPrompt(question, hits, pages, history, cleanMemory(req.body?.memory), recordedMeeting, notesKind);
+    const steerFrom = oneLine(req.body?.steerFrom, 500);
+    const steerSoFar = oneLine(req.body?.steerSoFar, 1500);
+    const asked = steerFrom
+      ? `You were answering this: ${steerFrom}\nYou had written this much: ${steerSoFar || "(nothing yet)"}\nThe user now says: ${question}\nContinue from there. Do not start over.`
+      : question;
+    let prompt = buildPrompt(asked, hits, pages, history, cleanMemory(req.body?.memory), recordedMeeting, notesKind);
     // PDFs in Q/A on the page (pdfedit.js): their text goes with every question.
     prompt += await qaBlock(req.body?.qaPdfs);
     const photo = photoDataUrl(req.body?.photo);
@@ -615,6 +668,7 @@ app.post("/ask", async (req, res) => {
     const spoken = req.body?.spoken === true;
     const longSpoken = hits.emailJob === "read" || hits.emailJob === "reply" || hits.emailJob === "send" || hits.emailJob === "list" || hits.emailJob === "review" || hits.memoJob === "recent" || hits.memoJob === "all" || hits.memoJob === "find";
     res.locals.pdf = pdfCatcher();
+    res.locals.stop = stopWhenClientLeaves(res);
     if (model.local) await streamLocalAnswer(prompt, res, model, reasoning, spoken, longSpoken);
     else if (model.subscription) await streamClaudeAnswer(prompt, res, model, reasoning, spoken);
     else await streamAnswer(apiKey, prompt, res, model, reasoning, spoken, photo);
@@ -622,6 +676,7 @@ app.post("/ask", async (req, res) => {
     writeEvent(res, { type: "done" });
     res.end();
   } catch (err) {
+    if (err?.name === "AbortError") return;
     console.error("Failed while answering:", err?.message || err);
     writeEvent(res, {
       type: "error",
@@ -704,9 +759,14 @@ registerPdfTools(app);
 
 registerR(app);
 registerWordcraft(app);
+registerPhotocraft(app);
 registerDeckweb(app);
 registerDeck(app);
 registerDeskjobs(app);
+registerCalendar(app);
+registerStickies(app, {
+  askModel: (instruction, text) => askModelOnce(getModel(DEFAULT_MODEL), instruction, text, process.env.OPENAI_API_KEY, 300),
+});
 
 /**
  * Morning briefing: today's meetings, tasks due, and emails that need a reply.
@@ -737,13 +797,15 @@ async function deliverBriefing() {
   return text;
 }
 
-// Watches and reminders keep going while this server is open, including after a restart.
+// Watches, reminders, and repeating jobs keep going while this server is open, including after a restart.
 setInterval(() => {
   deliverReminders().catch((err) => console.error("Failed while sending reminders:", err?.message || err));
+  deliverSchedules(askBrain).catch((err) => console.error("Failed while running scheduled jobs:", err?.message || err));
 }, 20_000);
 
 setTimeout(() => {
   deliverReminders().catch((err) => console.error("Failed while sending reminders:", err?.message || err));
+  deliverSchedules(askBrain).catch((err) => console.error("Failed while running scheduled jobs:", err?.message || err));
 }, 5_000);
 
 setInterval(() => {
@@ -777,6 +839,7 @@ app.post("/briefing/send", async (_req, res) => {
 /** Keep one voice question and answer for tonight's brain.md summary. */
 app.post("/daylog", (req, res) => {
   appendDayLog(req.body?.question, req.body?.answer);
+  refreshDayLogNotes();
   res.json({ ok: true });
 });
 

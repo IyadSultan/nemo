@@ -38,7 +38,7 @@ async function startLocalListen() {
   }
 
   while (connected && !localStop) {
-    while (micBusy) await sleep(40);
+    while (micBusy || dictateHold) await sleep(40);
     if (!connected || localStop) break;
     if (closeMeetingAfterClip && !meetingOn && !recordingClip) {
       closeMeetingAfterClip = false;
@@ -53,6 +53,17 @@ async function startLocalListen() {
         continue;
       }
       addBubble("user", question, false);
+      const follow = steerIntent(question);
+      const saved = cutSteer;
+      cutSteer = null;
+      if (follow === "stop") {
+        addBubble("assistant", "Stopped.");
+        continue;
+      }
+      if (follow && saved?.from) {
+        await answerWithBrain(follow, { steerFrom: saved.from, steerSoFar: saved.soFar });
+        continue;
+      }
       await answerWithBrain(question);
       continue;
     }

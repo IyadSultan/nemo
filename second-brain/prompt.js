@@ -3,7 +3,7 @@
  * ~/.brain/code.md, and the prompt built from notes, web pages and the chat so far.
  */
 
-import { agentsBlock, brainBlock, inBrainBlock } from "./brain.js";
+import { agentsBlock, brainBlock, inBrainBlock, inTodayBlock, todayBlock } from "./brain.js";
 import { CODE_FILE, MANUAL_FILE } from "./config.js";
 import { DECK_ABILITY } from "./deck.js";
 import { isVaultQuestion, wantsEmail, wantsFile, wantsNews } from "./intents.js";
@@ -56,8 +56,9 @@ export function appManualPrompt(question, history = [], memory = "") {
 
 export function buildPrompt(question, hits, pages = [], history = [], memory = "", meetingNotes = "", notesKind = "") {
   const learned = brainBlock();
-  // A brain.md day that is already in the block below is not repeated as a note.
-  const blocks = hits.filter((hit) => !inBrainBlock(hit.note.rel, learned)).map((hit) => {
+  const today = todayBlock();
+  // A brain.md day, or a call already in today's block, is not repeated as a note.
+  const blocks = hits.filter((hit) => !inBrainBlock(hit.note.rel, learned) && !inTodayBlock(hit.note.rel, today)).map((hit) => {
     const { note, terms } = hit;
     return [
       `Note: ${note.title}`,
@@ -102,9 +103,14 @@ export function buildPrompt(question, hits, pages = [], history = [], memory = "
         return `${label}: ${turn.question}\nAnswer: ${turn.answer}`;
       }).join("\n\n")
     : "(this is the first question in this chat)";
-  const chatNote = history.length
-    ? "If the user asks what they asked last time, what you just said, or a follow-up, answer from Earlier in this conversation. Do not say that is missing from the notes."
-    : "";
+  const chatNote = [
+    history.length
+      ? "If the user asks what they asked last time, what you just said, or a follow-up, answer from Earlier in this conversation. Do not say that is missing from the notes."
+      : "",
+    today
+      ? "Today so far is in the prompt. If they ask what they asked earlier today, or what you said today, and this chat does not have it, answer from Today so far."
+      : "",
+  ].filter(Boolean).join(" ");
 
   const memoryBlock = memory
     ? `Compressed memory of older turns:\n${memory}`
@@ -129,6 +135,7 @@ export function buildPrompt(question, hits, pages = [], history = [], memory = "
     `Here and now: ${hereAndNow()}`,
     learningsBlock(),
     learned,
+    today,
     agentsBlock(),
     memoryBlock,
     meetingBlock,
@@ -188,18 +195,25 @@ export const APP_ABILITIES = [
   "This app does these things itself when the user says the matching words. Never say the app cannot do them. If such a request reaches you, the words were not recognized: tell the user the phrase to say.",
   "Text the user's own phone: say text me, then the message, or send me an iMessage saying, then the message.",
   "Save a memo: say remember that, then the fact. List memos: say what are my memos.",
-  "Keep a standing rule for every answer: say from now on, then the rule. List rules and memos: say what are your memories. Remove one: say forget, then what it was about.",
+  "Keep a standing rule for every answer: say from now on, remember, or save a memory, then the rule. That rule also goes on the stickies board with the Claude mark instead of a pin. Say save a sticky or add a sticky for an ordinary note with a pin. List rules and memos: say what are your memories. Remove one: say forget, then what it was about.",
   "Draft an email: say send an email to, then the name and what it says. A draft waits on the page. The user says send it, or presses Open. Outlook opens the draft. The user presses Send. Say don't to drop it.",
   "Put a meeting on the calendar: say schedule a meeting with, then the person, day, and time. It waits until the user says send it. Outlook then opens the event to check and save. Say don't to drop it.",
   "Show a web page in the browser: say show me, then the address, such as show me cnn.com. It opens right away. A saved place works the same way: if a memory says go to inotes opens a site, then go to inotes opens that site.",
   "Watch a public web page: say watch, then the address. A change texts the user's phone.",
+  "Watch for a person: say tell me when, then the name, then emails. A new saved email from that person texts the phone. Say stop watching email from, then the name, to stop.",
+  "Watch for an early meeting: say text me if I have a meeting before 9. It texts when one starts before that hour, later today or tomorrow. Say stop watching meetings to stop.",
+  "Today's questions and answers are remembered right away. The user can ask what they asked earlier today before the nightly summary.",
+  "While an answer is still being written, the user can say stop, make it shorter, instead, then what to do, or do, then a task, then first. The helper continues from what it already wrote.",
   "A reminder: say remind me in 20 minutes to, then the task. It still fires after a restart.",
+  "A repeating job: say every weekday at 8 am, text me, then the question. Or say every day at 9 pm, remind me to, then the task. It is read aloud and texted. Say pause, resume, or drop, then a few words from the job. Say change the email job to 9 am to move the clock.",
   "The last conversation is saved on this Mac and comes back the next time they press Start talking.",
   "Open a file: say open, then the file name. It looks in the notes first, then the whole Mac. A Word file opens in LibreOffice, where the user can read and edit it. Say open, then what it is about, then word document. This works when the file name is Arabic and the user asks in English. Never say you cannot open a file. Never tell the user to rename it or to save a PDF just so it can be opened.",
   "Find an email: say find the email from, or about, then the name or subject. Then say open number one, two, or three, and Outlook searches for it.",
   "Search the whole Mac like the Finder: say find, then the file name, then on my Mac. Then say open number one, two, or three.",
   "Write code or make an artifact (a script, an app, a web page, a game, a tool): say write, make, or build, then what it is, such as make a tip calculator app. A team of helpers writes the parts at the same time and Claude puts them together and tests them, in a new folder under ~/.brain/workspace. If the request is unclear, the app first asks up to 3 questions; the next reply answers them. A web page opens in the browser when it is done. Never say you cannot write code.",
   "Read today's or tomorrow's calendar, today's emails, and which emails need an urgent reply.",
+  "Show the calendar on screen: say open the calendar. It shows the days Outlook has ready on this Mac. Say close the calendar to go back to the transcript.",
+  "Add an appointment from the calendar: say add an appointment, or press Add appointment. Outlook opens it. It is not saved until the user presses Add in Outlook.",
   "The app never sends an email by itself.",
   "When the user asks what you can do, or how one function works, the prompt includes the app manual (manual.md). Answer only from that manual.",
 ].join(" ");
@@ -300,6 +314,7 @@ export function voiceInstructions() {
     "",
     learningsBlock(),
     brainBlock(),
+    todayBlock(),
     agentsBlock(),
     guideBlock(),
   ].join("\n");

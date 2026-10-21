@@ -3,6 +3,53 @@
  * Part of the voice window; loaded after the files before it in voice.html (see voice.js).
  */
 
+// The question and the words written so far, so a steer can continue instead of starting over.
+let liveQuestion = "";
+let liveAnswer = "";
+let steerQueued = null;
+// Set when Hey cuts off an answer, so the next sentence can continue from it.
+let cutSteer = null;
+
+/**
+ * While an answer is still being written: stop, make it shorter, instead …, or do … first.
+ * Returns the follow-up, "stop", or "" when this sentence is not a steer.
+ */
+function steerIntent(question) {
+  const q = String(question || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  if (/^(?:please |hey )?(?:stop|stop that|cancel that|never mind|nevermind)$/.test(q)) return "stop";
+  if (/^(?:please |hey )?(?:make it shorter|make that shorter|shorter please|be shorter)$/.test(q)) return "Make the answer shorter. Keep the same facts.";
+  const instead = q.match(/^(?:please |hey )?(?:instead|change that|do this instead) (.+)$/);
+  if (instead) return instead[1];
+  const first = q.match(/^(?:please |hey )?do (.+?) first$/);
+  if (first) return `Do this first: ${first[1]}.`;
+  return "";
+}
+
+/**
+ * Stop the answer that is running. A follow-up starts again from the words already written.
+ * Minutes and talk summaries are not steered (liveQuestion is empty while they are written).
+ */
+function steerWhileBusy(question) {
+  const intent = steerIntent(question);
+  if (!intent || !brainBusy || !liveQuestion) return false;
+  const original = liveQuestion;
+  const soFar = liveAnswer;
+  // The same cut as Hey: the voice stops too, not only the writing.
+  stopSpeaking();
+  cancelAnswer = true;
+  askAbort?.abort();
+  try { activeReader?.cancel(); } catch { /* already finished */ }
+  if (intent === "stop") {
+    // "Make it shorter" and then "stop": the stop wins.
+    steerQueued = null;
+    addBubble("assistant", "Stopped.");
+    setStatus(listenStatus());
+    return true;
+  }
+  steerQueued = { question: intent, steerFrom: original, steerSoFar: soFar.slice(0, 1500) };
+  return true;
+}
+
 /** Bonsai and GPT-6 write the answer. Voice control is what speaks it. */
 async function answerWithBrain(question, extras) {
   const writingMinutes = Boolean(extras?.summarizeMeeting);
@@ -13,6 +60,7 @@ async function answerWithBrain(question, extras) {
   await deskReady;
   // "/brain" still shows the table during a meeting. Other questions wait.
   const commandTable = isCommandTableAsk(question);
+  if (brainBusy && !writingNotes && steerWhileBusy(question)) return;
   if (brainBusy || paused) return;
   if (!commandTable && (meetingOn || lectureFormOpen)) return;
   // "start a live presentation about …", "present it": deck.js opens the deck.
@@ -20,12 +68,19 @@ async function answerWithBrain(question, extras) {
   if (!writingNotes && window.brainWord?.command(question)) return;
   if (!writingNotes && window.brainSlides?.command(question)) return;
   if (!writingNotes && window.brainR?.command(question)) return;
+  if (!writingNotes && window.brainPhoto?.ask(question)) return;
+  if (!writingNotes && window.brainPhoto?.command(question)) return;
+  if (!writingNotes && runStickiesAsk(question)) return;
+  if (!writingNotes && runCalendarAsk(question)) return;
   if (!writingNotes && runTerminalAsk(question)) return;
   const tinyMove = writingNotes ? "" : playTinyMove(question);
   if (!connected) setBusy(true);
   compressAbort?.abort();
   compressGen += 1;
   lastQuestion = question;
+  // A second steer still names the first question, not the steer before it.
+  liveQuestion = writingNotes ? "" : extras?.steerFrom || question;
+  liveAnswer = "";
   brainBusy = true;
   syncCallButtons();
   cancelAnswer = false;
@@ -73,6 +128,8 @@ async function answerWithBrain(question, extras) {
         model: modelSelect.value,
         reasoning: reasoningSelect.value,
         spoken: true,
+        steerFrom: extras?.steerFrom || "",
+        steerSoFar: extras?.steerSoFar || "",
       }),
     });
     if (!response.ok || !response.body) {
@@ -105,10 +162,12 @@ async function answerWithBrain(question, extras) {
             setCapsuleState("speaking");
           } catch (err) {
             if (!voiceBlocked) throw err;
+            setStatus("OpenAI has no credits. Speaking with the voice on this Mac.");
           }
         }
-        // Voice control could not connect. The Mac voice is only a stand-in.
-        speech ??= macOnly ? kokoroVoice() : macVoice("Speaking with the Mac voice. OpenAI has no credits.");
+        // OpenAI voice is out of credits, or this model lives on the Mac.
+        // Kokoro speaks for free. If Kokoro cannot say a line, it uses the Mac voice.
+        speech ??= (macOnly || voiceBlocked) ? kokoroVoice() : macVoice("Speaking with the Mac voice.");
         activeSpeech = speech;
         if (!heardCue) {
           heardCue = true;
@@ -180,6 +239,7 @@ async function answerWithBrain(question, extras) {
           mountCommandTable(bubble, event.rows);
         } else if (event.type === "delta") {
           rawAnswer += event.text || "";
+          liveAnswer = rawAnswer;
           const parts = splitEmailDraft(rawAnswer, false);
           const fresh = parts.spoken.startsWith(spokenShown)
             ? parts.spoken.slice(spokenShown.length)
@@ -208,7 +268,10 @@ async function answerWithBrain(question, extras) {
       if (!quietNotes) await speakReady(false);
     }
 
-    if (cancelAnswer) return;
+    if (cancelAnswer) {
+      answer = rawAnswer.trim();
+      return;
+    }
     const finalParts = splitEmailDraft(rawAnswer, true);
     const spoken = finalParts.spoken.trim();
     const written = finalParts.written.trim();
@@ -259,7 +322,7 @@ async function answerWithBrain(question, extras) {
         : macOnly
         ? WAKE_STATUS
         : voiceBlocked
-        ? "Listening. Say Hey, then your question. Voice control has no credits, so the Mac voice spoke."
+        ? "Listening. Say Hey, then your question. OpenAI has no credits, so the voice on this Mac spoke."
         : WAKE_STATUS);
     } else if (!connected && !localStop) {
       setCapsuleState("idle");
@@ -271,7 +334,10 @@ async function answerWithBrain(question, extras) {
     }
   } catch (err) {
     speech?.stop();
-    if (err?.name === "AbortError") return;
+    if (err?.name === "AbortError") {
+      answer = rawAnswer.trim();
+      return;
+    }
     console.error("Failed while asking the selected model:", err);
     bubble?.classList.remove("partial");
     setStatus(err.message || "The selected model could not answer.");
@@ -282,6 +348,12 @@ async function answerWithBrain(question, extras) {
     if (keepMemory && !remembered) rememberTurn(question, answer);
     if (activeReader === reader) activeReader = null;
     brainBusy = false;
+    const next = steerQueued;
+    steerQueued = null;
+    if (next) {
+      queueMicrotask(() => answerWithBrain(next.question, { steerFrom: next.steerFrom, steerSoFar: next.steerSoFar })
+        .catch((err) => console.error("Failed while continuing a changed answer:", err)));
+    }
     // Start talking is still connecting. Leave its button locked until that finishes.
     if (!connected && !summaryAloud) setBusy(false);
     syncCallButtons();
@@ -634,6 +706,108 @@ function agentHeading(name, phase, place) {
   return `${name}${where} · finished`;
 }
 
+/**
+ * Every post from one agent sits in one stack, even when another agent
+ * spoke in between. Only the newest post shows until you press + Expand.
+ */
+function agentKey(bubble) {
+  return bubble.dataset.name || "Claude";
+}
+
+function agentGroupOf(bubble) {
+  const parent = bubble.parentElement;
+  return parent?.classList.contains("agent-group") ? parent : null;
+}
+
+function makeAgentGroup(firstBubble) {
+  const group = document.createElement("div");
+  group.className = "agent-group is-collapsed";
+  group.dataset.name = agentKey(firstBubble);
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "agent-expand";
+  toggle.addEventListener("click", () => {
+    group.classList.toggle("is-collapsed");
+    refreshAgentGroup(group);
+  });
+  firstBubble.before(group);
+  group.append(firstBubble, toggle);
+  return group;
+}
+
+/**
+ * Put this post on the one card for this agent.
+ * Older posts are pulled in even when another agent sits between them.
+ * The card moves to the bottom, so the newest post stays in view.
+ */
+function placeAgentBubble(bubble) {
+  const name = agentKey(bubble);
+  const existing = [...transcriptEl.querySelectorAll(".bubble.agent")].filter(
+    (item) => item !== bubble && agentKey(item) === name,
+  );
+  if (!existing.length) {
+    transcriptEl.appendChild(bubble);
+    return;
+  }
+  let group = agentGroupOf(existing[0]);
+  if (!group) group = makeAgentGroup(existing[0]);
+  const toggle = group.querySelector(".agent-expand");
+  for (const item of existing) {
+    if (item.parentElement !== group) toggle.before(item);
+  }
+  for (const other of [...transcriptEl.querySelectorAll(".agent-group")]) {
+    if (other !== group && other.dataset.name === name) other.remove();
+  }
+  toggle.before(bubble);
+  transcriptEl.appendChild(group);
+  refreshAgentGroup(group);
+}
+
+/** How many older posts are tucked away while the stack is folded. */
+function refreshAgentGroup(group) {
+  const bubbles = [...group.querySelectorAll(":scope > .bubble.agent")];
+  const toggle = group.querySelector(".agent-expand");
+  const hidden = Math.max(0, bubbles.length - 1);
+  const name = group.dataset.name || "this agent";
+  if (hidden < 1) {
+    toggle.hidden = true;
+    group.classList.remove("is-collapsed");
+    return;
+  }
+  toggle.hidden = false;
+  const open = !group.classList.contains("is-collapsed");
+  toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    toggle.textContent = "– Collapse";
+    toggle.title = `Hide the earlier messages from ${name}`;
+    toggle.setAttribute("aria-label", `Collapse earlier messages from ${name}`);
+    return;
+  }
+  const count = hidden === 1 ? "1 earlier message" : `${hidden} earlier messages`;
+  toggle.textContent = hidden === 1 ? "+ Expand" : `+ Expand (${hidden})`;
+  toggle.title = `Show ${count} from ${name}`;
+  toggle.setAttribute("aria-label", `Expand ${count} from ${name}`);
+}
+
+/**
+ * A finished summary should be the post you see.
+ * If it updated an older card that was folded away, move that card to the end
+ * of the stack so it is the one still showing.
+ */
+function showFinishedInGroup(bubble) {
+  const group = agentGroupOf(bubble);
+  if (!group) {
+    transcriptEl.appendChild(bubble);
+    return;
+  }
+  const toggle = group.querySelector(".agent-expand");
+  if (group.classList.contains("is-collapsed") && toggle && bubble.nextElementSibling !== toggle) {
+    toggle.before(bubble);
+  }
+  transcriptEl.appendChild(group);
+  refreshAgentGroup(group);
+}
+
 /** Clicking the little Claude opens the Terminal (or Cursor) where that agent is. */
 async function openAgentTerminal(bubble) {
   const name = bubble.dataset.name || "Claude";
@@ -666,11 +840,16 @@ async function openAgentTerminal(bubble) {
  * One at a time, after the brain stops talking. Quiet while a meeting or lecture is written down.
  */
 let agentSpeech = Promise.resolve();
-function sayAgentDone(name, text) {
+function sayAgentDone(name, text, bubble) {
   const line = forSpeech(`${name} finished. ${String(text || "").replace(/\[REDACTED-DIGITS\]/g, "a number")}`);
   agentSpeech = agentSpeech.then(async () => {
     while (brainBusy) await sleep(200);
-    if (meetingOn) return;
+    if (meetingOn || !bubble?.isConnected) return;
+    // The mouth stays open and shut for the whole spoken line.
+    // On a folded card, the face you can see is the one that talks.
+    const group = bubble.closest(".agent-group");
+    bubble.classList.add("is-talking");
+    group?.classList.add("is-talking");
     try {
       const response = await fetch("/speak", {
         method: "POST",
@@ -680,12 +859,15 @@ function sayAgentDone(name, text) {
       if (!response.ok) throw new Error(`Kokoro returned ${response.status}`);
       const url = URL.createObjectURL(await response.blob());
       const audio = new Audio(url);
-      await new Promise((resolve) => {
-        audio.onended = resolve;
-        audio.onerror = resolve;
-        audio.play().catch(resolve);
-      });
-      URL.revokeObjectURL(url);
+      try {
+        await new Promise((resolve) => {
+          audio.onended = resolve;
+          audio.onerror = resolve;
+          audio.play().catch(resolve);
+        });
+      } finally {
+        URL.revokeObjectURL(url);
+      }
     } catch (err) {
       console.error("Failed while speaking an agent's summary with Kokoro, using the Mac voice:", err);
       await new Promise((resolve) => {
@@ -694,6 +876,9 @@ function sayAgentDone(name, text) {
         utterance.onerror = resolve;
         speechSynthesis.speak(utterance);
       });
+    } finally {
+      bubble.classList.remove("is-talking");
+      group?.classList.remove("is-talking");
     }
   }).catch((err) => console.error("Failed while speaking an agent's summary:", err));
 }
@@ -715,12 +900,13 @@ function showAgentVisit(data) {
     renderMarkdown(bubble.querySelector(".text"), text);
     setAgentPower(bubble, "wake");
     refreshAgentPower(bubble);
+    showFinishedInGroup(bubble);
     for (const other of bubblesForSession(session)) {
       if (other === bubble) continue;
       refreshAgentPower(other, true);
     }
     followTranscript();
-    sayAgentDone(name, text);
+    sayAgentDone(name, text, bubble);
     return;
   }
   clearEmptyHint();
@@ -745,13 +931,13 @@ function showAgentVisit(data) {
   else body.textContent = text;
   copy.append(who, body);
   bubble.append(button, copy);
-  transcriptEl.appendChild(bubble);
+  placeAgentBubble(bubble);
   if (phase === "done") setAgentPower(bubble, "wake");
   else setAgentPower(bubble, "exit");
   refreshAgentPower(bubble);
   if (phase === "reading" && session) agentVisits.set(session, bubble);
   followTranscript();
-  if (phase === "done") sayAgentDone(name, text);
+  if (phase === "done") sayAgentDone(name, text, bubble);
 }
 
 // The server sends these when a Claude in a Terminal starts or finishes.

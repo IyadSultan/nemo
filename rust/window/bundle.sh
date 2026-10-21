@@ -69,7 +69,19 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP"
+# Sign with the local "Second Brain Local Signing" certificate. An ad-hoc
+# signature changes on every build, so macOS forgets the Screen Recording,
+# microphone and camera permissions each time and asks again. The certificate
+# lives in its own keychain, unlocked with a password kept in ~/.brain/signing/pass.
+KEYCHAIN="$HOME/Library/Keychains/second-brain-signing.keychain-db"
+IDENTITY="Second Brain Local Signing"
+if [ -f "$KEYCHAIN" ] && security unlock-keychain -p "$(cat "$HOME/.brain/signing/pass")" "$KEYCHAIN" \
+  && codesign --force --deep --sign "$IDENTITY" "$APP"; then
+  :
+else
+  echo "Signed ad-hoc: macOS will ask for permissions again after this build." >&2
+  codesign --force --deep --sign - "$APP"
+fi
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP"
 touch "$APP"
 echo "Built $APP"

@@ -5,7 +5,7 @@
 
 import { FOLDERS_FILE, SKIP_DIRS, WIKI_PATH } from "./config.js";
 import { syncSuggestions } from "./deskjobs.js";
-import { brainNotes } from "./brain.js";
+import { brainNotes, dayLogNotes } from "./brain.js";
 import { loadDocs } from "./docs.js";
 import { indexRawMail } from "./mail.js";
 import { loadWiki, semantic } from "./notes.js";
@@ -108,7 +108,7 @@ export async function reloadNotes() {
     loaded.push(...(await loadWiki(root)));
   }
   // brain.md sections are notes too, so older days can be found by search.
-  loaded.push(...brainNotes());
+  loaded.push(...brainNotes(), ...dayLogNotes());
   setNotes(loaded);
   semantic.build(notes).catch((err) => console.error("Failed while building the meaning index:", err?.message || err));
   await indexRawMail();
@@ -211,4 +211,14 @@ export function registerFolders(app) {
 export function refreshBrainNotes() {
   setNotes([...notes.filter((note) => !note.rel.startsWith("brain.md#")), ...brainNotes()]);
   semantic.build(notes).catch((err) => console.error("Failed while building the meaning index:", err?.message || err));
+}
+
+/**
+ * A call was just saved. Swap today's call notes in, so word search can find them before tonight.
+ * The meaning index is not rebuilt here: that runs after every answer, would turn meaning
+ * search off while it runs, and would restart a first full embedding before it is saved.
+ * The next reload picks the calls up, and todayBlock() already puts them in the prompt.
+ */
+export function refreshDayLogNotes() {
+  setNotes([...notes.filter((note) => !note.rel.startsWith("daylog/")), ...dayLogNotes()]);
 }

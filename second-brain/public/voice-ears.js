@@ -149,6 +149,12 @@ function recordUntilSilence(stream) {
         finish();
         return;
       }
+      // The prompt microphone needs this mic. Drop this clip so it is not also answered as a question.
+      if (dictateHold) {
+        discard = true;
+        finish();
+        return;
+      }
       if (localStop || !connected) {
         finish();
         return;
@@ -600,6 +606,8 @@ function watchWhileAnswering(stream) {
       if (stopped || epoch !== listenEpoch || heyIndex >= 0) return;
       if (questionFromHeard(text) === null && !/\bhey\b|هاي/i.test(text)) return;
       heyIndex = job.index;
+      // Keep the words already written, in case the next sentence says "make it shorter" or "do this first".
+      cutSteer = { from: liveQuestion, soFar: String(liveAnswer || "").slice(0, 1500) };
       stopSpeaking();
       cancelAnswer = true;
       askAbort?.abort();
@@ -646,7 +654,7 @@ function watchWhileAnswering(stream) {
     }
     const heardHey = heyIndex >= 0;
     const pauseDone = heardHey && quietSince && performance.now() - quietSince > END_PAUSE_MS;
-    const callEnded = epoch !== listenEpoch || !connected || localStop;
+    const callEnded = epoch !== listenEpoch || !connected || localStop || dictateHold;
     const answerFinished = !brainBusy && !heardHey;
     if (pauseDone) {
       questionEndedAt = quietSince;

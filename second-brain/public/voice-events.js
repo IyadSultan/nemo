@@ -74,7 +74,6 @@ async function hangUp({ keepStatus = false, keepMeeting = false } = {}) {
   recordingClip = false;
   paintMeetingButton();
   muteBtn.disabled = !keepMeeting;
-  muteBtn.textContent = "Mute mic";
   muteBtn.classList.remove("is-muted");
   syncCallButtons();
   setCapsuleState(keepMeeting && meetingOn ? (muted ? "muted" : captureRole()) : "idle");
@@ -181,6 +180,13 @@ function handleServerEvent(event) {
       showMeetingStatus();
       return;
     }
+    if (window.brainPhoto?.open) {
+      if (userPartialEl) {
+        userPartialEl.remove();
+        userPartialEl = null;
+      }
+      if (text.trim() && window.brainPhoto.hear(text.trim())) return;
+    }
     if (window.brainWord?.open) {
       if (userPartialEl) {
         userPartialEl.remove();
@@ -242,6 +248,7 @@ function handleServerEvent(event) {
     }
     if (selectedModel()?.hears) {
       lastQuestion = question;
+      if (runCalendarAsk(question)) return;
       if (runTerminalAsk(question)) return;
       playTinyMove(question);
       sendEvent({ type: "response.create" });
@@ -287,12 +294,29 @@ async function answerToolCall(event) {
   const item = event.item || event;
   const callId = item.call_id || event.call_id;
   const name = item.name || event.name;
-  if (!["search_notes", "here_and_now", "app_manual"].includes(name) || !callId || handledCalls.has(callId)) return;
+  if (!["search_notes", "here_and_now", "app_manual", "sticky_notes"].includes(name) || !callId || handledCalls.has(callId)) return;
   handledCalls.add(callId);
 
   let output = "The tool failed.";
   try {
-    if (name === "here_and_now") {
+    if (name === "sticky_notes") {
+      let request = "";
+      try {
+        request = JSON.parse(item.arguments || event.arguments || "{}").request || "";
+      } catch (err) {
+        console.error("Failed while reading the sticky-note request:", err);
+      }
+      setStatus("Updating sticky notes…");
+      setCapsuleState("thinking");
+      const response = await fetch("/stickies/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: request }),
+      });
+      const data = await response.json().catch(() => ({}));
+      output = data.text || data.error || "I could not change the sticky notes.";
+      window.brainStickies?.apply({ open: true });
+    } else if (name === "here_and_now") {
       setStatus("Checking the time…");
       setCapsuleState("thinking");
       const response = await fetch("/here");

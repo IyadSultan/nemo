@@ -241,6 +241,77 @@ export function agentsBlock() {
   return `Claude sessions on this Mac, from agents.md (newest last). When the user asks who was working, what an agent did, or when something was finished, answer from this log:\n${text.trim()}`;
 }
 
+const TODAY_CHARS = 4000;
+// A call starts with "## 14:05". An answer may have its own "## Heading", so the time is part of the test.
+const CALL_START = /\n(?=## \d{2}:\d{2}\n)/;
+
+/** Days whose calls are not in brain.md yet: yesterday until that night's summary is written, then today. */
+function pendingDays(now) {
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  return [...(hasDay(dayKey(yesterday)) ? [] : [dayKey(yesterday)]), dayKey(now)];
+}
+
+function dayLog(key) {
+  return readText(path.join(DAYLOG_DIR, `${key}.md`)).trim();
+}
+
+/** The newest calls of one day, cut at a call boundary. */
+function recentLog(key, max) {
+  const text = dayLog(key);
+  if (text.length <= max) return text;
+  const tail = text.slice(-max);
+  const start = tail.search(CALL_START);
+  return (start >= 0 ? tail.slice(start) : tail).trim();
+}
+
+/**
+ * Newest calls that are not in the nightly memory yet.
+ * Today, and yesterday until that night's summary is written.
+ * Each part names its day, so inTodayBlock() can tell the two apart.
+ */
+export function todayBlock(now = new Date()) {
+  const keys = pendingDays(now);
+  const today = keys[keys.length - 1];
+  return keys.map((key) => {
+    const text = recentLog(key, TODAY_CHARS);
+    if (!text) return "";
+    const label = key === today
+      ? `Today so far (${key}), from the call log. This is not in the nightly memory yet. Use it when the user asks what they asked today, or what you said today:`
+      : `Yesterday (${key}), not in the nightly memory yet:`;
+    return `${label}\n${text}`;
+  }).filter(Boolean).join("\n\n");
+}
+
+/** True when this call is already inside todayBlock(), so a search hit would repeat it. */
+export function inTodayBlock(rel, block) {
+  const match = String(rel).match(/^daylog\/(\d{4}-\d{2}-\d{2})\.md#(\d{2}:\d{2})$/);
+  if (!match) return false;
+  const start = block.indexOf(`(${match[1]})`);
+  if (start < 0) return false;
+  const end = block.indexOf("\n\nToday so far (", start + 1);
+  return block.slice(start, end < 0 ? undefined : end).includes(`\n## ${match[2]}\n`);
+}
+
+/**
+ * One searchable note per call. Today, plus yesterday if that night's
+ * summary is not in brain.md yet.
+ */
+export function dayLogNotes(now = new Date()) {
+  const notes = [];
+  for (const key of pendingDays(now)) {
+    for (const part of dayLog(key).split(CALL_START)) {
+      const match = part.match(/^## (\d{2}:\d{2})\n([\s\S]*)$/);
+      const body = match?.[2].trim();
+      if (!body) continue;
+      const title = `Call at ${key} ${match[1]}`;
+      const full = `${title}\n${body}`;
+      notes.push({ rel: `daylog/${key}.md#${match[1]}`, title, text: full, lower: full.toLowerCase() });
+    }
+  }
+  return notes;
+}
+
 /** The newest days of brain.md, for the prompt. */
 export function brainBlock() {
   let text = readText(BRAIN_FILE);

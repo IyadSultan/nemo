@@ -84,3 +84,16 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-16 15:55 — second-brain
 
 **Prompt:** yes add the edit-only upload, multiple pdfs, and do not open the whole app. Just upload the documents in boxes within app window and show buttons on the screen per pef + combination button on the last document. Include split in one button per document and open a splitting window. all clear?
+**Response:** I couldn't reproduce this. The page code works; the fault is most likely in the copy of the window app that's running now. **Try this first:** click into the Second Brain window and press **⌘R** to reload it. Then try Photo and Snapshot again. **What I tested** (a headless browser against `127.0.0.1:3001/voice.html`, with a fake window bridge standing in for the app): 1. **The page loads cleanly.* […]
+**Response:** All flows pass in the browser now. Final checks: unit tests, error log, cleanup.
+
+## 2026-10-21 06:15 — second-brain
+
+**Prompt:** we added some new features, go over them one by one, optimize the code then push
+
+- Review pass (idle sweep, today's calls, stop/steer): fixed destructive Terminal tab close (tty-matched, busy-aware, SIGTERM instead of typing /exit), tty atime counted as activity, daylog meaning-index rebuild per call removed, steer races (stop clears queued steer, voice stops too), dictation mic held during answer. Added agents.test.js, brain.test.js. Not committed.
+**Response:** All 39 Node tests pass and every JS file parses. Waiting on the Repeating jobs agent before the Rust tests and the push.
+
+## 2026-10-21 06:41 — second-brain
+
+**Prompt:** <task-notification> <task-id>a8ac57b94cb8fc406</task-id> <tool-use-id>toolu_01YcTFpa8ubZ8iBvy4FMB3oq</tool-use-id> <output-file>/private/tmp/claude-501/-Users-USER-code-talk-to-your-brain/d5ae93f5-a271-4174-badb-1a7a5f7d810c/tasks/a8ac57b94cb8fc406.output</output-file> <status>completed</status> <summary>Agent "Review+optimize repeating jobs and watches" finished</summary> <note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note> <result>I fixe […]

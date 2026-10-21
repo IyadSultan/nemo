@@ -186,13 +186,13 @@ function replyText(data) {
 
 function lastAssistantText(file) {
   if (!file || !fs.existsSync(file)) return "";
+  let fd;
   try {
     const stat = fs.statSync(file);
     const size = Math.min(stat.size, 512 * 1024);
     const buf = Buffer.alloc(size);
-    const fd = fs.openSync(file, "r");
+    fd = fs.openSync(file, "r");
     fs.readSync(fd, buf, 0, size, Math.max(0, stat.size - size));
-    fs.closeSync(fd);
     const lines = buf.toString("utf8").split("\n").slice(-400);
     for (let i = lines.length - 1; i >= 0; i -= 1) {
       const line = lines[i].trim();
@@ -214,6 +214,10 @@ function lastAssistantText(file) {
     }
   } catch (err) {
     console.error("Failed while reading a Claude transcript:", err.message);
+  } finally {
+    if (fd != null) {
+      try { fs.closeSync(fd); } catch { /* already closed */ }
+    }
   }
   return "";
 }
@@ -430,11 +434,11 @@ function realFolder(folder) {
 }
 
 /**
- * Every Claude Code running in this folder, in any app: Terminal, Cursor, iTerm.
- * Found by the folder the program runs in, so a window title does not matter.
+ * Every Claude Code you can type to, in any app: Terminal, Cursor, iTerm.
+ * The Claude app and one-shot summary jobs are left out.
+ * Each row has the process id, the terminal device, the folder, and when it started.
  */
-async function claudesIn(folder) {
-  const want = realFolder(folder);
+async function listOpenClaudes() {
   let rows = [];
   try {
     const out = (await execFileAsync("ps", ["-axo", "pid=,tty=,command="], { timeout: 4000, encoding: "utf8" })).stdout;
@@ -446,20 +450,44 @@ async function claudesIn(folder) {
     return [];
   }
   if (!rows.length) return [];
-  let out = "";
+  let listed = "";
   try {
     // lsof exits 1 when one of the programs has just quit. What it printed is still good.
-    out = (await execFileAsync("lsof", ["-a", "-p", rows.map((r) => r.pid).join(","), "-d", "cwd", "-Fpn"], { timeout: 6000, encoding: "utf8" })).stdout;
+    listed = (await execFileAsync("lsof", ["-a", "-p", rows.map((r) => r.pid).join(","), "-d", "cwd", "-Fpn"], { timeout: 6000, encoding: "utf8" })).stdout;
   } catch (err) {
-    out = String(err?.stdout || "");
+    listed = String(err?.stdout || "");
   }
   const cwdOf = new Map();
   let pid = 0;
-  for (const line of out.split("\n")) {
+  for (const line of listed.split("\n")) {
     if (line.startsWith("p")) pid = Number(line.slice(1));
     else if (line.startsWith("n") && pid) cwdOf.set(pid, line.slice(1));
   }
-  return rows.filter((r) => cwdOf.get(r.pid) === want);
+  const started = await startTimes(rows.map((r) => r.pid));
+  return rows
+    .filter((r) => cwdOf.has(r.pid))
+    .map((r) => ({ pid: r.pid, tty: r.tty, cwd: cwdOf.get(r.pid), startedAt: started.get(r.pid) || 0 }));
+}
+
+/** When each process started, as a clock time. A missing time stays 0 so we do not guess. */
+async function startTimes(pids) {
+  const when = new Map();
+  await Promise.all(pids.map(async (pid) => {
+    try {
+      const text = (await execFileAsync("ps", ["-p", String(pid), "-o", "lstart="], { timeout: 3000, encoding: "utf8" })).stdout.trim();
+      const at = Date.parse(text);
+      if (!Number.isNaN(at)) when.set(pid, at);
+    } catch {
+      // The process quit while we were looking. Leave it out.
+    }
+  }));
+  return when;
+}
+
+/** Every Claude Code running in this folder. Found by the folder, so a window title does not matter. */
+async function claudesIn(folder) {
+  const want = realFolder(folder);
+  return (await listOpenClaudes()).filter((row) => row.cwd === want);
 }
 
 /** Type a line into the Terminal tab on this tty, then Return. False when no Terminal tab has it. */
@@ -541,11 +569,192 @@ export async function exitAgent({ cwd, place }) {
   return { ok: true, did: "exit" };
 }
 
+/** 30 hours with nothing new. Used by the quiet-agent sweep below. */
+export const QUIET_MS = 30 * 60 * 60 * 1000;
+
+/**
+ * True when this Claude has been quiet long enough to close.
+ * "Quiet" is the latest of: when the program started, when its saved chat was
+ * last written, and when you last typed in its Terminal. A Claude you just
+ * opened is not quiet, even if the old chat file is old. If we cannot tell when
+ * it started, we leave it open.
+ */
+export function quietLongEnough(startedAt, touchedAt, now = Date.now(), limit = QUIET_MS) {
+  const started = Number(startedAt) || 0;
+  if (!started) return false;
+  const last = Math.max(started, Number(touchedAt) || 0);
+  return now - last >= limit;
+}
+
+/** The folder where Claude saves this project's chat files. */
+function projectDir(folder) {
+  const key = realFolder(folder).replace(/[^A-Za-z0-9]/g, "-");
+  return path.join(os.homedir(), ".claude", "projects", key);
+}
+
+/** When the newest saved chat for this folder was last written. 0 if there is none. */
+function lastChatTouch(folder) {
+  const dir = projectDir(folder);
+  let latest = 0;
+  try {
+    for (const name of fs.readdirSync(dir)) {
+      if (!name.endsWith(".jsonl")) continue;
+      const when = fs.statSync(path.join(dir, name)).mtimeMs;
+      if (when > latest) latest = when;
+    }
+  } catch {
+    // No saved chat yet. The start time is still enough.
+  }
+  return latest;
+}
+
+/** When a key was last pressed in this terminal. macOS updates a tty's access time on input (the IDLE column of `w`). */
+async function lastTyped(tty) {
+  try {
+    return (await fs.promises.stat(tty)).atimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Look at, or act on, the Terminal tab that owns this tty. Found by tty every
+ * time, so a tab that closed or moved in between can never be mistaken for another.
+ * mode "look":  BUSY (a program runs in it), IDLE (only the shell), or MISS (not a Terminal tab).
+ * mode "exit":  types exit into an IDLE tab and answers SENT. A BUSY tab is not touched.
+ * mode "close": closes an IDLE tab (the window, when it is the only tab). LEFT when it could not.
+ */
+async function terminalTab(tty, mode) {
+  const script = `
+on run argv
+  set want to item 1 of argv
+  set mode to item 2 of argv
+  tell application "Terminal"
+    repeat with w in windows
+      repeat with t in tabs of w
+        set here to false
+        try
+          set here to ((tty of t) is want)
+        end try
+        if here then
+          if busy of t then return "BUSY"
+          if mode is "exit" then
+            do script "exit" in t
+            return "SENT"
+          end if
+          if mode is "close" then
+            if (count of tabs of w) is 1 then
+              close w
+              return "OK"
+            end if
+            try
+              close t
+              return "OK"
+            end try
+            return "LEFT"
+          end if
+          return "IDLE"
+        end if
+      end repeat
+    end repeat
+  end tell
+  return "MISS"
+end run
+`;
+  try {
+    return (await execFileAsync("/usr/bin/osascript", ["-e", script, tty, mode], { timeout: 8000, encoding: "utf8" })).stdout.trim();
+  } catch (err) {
+    console.error("Failed while checking a Terminal tab:", String(err.stderr || err.message || err).slice(0, 300));
+    return "ERROR";
+  }
+}
+
+/**
+ * Quit one quiet Claude with SIGTERM, the same polite stop Exit uses outside Terminal.
+ * Typing /exit is not safe here: text left unsent in its prompt box would be sent
+ * as a new request, and the "stop running tasks?" question would be answered for you.
+ */
+async function exitOne(proc) {
+  try {
+    process.kill(proc.pid, "SIGTERM");
+  } catch (err) {
+    console.error("Failed while asking a quiet Claude to quit:", err?.message || err);
+  }
+  for (let i = 0; i < 20 && stillRunning(proc.pid); i += 1) await wait(250);
+  return !stillRunning(proc.pid);
+}
+
+/**
+ * Close the Terminal tab this Claude was using, once Claude has left.
+ * First the shell is asked to leave, so macOS does not ask "terminate running processes?".
+ * A tab still running something else is left alone. A window with only that tab is closed.
+ */
+async function closeTerminal(tty) {
+  const sent = await terminalTab(tty, "exit");
+  if (sent === "MISS") return true;
+  if (sent !== "SENT") return false;
+  await wait(700);
+  // MISS: leaving the shell already closed the tab.
+  return ["OK", "MISS"].includes(await terminalTab(tty, "close"));
+}
+
+let sweeping = false;
+
+/**
+ * Look at every open Claude. Any one in a Terminal tab that has been quiet for
+ * 30 hours is told to exit, and its tab is closed. Claudes in Cursor, iTerm, or
+ * tmux are not Terminal tabs, so they are left alone.
+ */
+export async function closeQuietAgents() {
+  if (sweeping) return [];
+  sweeping = true;
+  const closed = [];
+  try {
+    for (const proc of await listOpenClaudes()) {
+      const touched = Math.max(lastChatTouch(proc.cwd), await lastTyped(proc.tty));
+      if (!quietLongEnough(proc.startedAt, touched)) continue;
+      if ((await terminalTab(proc.tty, "look")) !== "BUSY") continue;
+      const name = agentName(proc.cwd);
+      if (!(await exitOne(proc))) {
+        console.error(`Could not exit quiet Claude ${name}. It is still running.`);
+        continue;
+      }
+      const shut = await closeTerminal(proc.tty);
+      const note = shut
+        ? "It had been quiet for 30 hours, so it was told to exit and its Terminal tab was closed."
+        : "It had been quiet for 30 hours, so it was told to exit. Its Terminal tab was left open.";
+      remember(AGENTS_FILE, `\n## ${stamp()} — ${name} — closed\n\nSummary: ${note}\n`);
+      tellPage("done", name, `${name}-quiet-${proc.pid}`, note, { cwd: proc.cwd, place: "terminal" });
+      console.log(`Closed quiet Claude ${name}.`);
+      closed.push({ name, cwd: proc.cwd, terminal: shut });
+    }
+  } catch (err) {
+    console.error("Failed while closing quiet Claudes:", err?.message || err);
+  } finally {
+    sweeping = false;
+  }
+  return closed;
+}
+
+let idleTimer = null;
+
+/** Check for quiet Claudes every 6 hours, and once shortly after the server starts. */
+function startIdleSweep() {
+  if (idleTimer) return;
+  const run = () => {
+    closeQuietAgents().catch((err) => console.error("Failed while closing quiet Claudes:", err?.message || err));
+  };
+  const first = setTimeout(run, 20_000);
+  first.unref?.();
+  idleTimer = setInterval(run, 6 * 60 * 60 * 1000);
+  idleTimer.unref?.();
+  console.log("Quiet Claudes are closed after 30 hours, and their Terminal is closed too.");
+}
+
 /** True when Claude has a saved chat for this folder, so claude --continue has something to open. */
 function hasSavedChat(folder) {
-  const key = realFolder(folder).replace(/[^A-Za-z0-9]/g, "-");
   try {
-    return fs.readdirSync(path.join(os.homedir(), ".claude", "projects", key)).some((f) => f.endsWith(".jsonl"));
+    return fs.readdirSync(projectDir(folder)).some((f) => f.endsWith(".jsonl"));
   } catch {
     return false;
   }
@@ -799,44 +1008,69 @@ function installCursorHooks() {
 }
 
 // ---- watcher: the session log already written by session_logger.py ----
+// These reads used to be synchronous. One slow OneDrive folder then froze the
+// whole server, including the R notebook, until the disk call returned.
 
 const offsets = new Map();
 const tails = new Map();
+const skipUntil = new Map(); // path -> do not touch again before this time
 let watchTimer = null;
 let folderCache = [];
 let foldersAt = 0;
+let polling = false;
 
-function projectFolders() {
+function skip(file, ms) {
+  skipUntil.set(file, Date.now() + ms);
+}
+
+function skipping(file) {
+  return (skipUntil.get(file) || 0) > Date.now();
+}
+
+async function projectFolders() {
   const now = Date.now();
-  if (folderCache.length && now - foldersAt < 30000) return folderCache;
+  if (folderCache.length && now - foldersAt < 5 * 60_000) return folderCache;
   foldersAt = now;
   const found = [];
   try {
-    const reg = JSON.parse(fs.readFileSync(REGISTRY, "utf8"));
+    const reg = JSON.parse(await fs.promises.readFile(REGISTRY, "utf8"));
     for (const key of Object.keys(reg)) {
       const dir = path.resolve(String(key));
+      if (skipping(dir)) continue;
+      const started = Date.now();
       try {
-        if (fs.statSync(dir).isDirectory()) found.push(dir);
+        if ((await fs.promises.stat(dir)).isDirectory()) found.push(dir);
+        else skip(dir, 10 * 60_000);
       } catch {
-        // That project folder is not on this Mac right now.
+        // Missing, or OneDrive did not answer. Leave it alone for a while.
+        skip(dir, Date.now() - started > 1000 ? 10 * 60_000 : 5 * 60_000);
       }
     }
   } catch (err) {
     console.error("Failed while reading the agent list:", err.message);
+    return folderCache;
   }
   folderCache = found;
   return found;
 }
 
-function baseline(file, size) {
+/** Read a slice of a file. The handle is always closed, including when the read fails. */
+async function readSlice(file, start, length) {
+  const handle = await fs.promises.open(file, "r");
+  try {
+    const buf = Buffer.alloc(length);
+    await handle.read(buf, 0, length, start);
+    return buf.toString("utf8");
+  } finally {
+    await handle.close();
+  }
+}
+
+async function baseline(file, size) {
   const take = Math.min(size, 2500);
   let text = "";
   try {
-    const buf = Buffer.alloc(take);
-    const fd = fs.openSync(file, "r");
-    fs.readSync(fd, buf, 0, take, Math.max(0, size - take));
-    fs.closeSync(fd);
-    text = buf.toString("utf8");
+    text = await readSlice(file, Math.max(0, size - take), take);
   } catch {
     text = "";
   }
@@ -881,53 +1115,50 @@ function consumeLog(file, chunk) {
   tails.set(file, state);
 }
 
-function pollLogs() {
-  for (const dir of projectFolders()) {
-    const file = path.join(dir, ".claude", "logs.md");
-    let stat;
-    try {
-      stat = fs.statSync(file);
-    } catch {
-      continue;
+async function pollLogs() {
+  if (polling) return;
+  polling = true;
+  try {
+    for (const dir of await projectFolders()) {
+      const file = path.join(dir, ".claude", "logs.md");
+      if (skipping(file)) continue;
+      const started = Date.now();
+      let stat;
+      try {
+        stat = await fs.promises.stat(file);
+      } catch {
+        // No log, or the cloud file did not answer. A slow one is left alone longer.
+        skip(file, Date.now() - started > 1000 ? 10 * 60_000 : 5 * 60_000);
+        continue;
+      }
+      if (Date.now() - started > 1000) skip(file, 60_000);
+      const prev = offsets.get(file);
+      if (prev == null || stat.size < prev) {
+        await baseline(file, stat.size);
+        continue;
+      }
+      if (stat.size === prev) continue;
+      try {
+        consumeLog(file, await readSlice(file, prev, stat.size - prev));
+        offsets.set(file, stat.size);
+      } catch (err) {
+        console.error("Failed while reading a Claude session log:", err.message);
+        skip(file, 60_000);
+      }
     }
-    const prev = offsets.get(file);
-    if (prev == null) {
-      baseline(file, stat.size);
-      continue;
-    }
-    if (stat.size < prev) {
-      baseline(file, stat.size);
-      continue;
-    }
-    if (stat.size === prev) continue;
-    try {
-      const buf = Buffer.alloc(stat.size - prev);
-      const fd = fs.openSync(file, "r");
-      fs.readSync(fd, buf, 0, buf.length, prev);
-      fs.closeSync(fd);
-      offsets.set(file, stat.size);
-      consumeLog(file, buf.toString("utf8"));
-    } catch (err) {
-      console.error("Failed while reading a Claude session log:", err.message);
-    }
+  } finally {
+    polling = false;
   }
 }
 
 /** Start noticing session logs. The first look only remembers how long each log is. */
 export function startAgentWatch() {
   if (watchTimer) return;
-  try {
-    pollLogs();
-  } catch (err) {
-    console.error("Failed while starting the agent watch:", err.message);
-  }
+  pollLogs().catch((err) => console.error("Failed while starting the agent watch:", err.message));
   watchTimer = setInterval(() => {
-    try {
-      pollLogs();
-    } catch (err) {
-      console.error("Failed while watching Claude session logs:", err.message);
-    }
+    pollLogs().catch((err) => console.error("Failed while watching Claude session logs:", err.message));
   }, 2000);
   watchTimer.unref?.();
   console.log("Watching Claude session logs for agents.md.");
+  startIdleSweep();
 }

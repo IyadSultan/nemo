@@ -80,15 +80,17 @@ async function start() {
   return proc;
 }
 
-/** Run code in the session. Resolves with the items; rejects when R dies or takes over 10 minutes. */
-export async function runR(code) {
+/** Run code in the session. Resolves with the items; rejects when R dies or takes too long. */
+export async function runR(code, timeoutMs = RUN_MS) {
   const proc = child || await start();
   const id = `${Date.now().toString(36)}-${(counter += 1)}`;
   const items = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       waiting.delete(id);
-      reject(new Error("R did not finish in 10 minutes. Restart R to stop it."));
-    }, RUN_MS);
+      reject(new Error(timeoutMs < RUN_MS
+        ? "R did not answer in time."
+        : "R did not finish in 10 minutes. Restart R to stop it."));
+    }, timeoutMs);
     waiting.set(id, { resolve, reject, timer });
     proc.stdin.write(`${JSON.stringify({ id, code })}\n`);
   });
@@ -122,7 +124,8 @@ const SUMMARY_CODE = `local({
 
 async function sessionSummary() {
   try {
-    const items = await runR(SUMMARY_CODE);
+    // A quick look. If R is busy, the notebook still gets an answer instead of waiting 10 minutes.
+    const items = await runR(SUMMARY_CODE, 20_000);
     return items.filter((i) => i.type === "text").map((i) => i.text).join("").slice(0, 8000);
   } catch {
     return "";
@@ -146,13 +149,17 @@ export function registerR(app) {
       .map((c) => `Code:\n${String(c?.code || "").slice(0, 2000)}\nOutput:\n${String(c?.output || "").slice(0, 1500)}`)
       .join("\n\n");
     const model = getModel(req.body?.model) || getModel("claude-sonnet");
+    const started = Date.now();
+    const summary = (await sessionSummary()) || "(could not be read)";
+    const looked = Date.now() - started;
     const parts = [
-      `In the R session now:\n${(await sessionSummary()) || "(could not be read)"}`,
+      `In the R session now:\n${summary}`,
       recent ? `Recent cells:\n${recent}` : "No cells have run yet.",
       `Request: ${request}`,
     ];
     try {
-      const raw = await askModelOnce(model, R_INSTRUCTION, parts.join("\n\n"), process.env.OPENAI_API_KEY, 3000, 180_000);
+      const raw = await askModelOnce(model, R_INSTRUCTION, parts.join("\n\n"), process.env.OPENAI_API_KEY, 3000, 45_000);
+      console.log(`R notebook wrote code in ${Date.now() - started}ms (looking at the session took ${looked}ms).`);
       const reply = parseJsonObject(raw);
       if (!reply) return res.json({ say: String(raw || "").trim().slice(0, 4000) || "I could not write that.", code: "" });
       res.json({ say: String(reply.say || "").slice(0, 4000), code: String(reply.code || "").slice(0, 20_000) });

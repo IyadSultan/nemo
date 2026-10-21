@@ -87,6 +87,17 @@ fn every_call_and_the_file_match_node() {
             "cancelWatches" => json!(desk.cancel_watches()),
             "addReminder" => desk.add_reminder(st(0), a[1].as_i64().unwrap()),
             "takeDueReminders" => json!(desk.take_due_reminders(a[0].as_i64().unwrap())),
+            "addMailWatch" => json!(desk.add_mail_watch(st(0))),
+            "addMeetingWatch" => json!(desk.add_meeting_watch(a[0].as_i64().unwrap())),
+            "setWatchMark" => json!(desk.set_watch_mark(st(0), st(1), a[2]["tell"] == true, a[2]["receipt"].as_str().unwrap())),
+            "stopWatch" => json!(desk.stop_watch(st(0))),
+            // The clock is passed in, as server.js leaves it to Date.now().
+            "addSchedule" => desk.add_schedule(&a[0], a[1].as_i64().unwrap()),
+            "pauseSchedule" => desk.pause_schedule(&a[0]),
+            "resumeSchedule" => desk.resume_schedule(&a[0], a[1].as_i64().unwrap()),
+            "moveSchedule" => desk.move_schedule(&a[0], a[1].as_u64().unwrap() as u32, a[2].as_u64().unwrap() as u32, a[3].as_i64().unwrap()),
+            "takeDueSchedules" => json!(desk.take_due_schedules(a[0].as_i64().unwrap())),
+            "dropSchedule" => desk.drop_schedule(&a[0]),
             "mergeSuggestions" => {
                 let items: Vec<Suggestion> = a[0]
                     .as_array()

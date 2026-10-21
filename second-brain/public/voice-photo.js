@@ -153,10 +153,47 @@ function addPhotoBubble(dataUrl, where) {
   img.className = "shot";
   img.alt = where === "lecture" ? "Photo added to the lecture" : where === "meeting" ? "Photo added to the meeting" : "Photo added to the talk";
   img.src = dataUrl;
-  bubble.append(who, img);
+  const actions = document.createElement("div");
+  actions.className = "shot-actions";
+  const edit = document.createElement("button");
+  edit.type = "button";
+  edit.className = "ghost-btn small";
+  edit.textContent = "Edit";
+  edit.title = "Edit this picture: rotate, brighten, crop, and more";
+  // The picture shown is the latest copy, so a second edit starts from the last change.
+  edit.addEventListener("click", () => {
+    window.brainPhoto?.editShot(img.src, window.followPhoto(img.src));
+  });
+  actions.append(edit);
+  bubble.append(who, img, actions);
   transcriptEl.appendChild(bubble);
   followTranscript();
 }
+
+/** After each edit, swap the old copy for the new one in the chat and in a meeting. */
+window.followPhoto = (start) => {
+  let current = start;
+  return (next) => {
+    document.querySelectorAll(".bubble.photo img.shot").forEach((img) => {
+      if (img.src === current) img.src = next;
+    });
+    for (const list of [capturePhotos, photosToSave]) {
+      const at = list.indexOf(current);
+      if (at >= 0) list[at] = next;
+    }
+    current = next;
+  };
+};
+
+/** The picture a question should see: the one open in the editor, or the newest shot. */
+window.noteEditedPhoto = (dataUrl) => {
+  if (!dataUrl) return;
+  latestShot = dataUrl;
+  latestShotAt = Date.now();
+  latestShotSent = false;
+};
+
+window.latestPhotoForEdit = () => latestShot || "";
 
 /** Keep this picture with the meeting, the lecture, or the next question. */
 function keepPhoto(dataUrl) {
@@ -352,7 +389,8 @@ documentFile.addEventListener("change", async () => {
   documentFile.value = "";
   if (!file) return;
   documentBtn.disabled = true;
-  documentBtn.textContent = "Reading…";
+  documentBtn.setAttribute("aria-label", "Reading the document");
+  setPlayerName(documentBtn, "Reading");
   setStatus(`Reading ${file.name}. Long documents take a minute.`);
   try {
     const during = meetingOn;
@@ -391,7 +429,8 @@ documentFile.addEventListener("change", async () => {
     setStatus(err.message);
   } finally {
     documentBtn.disabled = false;
-    documentBtn.textContent = "Document";
+    documentBtn.setAttribute("aria-label", "Document");
+    setPlayerName(documentBtn, "Document");
   }
 });
 

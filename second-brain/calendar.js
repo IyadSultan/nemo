@@ -4,6 +4,7 @@
  */
 
 import { __dirname } from "./config.js";
+import { openOutlookMeeting } from "./outlook.js";
 import { runCommand } from "./shell.js";
 import { numberWord, spokenClock, spokenDay } from "./spoken.js";
 import fsSync from "node:fs";
@@ -168,9 +169,16 @@ export function startOfDay(date) {
   return day;
 }
 
-/** Read the meetings Outlook has ready on this Mac. */
-export function loadOutlookCalendar() {
-  const data = JSON.parse(fsSync.readFileSync(outlookCalendarFile(), "utf8"));
+/**
+ * An all-day event is stored at midnight UTC of its day. Keep that calendar day at midnight on this Mac,
+ * or it spills into the next day east of UTC (Amman, Berlin) and the day before west of it.
+ */
+function floatingDay(date) {
+  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+/** The meetings in Outlook's widget file, already parsed. */
+export function readOutlookStore(data) {
   if (data.hasError) throw new Error("Outlook said the calendar could not be read.");
   const events = [];
   const seen = new Set();
@@ -180,9 +188,14 @@ export function loadOutlookCalendar() {
     if (!Array.isArray(appointments)) continue;
     for (const item of appointments) {
       if (!item || item.isCancelled) continue;
-      const start = outlookTime(item.startTime);
-      const end = outlookTime(item.endTime);
+      const allDay = Boolean(item.isAllDay);
+      let start = outlookTime(item.startTime);
+      let end = outlookTime(item.endTime);
       if (Number.isNaN(start.getTime())) continue;
+      if (allDay) {
+        start = floatingDay(start);
+        end = floatingDay(end);
+      }
       const subject = String(item.subject || "Untitled").replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim() || "Untitled";
       const key = `${start.getTime()}|${subject}`;
       if (seen.has(key)) continue;
@@ -192,7 +205,7 @@ export function loadOutlookCalendar() {
         location: String(item.location || "").replace(/\s+/g, " ").trim(),
         start,
         end,
-        allDay: Boolean(item.isAllDay),
+        allDay,
       });
     }
   }
@@ -200,6 +213,28 @@ export function loadOutlookCalendar() {
   const windowStart = outlookTime(data.dateInterval?.start || 0);
   const windowEnd = outlookTime((data.dateInterval?.start || 0) + (data.dateInterval?.duration || 0));
   return { events, windowStart, windowEnd };
+}
+
+/** Read the meetings Outlook has ready on this Mac. */
+export function loadOutlookCalendar() {
+  return readOutlookStore(JSON.parse(fsSync.readFileSync(outlookCalendarFile(), "utf8")));
+}
+
+/**
+ * Meetings that start before a clock hour, today if they are not over yet, and tomorrow.
+ * beforeHour 9 means before 9:00 in the morning. A meeting that began yesterday does not count.
+ */
+export function earlyMeetings(events, beforeHour, now = new Date()) {
+  const hour = Number(beforeHour);
+  if (!Number.isInteger(hour) || hour < 1 || hour > 23) return [];
+  const today = startOfDay(now);
+  const afterTomorrow = new Date(today);
+  afterTomorrow.setDate(afterTomorrow.getDate() + 2);
+  return events.filter((event) => !event.allDay
+    && event.end > now
+    && event.start >= today
+    && event.start < afterTomorrow
+    && event.start.getHours() < hour);
 }
 
 export function eventsOnDay(events, day) {
@@ -340,4 +375,124 @@ export async function calendarInviteAt(start, end) {
     console.error("Failed while reading the calendar invite:", err?.message || err);
     return null;
   }
+}
+
+/** "8:05 AM" for a card. All-day events leave the clock blank. */
+function cardClock(date) {
+  let hour = date.getHours();
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  const mark = hour >= 12 ? "PM" : "AM";
+  hour = hour % 12 || 12;
+  return `${hour}:${minute} ${mark}`;
+}
+
+/**
+ * The days Outlook has ready on this Mac, for the Calendar tab.
+ * Each day has its meetings. Times are this Mac's clock.
+ */
+export function calendarBoard(loaded = loadOutlookCalendar(), now = new Date()) {
+  const today = startOfDay(now).getTime();
+  const start = startOfDay(loaded.windowStart);
+  const end = startOfDay(loaded.windowEnd);
+  const span = end - start;
+  const days = [];
+  if (!Number.isNaN(start.getTime()) && span > 0 && span <= 21 * 86_400_000) {
+    for (const cursor = new Date(start); cursor < end; cursor.setDate(cursor.getDate() + 1)) {
+      days.push(dayCard(cursor, today, eventsOnDay(loaded.events, cursor)));
+    }
+  }
+  return { days };
+}
+
+function dayKey(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function dayCard(cursor, today, events) {
+  return {
+    date: dayKey(cursor),
+    weekday: cursor.toLocaleDateString("en-US", { weekday: "short" }),
+    label: cursor.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    today: cursor.getTime() === today,
+    events: events.map((event) => ({
+      subject: event.subject,
+      location: event.location,
+      allDay: event.allDay,
+      start: event.allDay ? "" : cardClock(event.start),
+      end: event.allDay ? "" : cardClock(event.end),
+    })),
+  };
+}
+
+/**
+ * Turn the Calendar tab's form into one appointment.
+ * A bad day or time comes back as a short error. Nothing is opened yet.
+ */
+export function appointmentPlan(body) {
+  const subject = String(body?.subject || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!subject) return { error: "Type a title for the appointment." };
+  const date = String(body?.date || "");
+  const start = String(body?.start || "");
+  const end = String(body?.end || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Pick a day." };
+  if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) return { error: "Pick a start and an end." };
+  const [year, month, day] = date.split("-").map(Number);
+  const [startHour, startMinute] = start.split(":").map(Number);
+  const [endHour, endMinute] = end.split(":").map(Number);
+  const when = new Date(year, month - 1, day, startHour, startMinute, 0, 0);
+  if (startHour > 23 || endHour > 23 || startMinute > 59 || endMinute > 59
+    || when.getFullYear() !== year || when.getMonth() !== month - 1 || when.getDate() !== day) {
+    return { error: "That day or time is not valid." };
+  }
+  // Clock minutes, not milliseconds, so 9 to 10 is one hour on the day the clocks change.
+  const duration = (endHour * 60 + endMinute) - (startHour * 60 + startMinute);
+  if (duration < 5 || duration > 12 * 60) return { error: "Make it at least 5 minutes, and no longer than 12 hours." };
+  const location = String(body?.location || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  return {
+    meeting: {
+      subject,
+      body: location ? `Place: ${location}.` : "",
+      location,
+      duration,
+      date: when,
+    },
+  };
+}
+
+/** The Calendar tab reads this. Opening Outlook is a separate button. */
+export function registerCalendar(app) {
+  app.get("/calendar", (_req, res) => {
+    try {
+      res.json(calendarBoard());
+    } catch (err) {
+      console.error("Failed while reading the Outlook calendar for the tab:", err?.message || err);
+      res.status(500).json({ error: "Outlook's calendar is not ready on this Mac. Open Outlook once, then press Refresh." });
+    }
+  });
+
+  app.post("/calendar/appointment", async (req, res) => {
+    const plan = appointmentPlan(req.body);
+    if (plan.error) {
+      res.status(400).json({ error: plan.error });
+      return;
+    }
+    try {
+      await openOutlookMeeting(plan.meeting);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("Failed while opening a new appointment in Outlook:", err?.message || err);
+      res.status(500).json({ error: "Microsoft Outlook did not open. Is it installed?" });
+    }
+  });
+
+  app.post("/calendar/open", async (_req, res) => {
+    try {
+      await runCommand("open", ["-a", "Microsoft Outlook"]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("Failed while opening Outlook from the calendar tab:", err?.message || err);
+      res.status(500).json({ error: "Microsoft Outlook did not open." });
+    }
+  });
 }

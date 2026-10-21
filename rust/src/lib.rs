@@ -8,5 +8,6 @@ pub mod learnings;
 pub mod medgem;
 pub mod openfile;
 pub mod pricing;
+pub mod stickies;
 pub mod team;
 pub mod term;

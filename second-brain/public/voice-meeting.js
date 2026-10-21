@@ -44,8 +44,10 @@ function paintMeetingButton() {
   lectureBtn.setAttribute("aria-pressed", lecture ? "true" : "false");
   meetingBtn.classList.toggle("is-on", meeting);
   lectureBtn.classList.toggle("is-on", lecture);
-  meetingBtn.textContent = meeting ? "Meeting on" : "Meeting";
-  lectureBtn.textContent = lecture ? "Lecture on" : "Lecture";
+  meetingBtn.setAttribute("aria-label", meeting ? "Meeting on" : "Meeting");
+  lectureBtn.setAttribute("aria-label", lecture ? "Lecture on" : "Lecture");
+  setPlayerName(meetingBtn, "Meeting");
+  setPlayerName(lectureBtn, "Lecture");
   recapBtn.disabled = !meetingOn || recapBusy;
   recapBtn.title = lecture
     ? "Summarize the talk so far and suggest questions. Shown only, not spoken."
@@ -239,7 +241,7 @@ function captureMeetingLine(stream) {
     }
 
     const timer = setInterval(() => {
-      if (epoch !== listenEpoch || localStop || !meetingOn || (!connected && !quietCapture)) {
+      if (epoch !== listenEpoch || localStop || dictateHold || !meetingOn || (!connected && !quietCapture)) {
         stopRec();
         return;
       }
@@ -409,6 +411,8 @@ async function runQuietMicBody() {
     if (!micStream) micStream = await openMic();
     muteBtn.disabled = false;
     while (quietCapture && !connected && meetingOn) {
+      while (dictateHold && quietCapture) await sleep(40);
+      if (!quietCapture || connected || !meetingOn) break;
       showMeetingStatus();
       const heard = await captureMeetingLine(micStream);
       const ending = closeMeetingAfterClip && !meetingOn;
@@ -439,8 +443,8 @@ async function runQuietMicBody() {
       micStream = null;
       muted = false;
       muteBtn.disabled = true;
-      muteBtn.textContent = "Mute mic";
       muteBtn.classList.remove("is-muted");
+      paintPlayback();
     }
   }
   if (summarize) closeMeetingAfterClip = false;

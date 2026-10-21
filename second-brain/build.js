@@ -9,10 +9,12 @@ import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { BRAIN_DIR } from "./config.js";
+import { learningJob } from "./learnings.js";
 import { askClaude } from "./models.js";
 import { getModel } from "./pricing.js";
 import { eventFolderName, freeChildPath } from "./savedir.js";
 import { runCommand } from "./shell.js";
+import { chatMemorySticky, parseSticky } from "./stickies.js";
 
 export const WORKSPACE_ROOT = path.join(BRAIN_DIR, "workspace");
 
@@ -23,6 +25,8 @@ const ASKING = /^\s*(how (do|can|would|should) (i|u|you|we)|how to|what('s| is| 
 /** True when the user asks the brain to write code or make an artifact, not how to. */
 export function wantsBuild(question) {
   const q = String(question || "");
+  // "Save a sticky: we need to optimize our code" mentions code, but it is a note.
+  if (parseSticky(q) || chatMemorySticky(q) || learningJob(q)) return false;
   if (ASKING.test(q)) return false;
   const verb = q.match(MAKE);
   return Boolean(verb && THING.test(q.slice(verb.index)));

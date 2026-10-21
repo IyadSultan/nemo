@@ -7,24 +7,17 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa+Ink:wght@400;700&family=Caveat:wght@500;700&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Patrick+Hand&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/vendor/xterm/xterm/css/xterm.css" />
     <link rel="stylesheet" href="/voice.css" />
+    <link rel="stylesheet" href="/stickies.css" />
     <link rel="stylesheet" href="/deck.css" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%232fc6a0'/%3E%3Cstop offset='.5' stop-color='%238b8cf8'/%3E%3Cstop offset='1' stop-color='%23f2a33a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3C/svg%3E" />
   </head>
   <body>
     <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <div>
-          <p class="brand-name">Hey my brain</p>
-          <p class="brand-line">Voice assistant for your notes</p>
-        </div>
-      </div>
-
       <section class="meter" aria-label="Tokens for this whole chat">
         <h2 class="sr-only">This chat</h2>
         <dl class="counts">
@@ -37,21 +30,46 @@
         </dl>
       </section>
 
-      <button type="button" class="term-btn" id="pdfEditBtn" title="Upload PDFs to edit (or drop them on the window)">
-        <span aria-hidden="true">⧉</span> PDF tools
-      </button>
-      <button type="button" class="term-btn" id="wordBtn" title="Open the Word editor (WordCraft) with the brain beside it">
-        <span aria-hidden="true">W</span> Word
-      </button>
-      <button type="button" class="term-btn" id="slidesBtn" title="Open the slides editor (DeckCraft) with the brain beside it">
-        <span aria-hidden="true">▭</span> Slides
-      </button>
-      <button type="button" class="term-btn" id="rBtn" title="Open the R notebook (code, tables, plots) with the brain beside it">
-        <span aria-hidden="true">R</span> R
-      </button>
+      <nav class="tools" aria-label="Tools">
+        <button type="button" class="term-btn" id="pdfEditBtn" title="Upload PDFs to edit (or drop them on the window)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/><path d="M6 8.5h5M6 11h5"/></svg>PDF
+        </button>
+        <button type="button" class="term-btn" id="wordBtn" title="Open the Word editor (WordCraft) with the brain beside it">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/><path d="M5.5 7.5l1.2 5 1.3-3.5 1.3 3.5 1.2-5"/></svg>Word
+        </button>
+        <button type="button" class="term-btn" id="slidesBtn" title="Open the slides editor (DeckCraft) with the brain beside it">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.2"/><path d="M8 11.5v3M5.5 14.5h5"/></svg>Slides
+        </button>
+        <button type="button" class="term-btn" id="rBtn" title="Open the R notebook (code, tables, plots) with the brain beside it" aria-label="R notebook">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 14V2h4a3.25 3.25 0 0 1 0 6.5H4.5M8.5 8.5 12 14"/></svg>
+        </button>
+        <button type="button" class="term-btn" id="stickiesBtn" title="Open the sticky-note board">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h7.2L13 5.2V13.5H3z"/><path d="M10 2.6V5.4H13"/><path d="M5 8h6M5 10.5h4"/></svg>Stickies
+        </button>
+        <button type="button" class="term-btn" id="calendarBtn" title="Show the Outlook calendar that is ready on this Mac">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3" width="13" height="11.5" rx="1.2"/><path d="M1.5 6.5h13M5 1.5v3M11 1.5v3"/></svg>Calendar
+        </button>
+        <button type="button" class="term-btn" id="photoEditBtn" title="Edit a photo with PhotoCraft. Buttons rotate, brighten, and more. The editor also opens for crop and layers.">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.2"/><circle cx="5.5" cy="6" r="1.2"/><path d="M14.5 10.5 11 7l-5 6.5"/></svg>Photo
+        </button>
+        <button type="button" class="term-btn" id="terminalBtn" title="Open or close a terminal">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4 6 8l-3.5 4M8 12.5h5.5"/></svg>Terminal
+        </button>
+      </nav>
       <input id="pdfEditFile" type="file" accept=".pdf,application/pdf" multiple hidden />
-      <button type="button" class="term-btn" id="terminalBtn" title="Open or close a terminal">
-        <span aria-hidden="true">&gt;_</span> Terminal
+      <button type="button" class="term-btn expand-btn" id="expandBtn" title="Fill the screen" aria-pressed="false" aria-label="Fill the screen">
+        <svg class="expand-out" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4.5 9.5V4.5h5"></path>
+          <path d="M19.5 9.5V4.5h-5"></path>
+          <path d="M4.5 14.5v5h5"></path>
+          <path d="M19.5 14.5v5h-5"></path>
+        </svg>
+        <svg class="expand-in" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9.5 4.5v5h-5"></path>
+          <path d="M14.5 4.5v5h5"></path>
+          <path d="M9.5 19.5v-5h-5"></path>
+          <path d="M14.5 19.5v-5h5"></path>
+        </svg>
       </button>
     </header>
 
@@ -62,6 +80,7 @@
           <svg class="claude-mark" id="claudeMark" viewBox="0 0 100 100" aria-hidden="true"></svg>
           <div class="rings" aria-hidden="true"><span></span><span></span><span></span></div>
           <div class="orbit" aria-hidden="true"></div>
+          <span class="think-pulse" aria-hidden="true"></span>
           <div class="halo" aria-hidden="true">
             <span style="--i: 0"></span><span style="--i: 1"></span><span style="--i: 2"></span>
             <span style="--i: 3"></span><span style="--i: 4"></span><span style="--i: 5"></span>
@@ -89,6 +108,21 @@
         <form class="type-ask" id="typeForm">
           <label for="typeInput">Or type a question</label>
           <span class="add-row">
+            <button
+              type="button"
+              class="ghost-btn dictate-btn"
+              id="dictateBtn"
+              aria-pressed="false"
+              aria-label="Dictate the prompt"
+              title="Speak the prompt. Press again to stop."
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="3" width="6" height="11" rx="3"></rect>
+                <path d="M6.5 11a5.5 5.5 0 0 0 11 0"></path>
+                <path d="M12 16.5V20"></path>
+                <path d="M9 20h6"></path>
+              </svg>
+            </button>
             <input
               id="typeInput"
               type="text"
@@ -105,59 +139,99 @@
 
         <div class="booth-group" role="group" aria-labelledby="captureHead">
           <span id="captureHead">Capture</span>
-          <div class="mode-row">
+          <div class="player capture" role="toolbar" aria-label="Capture">
             <button
               type="button"
-              class="ghost-btn meeting-knob"
+              class="player-btn"
               id="meetingBtn"
               aria-pressed="false"
+              aria-label="Meeting"
               title="Write down a meeting without answering. Turn it off to write the minutes. They are read aloud only if Start talking is already on."
             >
-              Meeting
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M16 20.5v-1.5a3.5 3.5 0 0 0-3.5-3.5H7.5A3.5 3.5 0 0 0 4 19v1.5"></path>
+                <circle cx="10" cy="8" r="3"></circle>
+                <path d="M20 20.5v-1.2a3.2 3.2 0 0 0-2.4-3.1"></path>
+                <path d="M15.2 5.1a3 3 0 0 1 0 5.6"></path>
+              </svg>
+              <span class="player-name">Meeting</span>
             </button>
             <button
               type="button"
-              class="ghost-btn meeting-knob lecture-knob"
+              class="player-btn"
               id="lectureBtn"
               aria-pressed="false"
+              aria-label="Lecture"
               title="Write down a talk without answering. Turn it off to name the presenter and write the summary. It is read aloud only if Start talking is already on."
             >
-              Lecture
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3.5" y="4.5" width="17" height="11" rx="2"></rect>
+                <path d="M12 15.5v4"></path>
+                <path d="M8 19.5h8"></path>
+              </svg>
+              <span class="player-name">Lecture</span>
             </button>
-          </div>
-          <div class="action-row">
             <button
               type="button"
-              class="ghost-btn meeting-knob"
+              class="player-btn"
               id="recapBtn"
               disabled
+              aria-label="Recap"
               title="Summarize what has been said so far and suggest questions. Shown only, not spoken."
             >
-              Recap
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h2.2"></path>
+                <path d="M9 7h11"></path>
+                <path d="M4 12h2.2"></path>
+                <path d="M9 12h11"></path>
+                <path d="M4 17h2.2"></path>
+                <path d="M9 17h7"></path>
+              </svg>
+              <span class="player-name">Recap</span>
             </button>
             <button
               type="button"
-              class="ghost-btn meeting-knob"
+              class="player-btn"
               id="photoBtn"
+              aria-label="Photo"
               title="Take a photo. On your iPhone, press the shutter, then tap Use Photo. If the phone is not nearby, this Mac’s camera is used."
             >
-              Photo
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 8.5h3.1l1.5-2h6.8l1.5 2H20a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 20 19.5H4A1.5 1.5 0 0 1 2.5 18v-8A1.5 1.5 0 0 1 4 8.5z"></path>
+                <circle cx="12" cy="14" r="2.7"></circle>
+              </svg>
+              <span class="player-name">Photo</span>
             </button>
             <button
               type="button"
-              class="ghost-btn meeting-knob"
+              class="player-btn"
               id="snapshotBtn"
+              aria-label="Snapshot"
               title="Snapshot part of the screen. Drag over the area to keep; press Esc to cancel. The picture is used like a photo."
             >
-              Snapshot
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 4.5H5.5A1.5 1.5 0 0 0 4 6v2.5"></path>
+                <path d="M16 4.5h2.5A1.5 1.5 0 0 1 20 6v2.5"></path>
+                <path d="M20 15.5V18a1.5 1.5 0 0 1-1.5 1.5H16"></path>
+                <path d="M8 19.5H5.5A1.5 1.5 0 0 1 4 18v-2.5"></path>
+                <rect x="8" y="8" width="8" height="8" rx="1.2"></rect>
+              </svg>
+              <span class="player-name">Snapshot</span>
             </button>
             <button
               type="button"
-              class="ghost-btn meeting-knob"
+              class="player-btn"
               id="documentBtn"
+              aria-label="Document"
               title="Add a PDF, Word, or PowerPoint file. A copy and a wiki page go to the meeting folder, and you can ask about it."
             >
-              Document
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 3.5h6.5L19 9v11a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 20V5A1.5 1.5 0 0 1 7.5 3.5H7z"></path>
+                <path d="M13.5 3.5V9H19"></path>
+                <path d="M9 13.5h6"></path>
+                <path d="M9 17h4"></path>
+              </svg>
+              <span class="player-name">Document</span>
             </button>
           </div>
         </div>
@@ -180,26 +254,49 @@
 
         <div class="booth-group" role="group" aria-labelledby="playbackHead">
           <span id="playbackHead">Playback</span>
-          <div class="controls">
-            <button type="button" class="ghost-btn" id="muteBtn" disabled>Mute mic</button>
-            <button type="button" class="ghost-btn" id="pauseBtn" disabled title="Stop this answer. Then say Hey to ask a new question.">Pause</button>
-            <button type="button" class="ghost-btn" id="stopBtn" disabled title="Stop this answer. Then say Hey to ask a new question.">Stop</button>
-            <button type="button" class="ghost-btn" id="restartBtn" disabled>Restart last</button>
+          <div class="player" role="toolbar" aria-label="Playback">
+            <button type="button" class="player-btn" id="muteBtn" disabled aria-pressed="false" aria-label="Mute mic" title="Mute the microphone">
+              <svg class="when-on" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="3" width="6" height="11" rx="3"></rect>
+                <path d="M6 11a6 6 0 0 0 12 0"></path>
+                <path d="M12 17v3.5"></path>
+                <path d="M8.5 21h7"></path>
+              </svg>
+              <svg class="when-off" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="3" width="6" height="11" rx="3"></rect>
+                <path d="M6 11a6 6 0 0 0 8.2 5.5"></path>
+                <path d="M12 17v3.5"></path>
+                <path d="M8.5 21h7"></path>
+                <path d="M4 4l16 16"></path>
+              </svg>
+              <span class="player-name">Mic</span>
+            </button>
+            <button type="button" class="player-btn player-main" id="pauseBtn" disabled aria-label="Pause" title="Stop this answer. Then say Hey to ask a new question.">
+              <svg class="when-on" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="6.5" y="5" width="3.4" height="14" rx="1.2"></rect>
+                <rect x="14.1" y="5" width="3.4" height="14" rx="1.2"></rect>
+              </svg>
+              <svg class="when-off" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 5.2v13.6L19 12 8 5.2z"></path>
+              </svg>
+              <span class="player-name">Pause</span>
+            </button>
+            <button type="button" class="player-btn" id="stopBtn" disabled aria-label="Stop" title="Stop this answer. Then say Hey to ask a new question.">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="4.5" y="4.5" width="15" height="15" rx="2.4"></rect>
+              </svg>
+              <span class="player-name">Stop</span>
+            </button>
+            <button type="button" class="player-btn" id="restartBtn" disabled aria-label="Restart last" title="Ask the last question again">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"></path>
+                <path d="M20 4.5V9h-4.5"></path>
+              </svg>
+              <span class="player-name">Again</span>
+            </button>
           </div>
-        </div>
-
-        <details class="settings-wrap">
-          <summary>Settings</summary>
-          <div class="settings">
-            <label class="field">
-              <span>Model</span>
-              <select id="modelSelect" aria-label="Model"></select>
-            </label>
-            <label class="field">
-              <span>Thinking</span>
-              <select id="reasoningSelect" aria-label="Thinking level"></select>
-            </label>
-            <label class="field">
+          <div class="voice-deck">
+            <label class="voice-pick">
               <span>Voice</span>
               <select id="voiceSelect" aria-label="Voice that speaks the answer">
                 <option value="marin" selected>Marin</option>
@@ -213,6 +310,28 @@
                 <option value="shimmer">Shimmer</option>
                 <option value="verse">Verse</option>
               </select>
+            </label>
+            <label class="voice-level" id="voiceLevelLabel">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 10v4h3.2L12 18.5V5.5L7.2 10H4z"></path>
+                <path class="wave" d="M15.5 9.2a4 4 0 0 1 0 5.6"></path>
+                <path class="wave wave-far" d="M18 7a7 7 0 0 1 0 10"></path>
+              </svg>
+              <input id="voiceLevel" type="range" min="0" max="100" value="100" aria-label="How loud the answer is" />
+            </label>
+          </div>
+        </div>
+
+        <details class="settings-wrap">
+          <summary>Settings</summary>
+          <div class="settings">
+            <label class="field">
+              <span>Model</span>
+              <select id="modelSelect" aria-label="Model"></select>
+            </label>
+            <label class="field">
+              <span>Thinking</span>
+              <select id="reasoningSelect" aria-label="Thinking level"></select>
             </label>
             <label class="field">
               <span>Mascot</span>
@@ -335,7 +454,10 @@
     <script src="/pdfedit.js"></script>
     <script src="/wordedit.js"></script>
     <script src="/slidesedit.js"></script>
+    <script src="/photoedit.js"></script>
     <script src="/rtab.js"></script>
+    <script src="/calendartab.js"></script>
+    <script src="/stickiestab.js"></script>
     <script type="module" src="/deck.js"></script>
   </body>
 </html>

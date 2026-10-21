@@ -65,6 +65,19 @@ export async function askModelOnce(model, instruction, text, apiKey, maxTokens, 
   return String(raw).replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }
 
+/** "Stop" on the page closes the request (res.locals.stop, set in server.js). The caller ends quietly on this name. */
+function stopError() {
+  return Object.assign(new Error("Stopped."), { name: "AbortError" });
+}
+
+/**
+ * True when a failed fetch was the page saying stop, not a network problem.
+ * Once the stream is open, the same signal makes the body reads throw an AbortError by themselves.
+ */
+function isStop(err, res) {
+  return err?.name === "AbortError" || Boolean(res.locals?.stop?.aborted);
+}
+
 /**
  * Read OpenAI's event stream and forward only the answer text.
  * OpenAI sends blocks that look like:
@@ -96,8 +109,11 @@ export async function streamAnswer(apiKey, prompt, res, model, reasoning, spoken
         max_output_tokens: OUTPUT_CAP[reasoning] || OUTPUT_CAP.medium,
         stream: true,
       }),
+      // "Stop" closes the page's request. This ends the OpenAI stream with it.
+      signal: res.locals?.stop,
     });
   } catch (err) {
+    if (isStop(err, res)) throw stopError();
     const reason = err?.cause?.message || err?.message || String(err);
     console.error("Failed while calling OpenAI:", reason);
     throw new Error(`Could not reach OpenAI (${reason}).`);
@@ -221,8 +237,10 @@ export async function streamLocalAnswer(prompt, res, model, reasoning, spoken, l
               : (LOCAL_REPLY_CAP[reasoning] || LOCAL_REPLY_CAP.none) + (LOCAL_THINK_ROOM[reasoning] || 0),
         },
       }),
+      signal: res.locals?.stop,
     });
   } catch (err) {
+    if (isStop(err, res)) throw stopError();
     const reason = err?.cause?.message || err?.message || String(err);
     console.error("Failed while calling the local model:", reason);
     throw new Error("Could not reach the local model. Start Ollama, then try again.");
@@ -286,7 +304,7 @@ export const CLAUDE_BIN = process.env.CLAUDE_BIN
  * onText gets each piece of the answer; onHelpers(n) gets the number of helpers started so far.
  * Resolves with the token usage.
  */
-export function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000, dirs = [], onHelpers = () => {}) {
+export function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000, dirs = [], onHelpers = () => {}, signal = null) {
   return new Promise((resolve, reject) => {
     const tools = dirs.length ? "Read,Glob,Grep,Task" : "";
     const args = [
@@ -302,6 +320,13 @@ export function askClaude(model, system, prompt, effort, onText, timeoutMs = 120
     delete env.ANTHROPIC_API_KEY;
     const child = spawn(CLAUDE_BIN, args, { cwd: dirs[0] || os.tmpdir(), env });
     const timer = setTimeout(() => child.kill(), timeoutMs);
+    let stopped = false;
+    const halt = () => {
+      stopped = true;
+      child.kill();
+    };
+    if (signal?.aborted) halt();
+    else signal?.addEventListener("abort", halt, { once: true });
     let buffer = "";
     let stderr = "";
     let result = null;
@@ -337,6 +362,8 @@ export function askClaude(model, system, prompt, effort, onText, timeoutMs = 120
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", halt);
+      if (stopped) return reject(stopError());
       if (result && !result.is_error) {
         const u = result.usage || {};
         const cached = u.cache_read_input_tokens || 0;
@@ -370,7 +397,7 @@ export async function streamClaudeAnswer(prompt, res, model, reasoning, spoken, 
   ].filter(Boolean).join(" ");
   const system = [INSTRUCTIONS, files, spoken ? SPOKEN_STYLE : "", guideBlock()].filter(Boolean).join("\n\n");
   const onHelpers = (n) => writeEvent(res, { type: "status", message: `Working with ${n} helper${n === 1 ? "" : "s"}…` });
-  const usage = await askClaude(model, system, prompt, reasoning, (text) => writeEvent(res, { type: "delta", text }), 300000, dirs, onHelpers);
+  const usage = await askClaude(model, system, prompt, reasoning, (text) => writeEvent(res, { type: "delta", text }), 300000, dirs, onHelpers, res.locals?.stop);
   writeEvent(res, usageEvent(model, reasoning, usage));
 }
 
@@ -399,15 +426,19 @@ async function streamTeamAnswer(prompt, res, model, reasoning, spoken, dirs, wor
   let upstream;
   try {
     const token = fsSync.readFileSync(TEAM_TOKEN_FILE, "utf8").trim();
+    const timeout = AbortSignal.timeout(workspace ? 1900000 : 600000);
+    const stop = res.locals?.stop;
     upstream = await fetch(TEAM_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-team-token": token },
       body: JSON.stringify({ system, prompt, lead_model: model.cliModel, effort: reasoning || null, dirs, workspace: workspace || null }),
       // Building: up to 15 min of helpers, then up to 15 min for the lead.
-      signal: AbortSignal.timeout(workspace ? 1900000 : 600000),
+      // If the page says stop, this fetch ends and the helpers are no longer read.
+      signal: stop ? AbortSignal.any([timeout, stop]) : timeout,
     });
     if (!upstream.ok) throw new Error(`status ${upstream.status}`);
   } catch (err) {
+    if (isStop(err, res)) throw stopError();
     console.error("The helper team is not available; the lead answers alone:", err?.message || err);
     return streamClaudeAnswer(prompt, res, { ...model, team: false }, reasoning, spoken, dirs, workspace);
   }

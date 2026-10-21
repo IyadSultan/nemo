@@ -65,6 +65,62 @@ const shutterBtn = document.getElementById("shutterBtn");
 const photoCancelBtn = document.getElementById("photoCancelBtn");
 const photoError = document.getElementById("photoError");
 const photoHint = document.getElementById("photoHint");
+const voiceLevel = document.getElementById("voiceLevel");
+const voiceLevelLabel = document.getElementById("voiceLevelLabel");
+
+// Spoken clips created with new Audio() are not in the page, so the loudness
+// slider keeps its own list and turns each one up or down.
+const spokenClips = new Set();
+
+/** How loud answers should be, from 0 (silent) to 1 (full). */
+function answerVolume() {
+  const n = voiceLevel ? Number(voiceLevel.value) / 100 : 1;
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
+}
+
+/** Apply the loudness slider to whatever is speaking right now. */
+function applyAnswerVolume() {
+  const level = answerVolume();
+  localStorage.setItem("voiceLevel", String(level));
+  if (remoteAudio) remoteAudio.volume = level;
+  for (const audio of spokenClips) audio.volume = level;
+  try {
+    if (typeof gemini !== "undefined" && gemini?.playGain) gemini.playGain.gain.value = level;
+  } catch { /* A Gemini call creates its speaker only while that call is open. */ }
+  voiceLevelLabel?.classList.toggle("is-quiet", level === 0);
+  voiceLevelLabel?.classList.toggle("is-whisper", level > 0 && level < 0.45);
+}
+
+if (voiceLevel) {
+  const savedRaw = localStorage.getItem("voiceLevel");
+  const saved = savedRaw == null ? NaN : Number(savedRaw);
+  if (Number.isFinite(saved)) voiceLevel.value = String(Math.round(Math.min(1, Math.max(0, saved)) * 100));
+  voiceLevel.addEventListener("input", applyAnswerVolume);
+  applyAnswerVolume();
+}
+
+const RealAudio = window.Audio;
+window.Audio = function Audio(...args) {
+  const audio = new RealAudio(...args);
+  audio.volume = answerVolume();
+  // Only clips that are playing stay in the list. A clip stopped by Hey never ends, and would stay forever.
+  audio.addEventListener("play", () => {
+    audio.volume = answerVolume();
+    spokenClips.add(audio);
+  });
+  const drop = () => spokenClips.delete(audio);
+  for (const name of ["pause", "ended", "error"]) audio.addEventListener(name, drop);
+  return audio;
+};
+window.Audio.prototype = RealAudio.prototype;
+
+const RealUtterance = window.SpeechSynthesisUtterance;
+window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+  const utterance = new RealUtterance(text);
+  utterance.volume = answerVolume();
+  return utterance;
+};
+window.SpeechSynthesisUtterance.prototype = RealUtterance.prototype;
 
 let pc = null;
 let dc = null;
@@ -162,6 +218,8 @@ let recordingClip = false;
 let localEars = false;
 let queuedQuestion = "";
 let micBusy = false;
+// True while the prompt microphone is recording, so the call lets go of the mic for that one sentence.
+let dictateHold = false;
 // Command and Control together arms the next sentence, so it does not have to start with Hey.
 let keyboardWake = false;
 // Both keys are down. commandControlUsed means a letter was pressed while they were held.
@@ -216,8 +274,26 @@ function syncCallButtons() {
   stopBtn.disabled = !connected && !brainBusy;
   restartBtn.disabled = !lastQuestion;
   paintMeetingButton();
-  pauseBtn.textContent = paused ? "Resume" : "Pause";
-  pauseBtn.classList.toggle("is-muted", paused);
+  paintPlayback();
+}
+
+/** Change the short word under a round key without removing its icon. */
+function setPlayerName(button, label) {
+  const name = button?.querySelector(".player-name");
+  if (name) name.textContent = label;
+}
+
+/** Swap the mic and pause icons when those buttons change meaning. */
+function paintPlayback() {
+  muteBtn.classList.toggle("is-muted", muted);
+  muteBtn.setAttribute("aria-pressed", muted ? "true" : "false");
+  muteBtn.setAttribute("aria-label", muted ? "Unmute mic" : "Mute mic");
+  muteBtn.title = muted ? "Turn the microphone back on" : "Mute the microphone";
+  setPlayerName(muteBtn, muted ? "Unmute" : "Mic");
+
+  pauseBtn.classList.toggle("is-paused", paused);
+  pauseBtn.setAttribute("aria-label", paused ? "Resume" : "Pause");
+  setPlayerName(pauseBtn, paused ? "Resume" : "Pause");
 }
 
 function stopSpeaking() {
@@ -464,6 +540,9 @@ async function askTyped(raw) {
     answerDuringMeeting(question);
     return;
   }
+  // "Make the image white and black" in the ask box changes the photo.
+  // A question about the picture still goes to the brain, with the picture attached.
+  if (window.brainPhoto?.ask(question)) return;
   // Word is open on the right: the question is about the document there.
   if (window.brainWord?.open) {
     window.brainWord.ask(question);
@@ -488,13 +567,19 @@ async function askTyped(raw) {
     return;
   }
 
+  // Stop, or change an answer that is still being written, before it is queued as a new question.
+  if (brainBusy && steerIntent(question)) {
+    addBubble("user", question, false);
+    steerWhileBusy(question);
+    return;
+  }
+
   // The listening loop is already running. Hand it the words and let it answer.
   if (connected && needsVoiceControl(selectedModel())) {
     listenForNewQuestion();
     queuedQuestion = question;
     return;
   }
-
   if (brainBusy || connected) listenForNewQuestion();
   while (brainBusy) await sleep(40);
   addBubble("user", question, false);
@@ -529,8 +614,7 @@ muteBtn.addEventListener("click", () => {
   if (!micStream) return;
   muted = !muted;
   for (const track of micStream.getAudioTracks()) track.enabled = !muted;
-  muteBtn.textContent = muted ? "Unmute mic" : "Mute mic";
-  muteBtn.classList.toggle("is-muted", muted);
+  paintPlayback();
   if (meetingOn) {
     setStatus(muted ? "Muted" : quietCaptureStatus());
     setCapsuleState(muted ? "muted" : captureRole());

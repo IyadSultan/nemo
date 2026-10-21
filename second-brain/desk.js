@@ -3,7 +3,7 @@
  *
  * It is one private file, desk.json, next to this file. The git repo
  * ignores it. Three kinds of things live in it:
- *   jobs         a page to watch, a reminder, or a draft waiting for "send it"
+ *   jobs         a page to watch, a reminder, a repeating job, or a draft waiting for "send it"
  *   suggestions  short ideas (reply to a recent email) you can do or skip
  *   memory       the last voice conversation, so the next call can continue it
  *
@@ -18,8 +18,12 @@ import { fileURLToPath } from "node:url";
 
 const FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "desk.json");
 const MAX_WATCHES = 8;
+const MAX_SCHEDULES = 8;
 const MAX_SUGGESTIONS = 4;
 const MAX_JOBS = 40;
+const DAY_WORDS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+// Words that do not help pick one scheduled job out of the list.
+const SCHEDULE_STOP = new Set(["the", "my", "job", "jobs", "scheduled", "schedule", "reminder", "one"]);
 
 const EMPTY = {
   jobs: [],
@@ -71,12 +75,22 @@ function clip(value, max) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+/** Still on the work list: waiting, paused, needing a yes, or a page that changed. */
+function isOpen(job) {
+  return job.status === "waiting" || job.status === "paused" || job.status === "needs-you" || job.status === "alerted";
+}
+
+/** A web page, email, or meeting watch that is still on. */
+function isActiveWatch(job) {
+  return job.kind === "watch" && (job.status === "waiting" || job.status === "alerted");
+}
+
 /** Drop finished jobs when the file gets long. Waiting work always stays. */
 function trimJobs() {
   const keep = [];
   const done = [];
   for (const job of state.jobs) {
-    if (job.status === "waiting" || job.status === "needs-you" || job.status === "alerted") keep.push(job);
+    if (isOpen(job)) keep.push(job);
     else done.push(job);
   }
   state.jobs = [...keep, ...done.slice(-MAX_JOBS)];
@@ -169,8 +183,7 @@ function retireDrafts(type) {
 }
 
 export function publicDesk() {
-  const openJobs = state.jobs.filter((job) =>
-    job.status === "waiting" || job.status === "needs-you" || job.status === "alerted");
+  const openJobs = state.jobs.filter((job) => isOpen(job));
   return {
     jobs: openJobs.map((job) => ({
       id: job.id,
@@ -307,8 +320,7 @@ export function addWatch(url, title) {
     return { ok: false, text: "I can only watch a normal web page, starting with https." };
   }
   const href = parsed.href;
-  const existing = state.jobs.find((job) =>
-    job.kind === "watch" && job.url === href && (job.status === "waiting" || job.status === "alerted"));
+  const existing = state.jobs.find((job) => isActiveWatch(job) && job.url === href);
   const name = clip(title, 120) || parsed.hostname;
   if (existing) {
     existing.title = name;
@@ -319,9 +331,7 @@ export function addWatch(url, title) {
     save();
     return { ok: true, text: `I am watching ${name} again. I will text you if the page changes.` };
   }
-  const active = state.jobs.filter((job) =>
-    job.kind === "watch" && (job.status === "waiting" || job.status === "alerted"));
-  if (active.length >= MAX_WATCHES) {
+  if (watchesToCheck().length >= MAX_WATCHES) {
     return { ok: false, text: "You already have 8 pages being watched. Say stop watching, then add a new one." };
   }
   pushJob({
@@ -337,13 +347,16 @@ export function addWatch(url, title) {
 }
 
 export function watchesToCheck() {
-  return state.jobs.filter((job) => job.kind === "watch" && (job.status === "waiting" || job.status === "alerted"));
+  return state.jobs.filter(isActiveWatch);
 }
 
-/** Remember what the page says. Returns the job when the words changed. */
+/**
+ * Remember what the page says. Returns the job when the words changed.
+ * A watch stopped while its page was loading stays stopped.
+ */
 export function recordWatch(id, hash, errorText) {
   const job = jobById(id);
-  if (!job) return null;
+  if (!job || !isActiveWatch(job)) return null;
   job.updated = nowIso();
   if (errorText) {
     job.receipt = clip(errorText, 200);
@@ -369,10 +382,115 @@ export function recordWatch(id, hash, errorText) {
   return job;
 }
 
+/** A watch that is not a web page. type is "mail" or "meeting". */
+function addStandingWatch(job) {
+  if (watchesToCheck().length >= MAX_WATCHES) {
+    return { ok: false, text: "You already have 8 watches. Say stop watching, then add a new one." };
+  }
+  pushJob(job);
+  return { ok: true };
+}
+
+/** Text when a new saved email from this person shows up. The first check only learns what is already saved. */
+export function addMailWatch(who) {
+  const name = clip(who, 80);
+  if (name.length < 2) return { ok: false, text: "Say the person's name. For example, tell me when Eman emails." };
+  const key = name.toLowerCase();
+  const existing = watchesToCheck().find((job) => job.watch?.type === "mail" && String(job.watch.who || "").toLowerCase() === key);
+  if (existing) {
+    existing.receipt = "Still watching.";
+    existing.updated = nowIso();
+    save();
+    return { ok: true, text: `I am already watching for email from ${existing.watch.who}.` };
+  }
+  const saved = addStandingWatch({
+    kind: "watch",
+    status: "waiting",
+    title: `Email from ${name}`,
+    detail: `I will text you when a new email from ${name} is saved on this Mac.`,
+    watch: { type: "mail", who: name },
+    lastText: "",
+    receipt: "Not checked yet.",
+  });
+  if (!saved.ok) return saved;
+  return { ok: true, text: `I will text you when a new email from ${name} is saved. The first check only learns what is already there.` };
+}
+
+/** Text when a meeting starts before this hour, today if it is not over, or tomorrow. */
+export function addMeetingWatch(beforeHour) {
+  const hour = Number(beforeHour);
+  if (!Number.isInteger(hour) || hour < 1 || hour > 23) {
+    return { ok: false, text: "Say a time like before 9, or before 9 am." };
+  }
+  const label = clockPhrase(hour, 0);
+  const existing = watchesToCheck().find((job) => job.watch?.type === "meeting");
+  if (existing) {
+    existing.watch.beforeHour = hour;
+    existing.title = `Meetings before ${label}`;
+    existing.detail = `I will text you if a meeting starts before ${label}.`;
+    existing.lastText = "";
+    existing.receipt = "Watching again from now.";
+    existing.status = "waiting";
+    existing.updated = nowIso();
+    save();
+    return { ok: true, text: `I will text you if a meeting starts before ${label}.` };
+  }
+  const saved = addStandingWatch({
+    kind: "watch",
+    status: "waiting",
+    title: `Meetings before ${label}`,
+    detail: `I will text you if a meeting starts before ${label}.`,
+    watch: { type: "meeting", beforeHour: hour },
+    lastText: "",
+    receipt: "Not checked yet.",
+  });
+  if (!saved.ok) return saved;
+  return { ok: true, text: `I will text you if a meeting starts before ${label}. That means later today, if it is not over, or tomorrow.` };
+}
+
+/**
+ * Remember the latest mark for a mail or meeting watch.
+ * Returns the job when the caller should text the user.
+ * A watch stopped while it was being checked stays stopped.
+ */
+export function setWatchMark(id, mark, { tell, receipt }) {
+  const job = jobById(id);
+  if (!job || !isActiveWatch(job)) return null;
+  job.updated = nowIso();
+  job.lastText = mark;
+  job.receipt = clip(receipt, 200);
+  if (tell) job.status = "alerted";
+  save();
+  return tell ? job : null;
+}
+
+/**
+ * Stop one watch. "meeting" stops the early-meeting watch. Other words match an email name,
+ * either way round, so "Eman" stops a watch on "Eman Sultan".
+ */
+export function stopWatch(words) {
+  const key = clip(words, 200).toLowerCase();
+  const hits = watchesToCheck().filter((job) => {
+    if (job.watch?.type === "meeting") return /\bmeetings?\b/.test(key);
+    const who = String(job.watch?.who || "").toLowerCase();
+    if (job.watch?.type === "mail") return Boolean(key && who) && (key.includes(who) || who.includes(key));
+    return false;
+  });
+  if (!hits.length) return { ok: false, text: "I am not watching that." };
+  for (const job of hits) {
+    job.status = "skipped";
+    job.receipt = "You asked me to stop watching.";
+    job.updated = nowIso();
+  }
+  save();
+  const name = hits.length === 1 ? hits[0].title : `${hits.length} watches`;
+  return { ok: true, text: `Stopped watching ${name}.` };
+}
+
 export function cancelWatches() {
   let count = 0;
   for (const job of state.jobs) {
-    if (job.kind === "watch" && (job.status === "waiting" || job.status === "alerted")) {
+    if (isActiveWatch(job)) {
       job.status = "skipped";
       job.receipt = "You asked me to stop watching.";
       job.updated = nowIso();
@@ -387,7 +505,8 @@ export function clearAlerts() {
   let count = 0;
   for (const job of state.jobs) {
     if (job.status === "alerted") {
-      job.status = "done";
+      // An email or meeting watch keeps going. A web page watch is finished.
+      job.status = job.watch?.type ? "waiting" : "done";
       job.receipt = "You dismissed this alert.";
       job.updated = nowIso();
       count += 1;
@@ -421,17 +540,231 @@ export function takeDueReminders(now = Date.now()) {
   return due.slice(0, 5);
 }
 
+/** 8 pm is 20. 12 am is midnight. The hour must already be 1–12. */
+function clockHour(hour, mark) {
+  if (mark === "pm" && hour < 12) return hour + 12;
+  if (mark === "am" && hour === 12) return 0;
+  return hour;
+}
+
+/** "weekday" is Monday–Friday. "day" is all seven. One name is that weekday, Sunday = 0. */
+function daysFromWord(word) {
+  const name = String(word || "").toLowerCase();
+  if (name === "day") return [0, 1, 2, 3, 4, 5, 6];
+  if (name === "weekday" || name === "weekdays") return [1, 2, 3, 4, 5];
+  if (name === "weekend" || name === "weekends") return [0, 6];
+  const index = DAY_WORDS.findIndex((day) => day.toLowerCase() === name);
+  return index < 0 ? [] : [index];
+}
+
+/** "8:00 AM", with the minutes always two digits. */
+export function clockPhrase(hour, minute) {
+  const mark = hour >= 12 ? "PM" : "AM";
+  const shown = hour % 12 || 12;
+  return `${shown}:${String(minute).padStart(2, "0")} ${mark}`;
+}
+
+/** "Every weekday" or "Every Monday". days is sorted, Sunday = 0. */
+function dayPhrase(days) {
+  const key = days.join(",");
+  if (key === "0,1,2,3,4,5,6") return "Every day";
+  if (key === "1,2,3,4,5") return "Every weekday";
+  if (key === "0,6") return "Every weekend";
+  return `Every ${days.map((day) => DAY_WORDS[day]).join(", ")}`;
+}
+
+/**
+ * The next time this clock time falls on one of these days, strictly after afterMs.
+ * Uses this Mac's clock. Returns 0 when no day in the next week matches.
+ */
+function nextFire(days, hour, minute, afterMs) {
+  for (let add = 0; add < 8; add += 1) {
+    const when = new Date(afterMs);
+    when.setDate(when.getDate() + add);
+    when.setHours(hour, minute, 0, 0);
+    if (days.includes(when.getDay()) && when.getTime() > afterMs) return when.getTime();
+  }
+  return 0;
+}
+
+/**
+ * Point a repeating job at its next clock time after now, and say it on the card.
+ * Returns false, and changes nothing, when there is no next time.
+ */
+function retime(job, now, hour = job.schedule?.hour, minute = job.schedule?.minute) {
+  const days = job.schedule?.days || [];
+  const dueAt = nextFire(days, hour, minute, now);
+  if (!dueAt) return false;
+  const when = new Date(dueAt).toLocaleString("en-US", { weekday: "long", hour: "numeric", minute: "2-digit" });
+  job.dueAt = dueAt;
+  job.detail = `${dayPhrase(days)} at ${clockPhrase(hour, minute)}. Next: ${when}.`;
+  return true;
+}
+
+/** Scheduled jobs that are still on or paused. */
+function liveSchedules() {
+  return state.jobs.filter((job) => job.kind === "schedule" && (job.status === "waiting" || job.status === "paused"));
+}
+
+/**
+ * Save a repeating job. plan is { days, hour, minute, mode, ask }.
+ * mode "ask" runs that question through the brain. mode "remind" only texts the words.
+ * now is the clock in milliseconds, so a test can pretend what time it is.
+ */
+export function addSchedule(plan, now = Date.now()) {
+  const days = [...new Set(plan?.days || [])].filter((day) => Number.isInteger(day) && day >= 0 && day <= 6).sort((a, b) => a - b);
+  const hour = plan?.hour;
+  const minute = plan?.minute;
+  const mode = plan?.mode === "remind" ? "remind" : "ask";
+  const ask = clip(plan?.ask, 300);
+  if (!ask || !days.length || !Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) {
+    return { ok: false, text: "Say every weekday at 8 am, text me, and then the question." };
+  }
+  const active = liveSchedules();
+  const same = active.find((job) => {
+    const saved = job.schedule || {};
+    return saved.mode === mode
+      && saved.hour === hour
+      && saved.minute === minute
+      && String(saved.ask || "").toLowerCase() === ask.toLowerCase()
+      && (saved.days || []).join(",") === days.join(",");
+  });
+  if (same) return { ok: true, text: `You already have that job: ${same.title}.` };
+  if (active.length >= MAX_SCHEDULES) {
+    return { ok: false, text: "You already have 8 scheduled jobs. Say drop, then a few words from one of them." };
+  }
+  const fields = {
+    kind: "schedule",
+    status: "waiting",
+    title: clip(ask, 180),
+    detail: "",
+    dueAt: 0,
+    receipt: "Waiting.",
+    schedule: { days, hour, minute, mode, ask },
+  };
+  if (!retime(fields, now)) return { ok: false, text: "I could not find a next time for that." };
+  const job = pushJob(fields);
+  const how = mode === "ask" ? "I will ask that and text you the answer." : "I will text you that reminder.";
+  return { ok: true, text: `${job.detail} ${how}`, job };
+}
+
+/** Jobs whose title or question contains every useful word the user said. */
+function schedulesMatching(words) {
+  const terms = String(words || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !SCHEDULE_STOP.has(word));
+  if (!terms.length) return [];
+  return liveSchedules().filter((job) => {
+    const hay = `${job.title} ${job.schedule?.ask || ""}`.toLowerCase();
+    return terms.every((term) => hay.includes(term));
+  });
+}
+
+/**
+ * One scheduled job, or a sentence when there is none or more than one.
+ * target is the words the user said, or { id } from a button on the card.
+ */
+function oneSchedule(target) {
+  if (target?.id) {
+    const job = liveSchedules().find((item) => item.id === target.id);
+    return job ? { ok: true, job } : { ok: false, text: "That scheduled job is not here." };
+  }
+  const hits = schedulesMatching(target);
+  if (!hits.length) return { ok: false, text: "I don't have a scheduled job with those words. Say what jobs to hear them." };
+  if (hits.length > 1) return { ok: false, text: `More than one job matches. ${hits.map((job) => job.title).join("; ")}.` };
+  return { ok: true, job: hits[0] };
+}
+
+/** Stop a repeating job until the user says resume. */
+export function pauseSchedule(target) {
+  const found = oneSchedule(target);
+  if (!found.ok) return found;
+  if (found.job.status === "paused") return { ok: true, text: `Already paused: ${found.job.title}.` };
+  found.job.status = "paused";
+  found.job.receipt = "Paused.";
+  found.job.updated = nowIso();
+  save();
+  return { ok: true, text: `Paused: ${found.job.title}. It will not run until you say resume.` };
+}
+
+/** Turn a paused job back on. The next run is the next future clock time, not a missed one. */
+export function resumeSchedule(target, now = Date.now()) {
+  const found = oneSchedule(target);
+  if (!found.ok) return found;
+  if (!retime(found.job, now)) return { ok: false, text: "I could not find a next time for that." };
+  found.job.status = "waiting";
+  found.job.receipt = "Waiting.";
+  found.job.updated = nowIso();
+  save();
+  return { ok: true, text: `On again: ${found.job.title}. ${found.job.detail}` };
+}
+
+/** Remove a repeating job. It does not come back. */
+export function dropSchedule(target) {
+  const found = oneSchedule(target);
+  if (!found.ok) return found;
+  found.job.status = "skipped";
+  found.job.receipt = "You dropped this job.";
+  found.job.updated = nowIso();
+  save();
+  return { ok: true, text: `Dropped: ${found.job.title}.` };
+}
+
+/** Keep the same question, change the clock time. A paused job stays paused. */
+export function moveSchedule(target, hour, minute, now = Date.now()) {
+  const found = oneSchedule(target);
+  if (!found.ok) return found;
+  if (!retime(found.job, now, hour, minute)) return { ok: false, text: "I could not find a next time for that." };
+  found.job.schedule.hour = hour;
+  found.job.schedule.minute = minute;
+  found.job.receipt = found.job.status === "paused" ? "Paused." : "Waiting.";
+  found.job.updated = nowIso();
+  save();
+  return { ok: true, text: `Moved: ${found.job.title}. ${found.job.detail}` };
+}
+
+/**
+ * Repeating jobs whose time has arrived. Each one is moved to its next future
+ * time before it is returned, so a slow answer cannot send the same job twice,
+ * and a Mac that slept through several runs sends one, not a burst.
+ * At most 3 run on one check. now is the clock in milliseconds.
+ */
+export function takeDueSchedules(now = Date.now()) {
+  const due = state.jobs.filter((job) => job.kind === "schedule" && job.status === "waiting" && job.dueAt <= now);
+  const taken = [];
+  for (const job of due.slice(0, 3)) {
+    if (!retime(job, now)) continue;
+    job.receipt = "Ran.";
+    job.updated = nowIso();
+    taken.push(job);
+  }
+  if (taken.length) save();
+  return taken;
+}
+
 export function jobsSentence() {
-  const open = state.jobs.filter((job) =>
-    job.status === "waiting" || job.status === "needs-you" || job.status === "alerted");
+  const open = state.jobs.filter((job) => isOpen(job));
   if (!open.length) {
-    return "Nothing is waiting. You can say watch and a web address, remind me in 20 minutes to, and then the task, or ask me to draft an email.";
+    return "Nothing is waiting. You can say watch and a web address, remind me in 20 minutes to, and then the task, every weekday at 8 am text me, and then a question, or ask me to draft an email.";
   }
   const lines = open.map((job) => {
     if (job.kind === "draft") return `A draft is waiting: ${job.title}. Say send it, or don't.`;
+    if (job.kind === "watch" && job.watch?.type === "mail") {
+      return job.status === "alerted"
+        ? `New email from ${job.watch.who}. Say got it when you have seen it.`
+        : `Watching for email from ${job.watch.who}.`;
+    }
+    if (job.kind === "watch" && job.watch?.type === "meeting") {
+      return job.status === "alerted"
+        ? `An early meeting showed up. Say got it when you have seen it.`
+        : `Watching for a meeting before ${clockPhrase(job.watch.beforeHour, 0)}.`;
+    }
     if (job.kind === "watch") return job.status === "alerted"
       ? `${job.title} changed. Say got it when you have seen it.`
       : `Watching ${job.title}.`;
+    if (job.kind === "schedule") return job.status === "paused" ? `Paused: ${job.title}.` : `Scheduled: ${job.title}.`;
     return `Reminder: ${job.title}.`;
   });
   const count = open.length === 1 ? "One job" : `${open.length} jobs`;
@@ -509,12 +842,8 @@ function pullUrl(text) {
 const NUMBER = { one: 0, first: 0, "1": 0, two: 1, second: 1, "2": 1, three: 2, third: 2, "3": 2, four: 3, fourth: 3, "4": 3 };
 
 function clockOnDay(day, hour, minute, mark) {
-  let h = hour;
-  if (mark === "pm" && h < 12) h += 12;
-  if (mark === "am" && h === 12) h = 0;
-  if (!mark) return null;
   const when = new Date(day);
-  when.setHours(h, minute, 0, 0);
+  when.setHours(clockHour(hour, mark), minute, 0, 0);
   return when;
 }
 
@@ -526,6 +855,11 @@ export function parseDesk(question) {
   const q = String(question || "").trim().replace(/^["“'\s.,]+|["”'\s.?!]+$/g, "");
   if (!q) return null;
 
+  const stopMail = q.match(/^(?:please\s+)?stop watching (?:for )?(?:new )?(?:e-?mails?|mail) from (.+)$/i);
+  if (stopMail) return { action: "stop-watch", words: stopMail[1].trim() };
+  if (/^(?:please\s+)?stop watching (?:the )?(?:early )?meetings?(?: before \d{1,2}(?::\d{2})?\s*(?:am|pm)?)?$/i.test(q)) {
+    return { action: "stop-watch", words: "meeting" };
+  }
   if (/^(?:please\s+)?(?:stop watching|cancel (?:the )?watches|cancel (?:the )?watch|stop the watch)\b/i.test(q)) {
     return { action: "cancel-watches" };
   }
@@ -550,10 +884,68 @@ export function parseDesk(question) {
     return { action: picked[1].toLowerCase() === "do" ? "do" : "skip-suggestion", index: NUMBER[picked[2].toLowerCase()] };
   }
 
+  const mailWatch = q.match(/^(?:please\s+)?(?:tell me|let me know|text me) when (?:i get |there is |there's )?(?:an? |the )?(?:new )?e-?mails? from (.+)$/i)
+    || q.match(/^(?:please\s+)?(?:watch|keep an eye on) (?:for )?(?:e-?mails?|mail) from (.+)$/i)
+    || q.match(/^(?:please\s+)?(?:tell me|let me know|text me) when (.+?) e-?mails?(?: me)?$/i);
+  // "Tell me when I get emails" names nobody, so it is not a watch.
+  if (mailWatch && !/^(?:i|we|you|it|they|there|someone|anyone)\b/i.test(mailWatch[1])) {
+    return { action: "watch-mail", who: mailWatch[1].replace(/^(?:an?|the)\s+/i, "").trim() };
+  }
+
+  const meetingWatch = q.match(/^(?:please\s+)?(?:tell me|text me|let me know) if (?:i have |there is |there's |tomorrow has )?(?:a |an )?meetings?(?: that starts?)? before (\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  if (meetingWatch) {
+    if (meetingWatch[2]) return { action: "say", text: "Say before 9, or before 9 am. I watch the hour, not the minutes." };
+    const hour12 = Number(meetingWatch[1]);
+    const hour = clockHour(hour12, (meetingWatch[3] || "").toLowerCase());
+    // 12 am is midnight: nothing starts before it.
+    if (hour12 < 1 || hour12 > 12 || hour < 1) return { action: "say", text: "Say a time like before 9, or before 9 am." };
+    return { action: "watch-meeting", beforeHour: hour };
+  }
+
   if (/^(?:please\s+)?(?:can you\s+|could you\s+)?(?:watch|keep an eye on|track)\b/i.test(q)) {
     const url = pullUrl(q);
     if (!url) return { action: "say", text: "Say watch, then the web address. For example, watch https://example.com." };
     return { action: "watch", url };
+  }
+
+  // "Change the email job to 9:30 am" keeps the question and moves the clock.
+  // These all need the word job, so "move the meeting to 3 pm" or "pause the music"
+  // is left for the rest of the app.
+  const move = q.match(/^(?:please\s+)?(?:change|move) (?:the |my )?(.+?) job to (\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  if (move) {
+    const hour12 = Number(move[2]);
+    const minute = move[3] ? Number(move[3]) : 0;
+    if (hour12 < 1 || hour12 > 12 || minute > 59) return { action: "say", text: "Say the hour like 9 am, or 9:30 pm." };
+    return { action: "move-schedule", words: move[1].trim(), hour: clockHour(hour12, move[4].toLowerCase()), minute };
+  }
+  const tune = q.match(/^(?:please\s+)?(pause|resume) (?:the |my )?(.+?) job$/i);
+  if (tune) {
+    return { action: tune[1].toLowerCase() === "resume" ? "resume-schedule" : "pause-schedule", words: tune[2].trim() };
+  }
+  const drop = q.match(/^(?:please\s+)?(?:drop|cancel) (?:the |my )?(.+?) job$/i);
+  if (drop) return { action: "drop-schedule", words: drop[1].trim() };
+
+  // "Every weekday at 8 am, text me which emails need a reply."
+  // Only "every ... at 8" gets help, so "every cell has DNA" still reaches the brain.
+  if (/^(?:please\s+)?every (?:\S+ ){1,2}at \d/i.test(q)) {
+    const parsed = q.match(/^(?:please\s+)?every (day|weekdays?|weekends?|monday|tuesday|wednesday|thursday|friday|saturday|sunday) at (\d{1,2})(?::(\d{2}))?\s*(am|pm)[,:]?\s+(.+)$/i);
+    if (!parsed) {
+      return { action: "say", text: "Say every weekday at 8 am, text me, and then the question. Or say every day at 9 pm, remind me to, and the task." };
+    }
+    const hour12 = Number(parsed[2]);
+    const minute = parsed[3] ? Number(parsed[3]) : 0;
+    if (hour12 < 1 || hour12 > 12 || minute > 59) return { action: "say", text: "Say the hour like 8 am, or 9:30 pm." };
+    const remind = parsed[5].trim().match(/^(?:remind me(?: to)?|remember to)\s+(.+)$/i);
+    const ask = (remind ? remind[1] : parsed[5].replace(/^(?:text me|tell me|ask me|ask)\s+/i, "")).trim();
+    if (!ask) return { action: "say", text: "Say what I should do at that time." };
+    return {
+      action: "schedule",
+      days: daysFromWord(parsed[1]),
+      hour: clockHour(hour12, parsed[4].toLowerCase()),
+      minute,
+      mode: remind ? "remind" : "ask",
+      ask,
+    };
   }
 
   if (/^remind me\b/i.test(q)) {

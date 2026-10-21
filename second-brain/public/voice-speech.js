@@ -58,14 +58,18 @@ function openSpeaker() {
     const answerBody = await sdpResponse.text();
     if (!sdpResponse.ok) {
       let message = answerBody;
+      // 429 means the OpenAI account is out of credits. The server hides the
+      // raw billing text, so the status code is what the page can trust.
+      let noCredits = sdpResponse.status === 429;
       try {
         const parsed = JSON.parse(answerBody);
         message = parsed.details?.error?.message || parsed.error || answerBody;
+        if (Number(parsed.status) === 429) noCredits = true;
       } catch {
         /* keep the raw text */
       }
-      if (/credit|quota|billing/i.test(message)) {
-        voiceBlocked = "OpenAI has no credits left, so the voice cannot speak. The written answer still shows. Add credits, then start again.";
+      if (noCredits || /credit|quota|billing/i.test(message)) {
+        voiceBlocked = "OpenAI has no credits left. The voice on this Mac will speak instead. Add credits, then start again.";
         throw new Error(voiceBlocked);
       }
       throw new Error(message || "Voice control could not speak.");

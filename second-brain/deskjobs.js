@@ -3,18 +3,19 @@
  * watched web pages, reminders, and the /desk routes the page uses to act on them.
  */
 
-import { meetingFromDraft } from "./calendar.js";
+import { earlyMeetings, loadOutlookCalendar, meetingFromDraft } from "./calendar.js";
 import * as desk from "./desk.js";
 import { sendControl } from "./control.js";
 import { sendIMessage } from "./imessage.js";
-import { cleanMailAddress, emailLines, polishReply, replyWithOriginal } from "./mail.js";
+import { cleanMailAddress, emailLines, indexRawMail, polishReply, replyWithOriginal } from "./mail.js";
 import { askClaude } from "./models.js";
 import { openOutlookDraft, openOutlookMeeting } from "./outlook.js";
 import { cleanHistory, cleanMemory } from "./prompt.js";
 import { speakTitle, spokenWhen } from "./spoken.js";
 import { rawMail } from "./state.js";
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
+import fs from "node:fs";
+import fsPromises from "node:fs/promises";
 
 /** Recent saved emails become ideas the user can do or skip. */
 export function syncSuggestions() {
@@ -46,6 +47,10 @@ export let workSummaryQueued = false;
 
 export let workSummaryRunning = false;
 
+// OneDrive sometimes answers "try again" for a saved email. After a few tries,
+// leave that file alone for 10 minutes so the retry does not keep the disk busy.
+const unreadableMail = new Map();
+
 /** Ask again after the current batch, so a draft saved mid-summary is not skipped. */
 export function queueWorkSummaries() {
   workSummaryQueued = true;
@@ -63,17 +68,20 @@ export function queueWorkSummaries() {
 export async function suggestionText(key) {
   const file = rawMail.find((entry) => entry.rel === key);
   if (!file) return "";
+  if ((unreadableMail.get(key) || 0) > Date.now()) return "";
   // OneDrive sometimes answers "try again" while the app is still starting.
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const raw = await fs.readFile(file.full, "utf8");
+      const raw = await fsPromises.readFile(file.full, "utf8");
+      unreadableMail.delete(key);
       const body = emailLines(raw).slice(0, 3500);
       const subject = speakTitle(file.title);
       return [subject ? `Subject: ${subject}` : "", body].filter(Boolean).join("\n\n");
     } catch (err) {
       const busy = /unknown system error -11|EAGAIN/i.test(err?.message || "");
       if (!busy || attempt === 3) {
-        console.error("Failed while reading an email to summarize:", err?.message || err);
+        if (!unreadableMail.has(key)) console.error("Failed while reading an email to summarize:", err?.message || err);
+        unreadableMail.set(key, Date.now() + 10 * 60_000);
         return "";
       }
       await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
@@ -109,7 +117,8 @@ export async function fillWorkSummaries() {
     if (task.kind === "suggestion") text = await suggestionText(task.key);
     // A missed file is not saved as a summary, so the next pass can try again.
     if (!text) {
-      retry = true;
+      // A file OneDrive just refused is left alone. Anything else is tried again soon.
+      if ((unreadableMail.get(task.key) || 0) <= Date.now()) retry = true;
       continue;
     }
     let summary = "";
@@ -151,9 +160,23 @@ export async function runDeskCommand(command) {
     const saved = desk.addWatch(command.url);
     return { text: saved.text };
   }
+  if (command.action === "watch-mail") {
+    const saved = desk.addMailWatch(command.who);
+    checkWatches().catch((err) => console.error("Failed while starting an email watch:", err?.message || err));
+    return { text: saved.text, card: { title: "Watch", lines: [saved.text] } };
+  }
+  if (command.action === "watch-meeting") {
+    const saved = desk.addMeetingWatch(command.beforeHour);
+    checkWatches().catch((err) => console.error("Failed while starting an early-meeting watch:", err?.message || err));
+    return { text: saved.text, card: { title: "Watch", lines: [saved.text] } };
+  }
+  if (command.action === "stop-watch") {
+    const saved = desk.stopWatch(command.words);
+    return { text: saved.text, card: { title: "Watch", lines: [saved.text] } };
+  }
   if (command.action === "cancel-watches") {
     const count = desk.cancelWatches();
-    const text = count ? `Stopped watching ${count === 1 ? "that page" : `${count} pages`}.` : "I was not watching any page.";
+    const text = count ? `Stopped ${count === 1 ? "that watch" : `${count} watches`}.` : "I was not watching anything.";
     return { text, card: { title: "Watch", lines: [text] } };
   }
   if (command.action === "clear-alerts") {
@@ -172,6 +195,17 @@ export async function runDeskCommand(command) {
   if (command.action === "remind") {
     const job = desk.addReminder(command.title, command.dueAt);
     return { text: `I will remind you: ${job.title}. ${job.detail}` };
+  }
+  const scheduled = {
+    schedule: () => desk.addSchedule(command),
+    "pause-schedule": () => desk.pauseSchedule(command.words),
+    "resume-schedule": () => desk.resumeSchedule(command.words),
+    "drop-schedule": () => desk.dropSchedule(command.words),
+    "move-schedule": () => desk.moveSchedule(command.words, command.hour, command.minute),
+  }[command.action];
+  if (scheduled) {
+    const { text } = scheduled();
+    return { text, card: { title: "Scheduled", lines: [text] } };
   }
   if (command.action === "skip-suggestion") {
     const item = desk.suggestionAt(command.index);
@@ -226,8 +260,133 @@ export async function readWatchedPage(url) {
     .slice(0, 4000);
 }
 
+// The opening lines of recent saved emails, kept until the file changes,
+// so a watch check every 3 minutes does not read 400 files again.
+const mailHeads = new Map();
+
+function mailHead(mail) {
+  const cached = mailHeads.get(mail.full);
+  if (cached?.mtime === mail.mtime) return cached.text;
+  try {
+    const fd = fs.openSync(mail.full, "r");
+    const buffer = Buffer.alloc(2000);
+    const read = fs.readSync(fd, buffer, 0, 2000, 0);
+    fs.closeSync(fd);
+    const text = buffer.subarray(0, read).toString("utf8").toLowerCase();
+    mailHeads.set(mail.full, { mtime: mail.mtime, text });
+    return text;
+  } catch (err) {
+    console.error("Failed while reading the start of a saved email:", err?.message || err);
+    return "";
+  }
+}
+
+/** Saved emails whose name, or for the last 3 days the opening lines, mention this person. */
+function mailFrom(who) {
+  const needle = String(who || "").toLowerCase().trim();
+  if (needle.length < 2) return [];
+  const recent = Date.now() - 3 * 86_400_000;
+  for (const [full, head] of mailHeads) {
+    if (head.mtime < recent) mailHeads.delete(full);
+  }
+  const hits = [];
+  const unnamed = [];
+  for (const mail of rawMail) {
+    if (String(mail.lowerName || "").includes(needle)) hits.push(mail.rel);
+    else if (mail.mtime >= recent) unnamed.push(mail);
+  }
+  // Newest first, so the 400-file cap never hides the email that just came in.
+  unnamed.sort((a, b) => b.mtime - a.mtime);
+  for (const mail of unnamed.slice(0, 400)) {
+    if (mailHead(mail).includes(needle)) hits.push(mail.rel);
+  }
+  return hits;
+}
+
+/** The ids a watch already knows. "none" means it looked and found nothing. */
+function seenMarks(job) {
+  return new Set(String(job.lastText || "").split("\n").filter((id) => id && id !== "none"));
+}
+
+async function checkMailWatch(job) {
+  // Before the saved emails are listed, every one of them would look new.
+  if (!rawMail.length) return;
+  const ids = mailFrom(job.watch?.who);
+  const first = !job.lastText;
+  const seen = seenMarks(job);
+  const fresh = ids.filter((id) => !seen.has(id));
+  // Keep every id still saved, so an email that drops out of the 3-day scan and comes back is not new.
+  const saved = new Set(rawMail.map((mail) => mail.rel));
+  const mark = [...new Set([...[...seen].filter((id) => saved.has(id)), ...ids])].sort().join("\n") || "none";
+  const told = desk.setWatchMark(job.id, mark, {
+    tell: !first && fresh.length > 0,
+    receipt: first ? "Watching. I will text you when a new one is saved." : fresh.length ? "A new email was saved." : "No new email.",
+  });
+  if (!told) return;
+  const count = fresh.length === 1 ? "A new email" : `${fresh.length} new emails`;
+  const notice = `${count} from ${job.watch.who} ${fresh.length === 1 ? "is" : "are"} saved.`;
+  sendControl("job", { title: job.title, text: notice });
+  sendControl("desk", {});
+  try {
+    await sendIMessage(notice);
+  } catch (err) {
+    console.error("Failed while texting a new email watch:", err?.message || err);
+  }
+}
+
+/** Unlike email, the first check tells you: an early meeting already there is the point. */
+async function checkMeetingWatch(job) {
+  const hour = Number(job.watch?.beforeHour);
+  let events = [];
+  try {
+    events = earlyMeetings(loadOutlookCalendar().events, hour);
+  } catch (err) {
+    console.error("Failed while reading the calendar for an early-meeting watch:", err?.message || err);
+    desk.setWatchMark(job.id, job.lastText || "", { tell: false, receipt: "I could not read the calendar just now. I will try again." });
+    return;
+  }
+  // Start and subject, so two meetings at the same time are both seen.
+  const key = (event) => `${event.start.getTime()} ${event.subject}`;
+  const seen = seenMarks(job);
+  const fresh = events.filter((event) => !seen.has(key(event)));
+  const told = desk.setWatchMark(job.id, events.map(key).join("\n") || "none", {
+    tell: fresh.length > 0,
+    receipt: fresh.length ? "An early meeting is on the calendar." : "No early meeting.",
+  });
+  if (!told) return;
+  const lines = fresh.slice(0, 4).map((event) => {
+    const when = event.start.toLocaleString("en-US", { weekday: "long", hour: "numeric", minute: "2-digit" });
+    return `${when}, ${event.subject}`;
+  });
+  const notice = `You have ${fresh.length === 1 ? "a meeting" : `${fresh.length} meetings`} before ${desk.clockPhrase(hour, 0)}. ${lines.join(". ")}.`;
+  sendControl("job", { title: job.title, text: notice });
+  sendControl("desk", {});
+  try {
+    await sendIMessage(notice);
+  } catch (err) {
+    console.error("Failed while texting an early-meeting watch:", err?.message || err);
+  }
+}
+
 export async function checkWatches() {
-  for (const job of desk.watchesToCheck()) {
+  const jobs = desk.watchesToCheck();
+  if (jobs.some((job) => job.watch?.type === "mail")) {
+    try {
+      await indexRawMail();
+    } catch (err) {
+      console.error("Failed while refreshing saved email before a watch check:", err?.message || err);
+    }
+  }
+  for (const job of jobs) {
+    const standing = { mail: checkMailWatch, meeting: checkMeetingWatch }[job.watch?.type];
+    if (standing) {
+      try {
+        await standing(job);
+      } catch (err) {
+        console.error(`Failed while checking a ${job.watch.type} watch:`, err?.message || err);
+      }
+      continue;
+    }
     try {
       const text = await readWatchedPage(job.url);
       const hash = crypto.createHash("sha256").update(text).digest("hex");
@@ -261,6 +420,46 @@ export async function deliverReminders() {
     }
   }
   sendControl("desk", {});
+}
+
+// One batch of scheduled jobs at a time. A slow answer must not start a second batch.
+let schedulesRunning = false;
+
+/**
+ * Run repeating jobs whose clock time has arrived.
+ * ask(question) is the brain. A "remind" job only sends its words.
+ * An "ask" job asks the brain and sends the answer. The voice page reads it
+ * aloud when it is quiet, and the same text goes to iMessage when that is on.
+ */
+export async function deliverSchedules(ask) {
+  if (schedulesRunning) return;
+  const due = desk.takeDueSchedules();
+  if (!due.length) return;
+  schedulesRunning = true;
+  try {
+    for (const job of due) {
+      const question = String(job.schedule?.ask || job.title || "").trim();
+      let notice = `Reminder: ${question}.`;
+      if (job.schedule?.mode === "ask" && question && !desk.parseDesk(question)) {
+        try {
+          const answer = String(await ask(question) || "").trim();
+          notice = answer ? answer.slice(0, 1500) : `Nothing came back for: ${question}.`;
+        } catch (err) {
+          console.error("Failed while running a scheduled job:", err?.message || err);
+          notice = `I could not run “${job.title}”.`;
+        }
+      }
+      sendControl("job", { title: job.title, text: notice });
+      try {
+        await sendIMessage(notice);
+      } catch (err) {
+        console.error("Failed while texting a scheduled job:", err?.message || err);
+      }
+    }
+    sendControl("desk", {});
+  } finally {
+    schedulesRunning = false;
+  }
 }
 
 export function registerDeskjobs(app) {
@@ -316,6 +515,16 @@ export function registerDeskjobs(app) {
       res.status(500).json({ error: "Outlook did not open. Is Microsoft Outlook installed?" });
     }
   });
+
+  // By id, not by title words: two jobs can share words.
+  for (const [verb, act] of [["pause", desk.pauseSchedule], ["resume", desk.resumeSchedule]]) {
+    app.post(`/desk/jobs/:id/${verb}`, (req, res) => {
+      const saved = act({ id: req.params.id });
+      if (!saved.ok) return res.status(404).json({ error: saved.text });
+      sendControl("desk", {});
+      res.json({ ok: true, text: saved.text });
+    });
+  }
 
   app.post("/desk/jobs/:id/skip", (req, res) => {
     const job = desk.finishJob(req.params.id, "skipped", "You dropped this.");

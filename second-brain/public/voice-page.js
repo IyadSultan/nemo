@@ -12,11 +12,30 @@ const TINY_MOVES = [
   [/\bcelebrate\b/, "celebration"],
 ];
 
-/**
- * "Can you dance?" or "Tiny, wave" makes Tiny do that move for a few seconds.
- * Only short requests count, so "add the dance class to my calendar" is left alone.
- * Returns the pose, or "".
- */
+/** "Open the stickies" or "close the stickies", done here without asking a model. */
+function runStickiesAsk(question) {
+  const ask = window.brainStickies?.command(question);
+  if (!ask) return false;
+  if (ask === "open") window.brainStickies.openPanel();
+  else window.brainStickies.close();
+  addBubble("assistant", ask === "open" ? "The sticky notes are open." : "Closed the sticky notes.");
+  setStatus(listenStatus());
+  return true;
+}
+
+/** "Open the calendar" or "close the calendar", done here without asking a model. */
+function runCalendarAsk(question) {
+  const ask = window.brainCalendar?.command(question);
+  if (!ask) return false;
+  if (ask === "open") window.brainCalendar.openPanel();
+  else if (ask === "add") window.brainCalendar.addAppointment();
+  else window.brainCalendar.close();
+  const said = ask === "open" ? "The calendar is open." : ask === "add" ? "Type the appointment, then press Add in Outlook." : "Closed the calendar.";
+  addBubble("assistant", said);
+  setStatus(listenStatus());
+  return true;
+}
+
 /** "Open a terminal" or "close the terminal" (terminal.js), done here without asking a model. */
 function runTerminalAsk(question) {
   const ask = window.brainTerminal?.intent(question);
@@ -28,6 +47,11 @@ function runTerminalAsk(question) {
   return true;
 }
 
+/**
+ * "Can you dance?" or "Tiny, wave" makes Tiny do that move for a few seconds.
+ * Only short requests count, so "add the dance class to my calendar" is left alone.
+ * Returns the pose, or "".
+ */
 function playTinyMove(text) {
   const q = String(text || "").toLowerCase().replace(/[^\w\s']/g, " ").replace(/\s+/g, " ").trim();
   if (!q || q.split(" ").length > 8) return "";
@@ -479,7 +503,9 @@ function renderDesk() {
       ? "Draft · waiting for you"
       : job.kind === "watch"
         ? (job.status === "alerted" ? "Watch · changed" : "Watch")
-        : "Reminder";
+        : job.kind === "schedule"
+          ? (job.status === "paused" ? "Scheduled · paused" : "Scheduled")
+          : "Reminder";
     const title = document.createElement("h3");
     title.textContent = job.title;
     article.append(kicker, title);
@@ -500,6 +526,25 @@ function renderDesk() {
       addCardButton(actions, "Drop", async () => {
         await deskAction(`/desk/jobs/${job.id}/skip`);
         setStatus("Dropped. Nothing was opened.");
+        await loadDesk();
+      });
+    } else if (job.kind === "schedule") {
+      if (job.status === "paused") {
+        addCardButton(actions, "Resume", async () => {
+          const data = await deskAction(`/desk/jobs/${job.id}/resume`);
+          if (data?.text) setStatus(data.text);
+          await loadDesk();
+        });
+      } else {
+        addCardButton(actions, "Pause", async () => {
+          const data = await deskAction(`/desk/jobs/${job.id}/pause`);
+          if (data?.text) setStatus(data.text);
+          await loadDesk();
+        });
+      }
+      addCardButton(actions, "Drop", async () => {
+        await deskAction(`/desk/jobs/${job.id}/skip`);
+        setStatus("Dropped that scheduled job.");
         await loadDesk();
       });
     } else {
@@ -706,6 +751,170 @@ typeInput.addEventListener("keydown", (event) => {
 });
 typeInput.addEventListener("blur", () => setTimeout(closeSlashMenu, 150));
 
+// The little microphone next to the prompt. One press listens, the next press stops.
+const dictateBtn = document.getElementById("dictateBtn");
+let dictateStop = null;
+let dictating = false;
+
+/**
+ * Record until the person pauses, or until stop() is called.
+ * The clip stays on this Mac and is written down by the local voice model.
+ */
+function recordPromptClip(stream) {
+  return new Promise((resolve) => {
+    const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
+    const rec = new MediaRecorder(stream, { mimeType: mime });
+    const chunks = [];
+    let settled = false;
+    let stopNow = false;
+    rec.ondataavailable = (event) => {
+      if (event.data.size) chunks.push(event.data);
+    };
+    rec.onstop = () => {
+      if (settled) return;
+      settled = true;
+      resolve(new Blob(chunks, { type: mime }));
+    };
+
+    const ctx = new AudioContext();
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.fftSize);
+    let heard = false;
+    let quietSince = 0;
+    const started = performance.now();
+    // Declared before rec.start(), so finish() can run if the recorder will not start.
+    let timer = null;
+    try {
+      rec.start();
+    } catch (err) {
+      console.error("Failed while starting the prompt recorder:", err);
+      finish();
+      return;
+    }
+
+    timer = setInterval(() => {
+      if (stopNow) {
+        finish();
+        return;
+      }
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (const value of data) {
+        const sample = (value - 128) / 128;
+        sum += sample * sample;
+      }
+      const loudness = Math.sqrt(sum / data.length);
+      const now = performance.now();
+      if (loudness > 0.025) {
+        heard = true;
+        quietSince = 0;
+      } else if (heard && now - started > 400) {
+        if (!quietSince) quietSince = now;
+        // A short pause means the prompt is finished.
+        if (now - quietSince > 900) finish();
+      }
+      if (now - started > 20000) finish();
+    }, 80);
+
+    dictateStop = () => {
+      stopNow = true;
+    };
+
+    function finish() {
+      clearInterval(timer);
+      dictateStop = null;
+      try { source.disconnect(); } catch { /* already disconnected */ }
+      ctx.close().catch(() => {});
+      if (rec.state !== "inactive") rec.stop();
+      else if (!settled) {
+        settled = true;
+        resolve(new Blob());
+      }
+    }
+  });
+}
+
+/** Stop the live call from hearing this sentence, then put the microphone back. */
+async function parkCallMic(park) {
+  if (!pc) return;
+  const sender = pc.getSenders().find((item) => !item.track || item.track.kind === "audio");
+  if (!sender) return;
+  try {
+    if (park) {
+      if (sender.track) sender._parked = sender.track;
+      await sender.replaceTrack(null);
+    } else if (sender._parked) {
+      await sender.replaceTrack(sender._parked);
+      sender._parked = null;
+    }
+  } catch (err) {
+    console.error("Failed while holding the call microphone:", err);
+  }
+}
+
+function paintDictate(on) {
+  dictateBtn.classList.toggle("is-on", on);
+  dictateBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  dictateBtn.disabled = false;
+}
+
+dictateBtn?.addEventListener("click", async () => {
+  if (dictating) {
+    dictateStop?.();
+    return;
+  }
+  dictating = true;
+  paintDictate(true);
+  setStatus("Listening… say the prompt. Press the microphone again to stop.");
+  const hadMic = micStream?.getAudioTracks().some((track) => track.readyState === "live");
+  dictateHold = true;
+  let stream = null;
+  let heard = "";
+  try {
+    await parkCallMic(true);
+    const waitUntil = performance.now() + 2500;
+    while ((recordingClip || micBusy) && performance.now() < waitUntil) await sleep(40);
+    stream = await ensureMic();
+    const clip = await recordPromptClip(stream);
+    paintDictate(false);
+    dictateBtn.disabled = true;
+    setStatus("Writing down what you said…");
+    if (!clip || clip.size < 2000) {
+      setStatus("I didn't catch that. Press the microphone and try again.");
+      return;
+    }
+    const text = await transcribeClip(clip);
+    if (!text || looksLikeSilence(text)) {
+      setStatus("I didn't catch that. Press the microphone and try again.");
+      return;
+    }
+    heard = text;
+  } catch (err) {
+    console.error("Failed while dictating the prompt:", err);
+    setStatus(err?.message || "The microphone did not open. Check Sound in System Settings, then try again.");
+  } finally {
+    dictateHold = false;
+    dictating = false;
+    dictateStop = null;
+    paintDictate(false);
+    await parkCallMic(false);
+    if (!hadMic && !connected && !meetingOn && !quietCapture && stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      if (micStream === stream) micStream = null;
+    }
+  }
+  // Asked after the mic is given back, so Hey and "stop" are heard while this answer is written.
+  if (heard) {
+    typeInput.value = heard;
+    askTyped(heard).catch((err) => console.error("Failed while asking the dictated prompt:", err));
+  }
+});
+
 /** Read the skill files the server keeps, and show their names. */
 async function loadSkills() {
   try {
@@ -841,6 +1050,59 @@ modelSelect.addEventListener("change", () => {
   releasePreviousLocalModel(previousId);
 });
 reasoningSelect.addEventListener("change", showRates);
+
+// Fill the screen, or come back. The button and a click on the top bar both do this.
+// Buttons in the bar (PDF, Word, Terminal, and so on) keep their own jobs.
+(function setupExpand() {
+  const bar = document.querySelector(".topbar");
+  const btn = document.getElementById("expandBtn");
+  if (!bar || !btn) return;
+  let full = false;
+
+  function paint(on) {
+    full = on;
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.setAttribute("aria-label", on ? "Leave full screen" : "Fill the screen");
+    btn.title = on ? "Leave full screen" : "Fill the screen";
+  }
+
+  function setFull(on) {
+    try {
+      paint(on);
+      // The Mac window app understands these two messages. A normal browser uses its own full screen.
+      if (window.ipc?.postMessage) {
+        window.ipc.postMessage(on ? "fullscreen-on" : "fullscreen-off");
+        return;
+      }
+      if (on) {
+        const ask = document.documentElement.requestFullscreen?.();
+        if (ask && ask.catch) ask.catch((err) => {
+          console.error("Failed while filling the screen:", err);
+          paint(false);
+        });
+        else if (!ask) paint(false);
+      } else if (document.fullscreenElement) {
+        document.exitFullscreen?.().catch((err) => console.error("Failed while leaving full screen:", err));
+      }
+    } catch (err) {
+      console.error("Failed in the expand button:", err);
+      paint(false);
+    }
+  }
+
+  btn.addEventListener("click", () => setFull(!full));
+  bar.addEventListener("click", (event) => {
+    if (event.target.closest("button, a, input, select, textarea, label")) return;
+    setFull(!full);
+  });
+  // Esc, or the browser leaving full screen on its own, puts the button back.
+  document.addEventListener("fullscreenchange", () => paint(Boolean(document.fullscreenElement)));
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !full || event.defaultPrevented) return;
+    if (window.brainDeck?.open) return;
+    setFull(false);
+  });
+})();
 
 loadSettings();
 renderChat();
