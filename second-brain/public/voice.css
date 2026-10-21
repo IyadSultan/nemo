@@ -1547,12 +1547,13 @@ summary:focus-visible {
 .claude-mark .eyes rect { fill: #111; }
 .claude-mark .mouth { fill: #111; transform: scaleY(0); }
 .claude-mark :is(.critter, .arm, .leg, .eyes, .mouth) { transform-box: fill-box; }
-.claude-mark .critter { transform-origin: 50% 100%; animation: critter-bob 3s ease-in-out infinite; }
+/* No idle bob or blink: an endless SVG animation repaints the window every frame and heats the Mac. */
+.claude-mark .critter { transform-origin: 50% 100%; }
 .claude-mark .arm { transform-origin: 50% 50%; }
 .claude-mark .mouth { transform-origin: 50% 50%; }
-.claude-mark .eyes { transform-origin: 50% 50%; animation: critter-blink 5s step-end infinite; }
-/* Listening: arms wave up and down. */
-.capsule.is-claude[data-state="listening"] .arm { animation: critter-arm 0.8s ease-in-out infinite alternate; }
+.claude-mark .eyes { transform-origin: 50% 50%; }
+/* Listening: arms wave a few times, then rest (listening can last for hours). */
+.capsule.is-claude[data-state="listening"] .arm { animation: critter-arm 0.8s ease-in-out 6 alternate; }
 .capsule.is-claude[data-state="listening"] .arm-r { animation-delay: -0.4s; }
 /* Thinking, connecting, searching, writing: it walks on the spot and looks around. */
 .capsule.is-claude:is([data-state="thinking"], [data-state="connecting"], [data-activity="searching"], [data-activity="writing"]) .leg {
@@ -1575,7 +1576,6 @@ summary:focus-visible {
 .capsule.is-claude[data-activity^="move-"] .critter { animation: critter-dance 0.8s ease-in-out infinite; }
 .capsule.is-claude[data-activity^="move-"] .arm { animation: critter-arm 0.4s ease-in-out infinite alternate; }
 @keyframes critter-bob { 50% { transform: translateY(-3%); } }
-@keyframes critter-blink { 0%, 94% { transform: scaleY(1); } 96% { transform: scaleY(0.15); } }
 @keyframes critter-arm { from { transform: translateY(12%); } to { transform: translateY(-30%); } }
 @keyframes critter-step { from { transform: translateY(0); } to { transform: translateY(-14%); } }
 @keyframes critter-look { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(-4%); } 70% { transform: translateX(4%); } }
@@ -1714,7 +1714,7 @@ body.tiny-mode .capsule.has-mascot .claude-mark { width: 180px; height: 180px; }
 .mate-face .eyes rect { fill: #1b1b1f; }
 .mate-face :is(.critter, .arm, .leg, .eyes) { transform-box: fill-box; }
 .mate-face .critter { transform-origin: 50% 100%; }
-.mate-face .eyes { transform-origin: 50% 50%; animation: critter-blink 5s step-end infinite; }
+.mate-face .eyes { transform-origin: 50% 50%; }
 .mate-name { font-size: 12px; font-weight: 600; color: var(--mate); }
 .mate-doing {
   max-width: 100%; font-size: 10px; line-height: 1.25; opacity: 0.7;
@@ -1988,3 +1988,6 @@ body.pdf-drop .pdfdesk, body.pdf-drop #pdfEditBtn { outline: 2px dashed #2fc6a0;
 }
 .rt-run { white-space: nowrap; }
 .rpanel.rt-busy .rt-status::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 50%; border: 2px solid #2fc6a0; border-right-color: transparent; animation: de-spin 0.8s linear infinite; vertical-align: -1px; }
+
+/* Window hidden or minimised: nothing on screen to animate. */
+html.page-hidden *, html.page-hidden *::before, html.page-hidden *::after { animation-play-state: paused !important; }

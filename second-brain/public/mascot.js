@@ -192,3 +192,8 @@
 
   window.addEventListener("resize", () => tiny?.resizeDrawingSurfaceToCanvas());
 })();
+
+// Hidden window: pause every CSS animation (voice.css, html.page-hidden).
+document.addEventListener("visibilitychange", () => {
+  document.documentElement.classList.toggle("page-hidden", document.hidden);
+});
