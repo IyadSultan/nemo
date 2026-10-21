@@ -165,9 +165,10 @@ fn go_tiny(window: &Window) -> Option<(LogicalPosition<f64>, LogicalSize<f64>)> 
     let monitor = window.current_monitor()?;
     let scale = monitor.scale_factor();
     let was = (window.outer_position().ok()?.to_logical(scale), window.inner_size().to_logical(scale));
+    // Resizable first: tao builds the frame from it, and applies the frame later.
+    window.set_resizable(false);
     window.set_decorations(false);
     window.set_has_shadow(false);
-    window.set_resizable(false);
     window.set_min_inner_size(None::<LogicalSize<f64>>);
     window.set_always_on_top(true);
     window.set_inner_size(LogicalSize::new(TINY.0, TINY.1));
@@ -181,9 +182,10 @@ fn go_tiny(window: &Window) -> Option<(LogicalPosition<f64>, LogicalSize<f64>)> 
 /// Back to the full window, where it was before.
 fn go_full(window: &Window, was: (LogicalPosition<f64>, LogicalSize<f64>)) {
     window.set_always_on_top(false);
+    // Resizable before the frame comes back, or the late frame drops it and the green button stops working.
+    window.set_resizable(true);
     window.set_decorations(true);
     window.set_has_shadow(true);
-    window.set_resizable(true);
     window.set_min_inner_size(Some(LogicalSize::new(MIN_SIZE.0, MIN_SIZE.1)));
     window.set_inner_size(was.1);
     window.set_outer_position(was.0);

@@ -107,7 +107,7 @@ summary:focus-visible {
 }
 
 /* Pushes the clock, fan, and tools to the right. A click here still fills the screen. */
-.topbar-spacer { flex: 1 1 auto; min-width: 0.5rem; align-self: stretch; }
+.topbar-spacer { flex: 1 1 auto; min-width: 3rem; align-self: stretch; }
 
 /* Clock and weather sit together, just left of the fan speed. */
 .bar-cluster { display: flex; align-items: center; gap: 0.4rem; flex: 0 0 auto; }
@@ -1974,6 +1974,15 @@ body.tiny-mode .capsule.has-mascot .claude-mark { width: 180px; height: 180px; }
 .expand-btn[aria-pressed="true"] .expand-out { display: none; }
 .expand-btn[aria-pressed="true"] .expand-in { display: block; }
 .expand-btn[aria-pressed="true"] { color: var(--listen); }
+
+/* A normal-size window: tools show icons only (the tooltip names each), so the bar fits
+   and the expand button and the empty part of the bar stay on screen. */
+@media (max-width: 1440px) {
+  .tools .term-btn { font-size: 0; gap: 0; padding: 0 0.55rem; }
+}
+@media (max-width: 860px) {
+  .topbar { flex-wrap: wrap; row-gap: 0.35rem; }
+}
 
 /* Terminals (terminal.js): the shell docked at the bottom, and a helper's progress popup */
 .term-dock, .term-popup {
