@@ -4,7 +4,7 @@ This folder holds two apps.
 
 **Nemo** is a small voice chatbot. You talk, OpenAI talks back. It does not read your notes. Open it at `http://localhost:3000` after `npm start`.
 
-**Second Brain** is the main app. You talk to it (or type), and it answers from your private notes, then can also write PDFs, edit PDFs, edit Word files, build slide decks, take meeting notes, draft email, and more. Open it in **Second Brain.app**, or at `http://127.0.0.1:3001/voice.html`.
+**Second Brain** is the main app. You talk to it (or type), and it answers from your private notes, then can also write PDFs, edit PDFs, edit Word files, edit movies, build slide decks, take meeting notes, draft email, and more. Open it in **Second Brain.app**, or at `http://127.0.0.1:3001/voice.html`.
 
 The rest of this manual is about Second Brain. Nemo is only the short section near the end.
 
@@ -58,6 +58,8 @@ Top bar:
 | Cost | Estimated price for cloud models. Claude (subscription) and local models show $0. |
 | **PDF** | Upload PDFs to edit. You can also drop PDF files on the window. |
 | **Word** | Opens the Word editor. |
+| **Movie** | Opens the movie editor. Say Hey, then an order from the Movie section below. |
+| **Screen** | Records the whole screen, the sound from other apps (such as Zoom), and the microphone. Then add captions, a summary, or a recap. |
 | **Terminal** | Opens or closes a terminal on this Mac. |
 
 Above the transcript, two fold-away lists appear when they have something in them:
@@ -76,6 +78,8 @@ Above the transcript, two fold-away lists appear when they have something in the
 3. Interrupt anytime. **Pause** or **Stop** cuts the current answer. Then say Hey again.
 4. **Mute mic** stops sending your voice until you unmute.
 5. **Restart last** asks the last question again.
+6. **Hold Space** (in the chat box, or with nothing focused) to dictate. Let go and the words land in the chat box, ready to edit; press Enter to ask. A quick tap still types a space.
+7. **Command, Option and S** from any app stops everyone talking: the answer, a notice, and any agent reading its summary (claude-voice too).
 
 While a slide show or the slide editor is open, heard sentences go to the slides instead of the normal chat. The editor still wants you to say Hey. The live slide show does not.
 
@@ -103,6 +107,7 @@ The server looks at the words in this order. The first match wins. The code live
 | “Open the ketamine paper” | Finds a file and opens it | `openfile.js` |
 | “Find the file named …” on the Mac | Spotlight-style find | `docs.js` |
 | “What meetings do I have today?” | Reads the calendar out loud | `calendar.js` |
+| “Recite ten verses”, “Recite surah Yasin” | That many verses, or that surah or verse, in Yasir al-Adusari’s voice. The Arabic and English stay on the screen. | `quran.js` |
 | “Schedule a meeting …” | Drafts an Outlook event and waits for yes | `calendar.js` |
 | “Write a memo …” | Saves a note file | `memos.js` |
 | Anything else | Searches notes (and sometimes the web) and asks the model | `notes.js`, `prompt.js`, `models.js` |
@@ -110,6 +115,14 @@ The server looks at the words in this order. The first match wins. The code live
 After the model answers, if the answer contains a hidden `PDF_BODY` or `DECK_BODY` block, the server turns that into a PDF or a slide deck and shows a card. The voice never reads that block.
 
 If a PDF box has **Q/A** turned on, that PDF’s text is added to every later question until you press **End Q/A**.
+
+## Quran
+
+Say “Recite some verses”, “Recite ten verses”, “Recite surah Yasin”, or “Recite verse 2:255.”
+
+With no number and no surah, the brain picks three verses in a row inside one surah. A number plays that many, still inside one surah. A surah name plays that surah. A verse number plays that verse. The voice is Yasir al-Adusari’s recording. The English voice does not read over it. The Arabic and the Saheeh International English stay on the screen. A long surah shows the range, not every line.
+
+The words are installed in `second-brain/quran-text/`. The recording comes from everyayah.com. A question such as “What does the Quran say about…” still goes to the model. This is only for reciting.
 
 ---
 
@@ -131,7 +144,8 @@ Pick the model in **Settings**. The default is **Claude Opus**.
 |---|---|
 | GPT-6 Luna, Sol, 6.1 Sol, Astra | OpenAI, billed per token. Luna is the cheapest. |
 | Claude Opus, Claude Sonnet | Your Claude subscription, through the `claude` program on this Mac. No API key. Opus and Sonnet answers can use helper agents (see below). |
-| Bonsai 27B, GPT-OSS 20B, Gemma 4 (12B, E4B, E2B), Qwen 3.8 27B | On this Mac, through Ollama (port 11434). The written answer is free. |
+| Bonsai 2 | On this Mac, through Ollama (`bonsai-2:2b`, port 11434). The written answer is free. |
+| GPT-OSS 20B | On this Mac, through Ollama (`gpt-oss:20b`). The written answer is free. Thinking cannot be turned fully off; Low is the least. |
 
 **Thinking** is how long the model may “think” before the answer: Off, Low, Medium, High, Extra high, Maximum. Higher thinking uses more tokens and costs more on OpenAI. GPT-OSS cannot turn thinking off; its lowest level is Low. Local spoken answers stay short on purpose.
 
@@ -144,6 +158,8 @@ Pick the model in **Settings**. The default is **Claude Opus**.
 **Wake**:
 
 - **Hey** — the usual start word.
+- **Direct** — no Hey. Every sentence, English or Arabic, goes to the chat as heard once you stop talking.
+- **Wait** — writes down every sentence and stays quiet. Say “Talk” and it switches to Direct, then answers what it wrote down. Later sentences are answered in Direct too.
 - **Medical speech** — cleans medical words with GPT-OSS on this Mac (`medgem.js`).
 - **Hey + Jev** — a cloud check (`jev.js`).
 - **Hey + Gemma** — a local check.
@@ -252,6 +268,27 @@ You can ask about the meeting afterwards (“what did we decide?”). Those ques
 ### Lecture
 
 Same idea as Meeting, for a talk. When you turn it off, the app asks who presented, suggests a title, then summarizes. Files go to `raw/lectures/`.
+
+### Screen recording
+
+**Screen** in the top bar records the whole screen, the sound from other apps (a Zoom call), and your microphone. Meeting and Lecture only write down words from the microphone. Screen keeps the picture too, so it can save a tutorial, a lecture, or a Zoom meeting you want to watch again. Give it a name if you like; nothing else to choose.
+
+Screen recording runs in the **Second Brain** app. A browser tab cannot record the whole screen. The first time, macOS asks you to allow Screen Recording and the Microphone for Second Brain (the same permission Snapshot uses). Click Allow. Put Zoom in front, or move this window aside, so the recording shows the right thing. Closing the panel does not stop the recording. Press **Stop**.
+
+While it records, the words can show in a strip at the bottom of the screen as they are said, word by word, a fraction of a second behind the speaker. They come from the Mac's own on-device listener, which hears one language per recording: the **English** / **عربي** button in the bar picks it before you press Record, and the first use of a language downloads it once. The saved captions written after Stop hear Arabic and English mixed. The strip sits above every window, clicks go through it everywhere except on its dark box, and it is not in the recording or on a shared screen. The strip has a small recap button (✦) at its right end: press it and the recap is written and shown on the screen in a large panel you can scroll and close with ✕, with no need to go back to the app. **Captions** in the panel bar turns it off or on; the choice is remembered. Press **Recap so far**, or say “write the recap of the recording”, at any moment: a short recap of what was said so far, plus a few questions you could ask next, like Recap in Meeting and Lecture. Press it as often as you like.
+
+When you press **Stop**, the captions and the summary are written on their own, in that order, and the panel shows the progress. Nothing to tick.
+
+| What you get | |
+|---|---|
+| **Captions** | On the video, from the words that were said. If that failed, **Try captions again** appears. |
+| **Summary** | Main points, decisions and steps, action items. Fits a meeting, a lecture, or a tutorial. |
+| **Recap** | The same button works on a saved recording too. |
+| **Delete** | Removes the recording and everything written for it. Press it twice. |
+
+Say “record the screen”, “record this zoom meeting”, or “record the screen called how to export”. Say “stop the recording” to save it.
+
+The video stays on this Mac in `second-brain/recordings/`, in its own folder with `summary.md` (the summary, the recap, then the transcript) and `captions.vtt` next to it, written once the captions and the summary are done and again after any Recap or Summary you ask for later. It is not copied into your notes and it is not in git. **Show in Finder** opens that folder.
 
 ### Photo
 
@@ -480,6 +517,100 @@ A question that is not a change, such as "what is in this photo", still goes to 
 
 ---
 
+## Movie editor
+
+Click **Movie** in the top bar, or say **open the movie editor**.
+
+This is a Rust timeline (`second-brain/moviecut`). It is not the OpenCut desktop window. [OpenCut](https://github.com/opencut-app/opencut) is rewriting its editor in Rust, and that rewrite cannot edit a movie yet (the desktop app is only an empty window). This editor keeps clips on a timeline and uses ffmpeg, the same kind of media tool OpenCut’s setup uses, to write one mp4.
+
+The first time, build it:
+
+```bash
+cargo build --release --manifest-path second-brain/moviecut/Cargo.toml
+```
+
+You also need ffmpeg (`brew install ffmpeg`). If either is missing, the panel says so.
+
+A movie is saved in `~/.brain/movies`. **Export the movie** writes an mp4 in your Movies folder and shows it in the Finder. A new movie is widescreen, 1920 by 1080. Say **make the movie portrait**, **square**, or **classic** to change the shape. The video, photo, or song you add has to live in your home folder (Movies, Desktop, Downloads, Documents, Pictures, or Music). Subtitles are an `.srt` file in Desktop, Downloads, Documents, or Movies.
+
+Photos (jpg, png, heic, tif, webp) become 4 second clips. HEIC is copied to a JPEG with macOS `sips`, in `~/.brain/movies/<movie>/photos`. Captions are drawn with ImageMagick (`brew install imagemagick`), because Homebrew's ffmpeg has no text filter. Captions from speech use `whisper-cli` with the large turbo model. Title cards are rendered by `hyperframes` from `second-brain/moviecut/title/index.html`.
+
+The preview plays the edited movie. It shows cuts, speed, rotation, size, position, photo zoom, captions, fades, cinema bars, and the music. The preview shows transitions too: the next clip comes on half a transition early while a picture of the clip leaving fades, slides, wipes, opens, or zooms away. Random gives a different one at each cut, the same in the preview and the file. The music dips under speech only in the exported file. The grid, the phone guide, and stepping one frame are only on the preview. They are not in the mp4.
+
+Say **Hey**, then the phrase. With the panel open you can leave off the words “the movie”.
+
+| Say this | What happens |
+|---|---|
+| Open the movie editor | Shows the panel and this list |
+| Close the movie editor | Shows the transcript again |
+| New movie called trip | Starts that movie, or opens it if the name already exists |
+| Add the video birthday | Finds one video with that name in Movies, Desktop, Downloads, or Documents |
+| Add the video on the Desktop called birthday | Looks only on the Desktop |
+| Add the photo beach to the movie | Finds one photo, HEIC too. With the panel open, say add the photo beach |
+| Rotate clip 2 right | A quarter turn. Say left, or upside down. Rotate the last clip works too |
+| Add crossfades between the clips | Every cut blends. Also slide, wipe, circle, zoom, dip to black, dip to white |
+| Make the transitions 2 seconds | Transition length. No transitions goes back to straight cuts. Use random transitions gives a different one at each cut |
+| Zoom the photos | Photos push in slowly. Keep the photos still stops it. New movies zoom by default |
+| Make music for the movie | Writes new music to fit the movie's theme (name, clip names, words heard). Add a mood: make calm piano music for the movie. Online with Gemini Lyria (needs `GEMINI_API_KEY`), which plays for the whole movie so it keeps changing; else on this Mac with MusicGen, a 28 second loop. Say offline or online to choose. Each new piece replaces the last; undo brings the old one back |
+| Add the music sunny | Plays a song under the movie. It loops, fades out at the end, and dips when people talk |
+| Set the music volume to 20 percent | Music level. Remove the music takes it out |
+| Caption the movie | Writes captions from the speech. It replaces the captions there were |
+| Add a title card saying Rome in October | A 4 second animated title at the start. Add with the subtitle family trip. Say at the end to put it last |
+| Cut the first 3 seconds of the movie | Drops the opening |
+| Cut the last 2 seconds of the movie | Drops the ending |
+| Keep from 10 seconds to 40 seconds of the movie | Keeps only that part |
+| Remove from 1 minute to 1 minute 20 seconds of the movie | Cuts that piece out and joins the rest |
+| Split the movie at 15 seconds | Makes two clips at that moment |
+| Drop clip 2 | Removes the second clip. Drop the last clip removes the last one |
+| Speed the movie up twice | Plays the whole movie at double speed |
+| Slow the movie down to half | Plays the whole movie at half speed |
+| Set the movie speed to 1.5 | Sets the speed. 1 is normal. From a quarter up to 4 |
+| Mute the movie | Turns the sound off |
+| Unmute the movie | Turns the sound back on |
+| Set the movie volume to 80 percent | Sets the loudness. Half means 50 percent. 200 is the loudest |
+| Fade the movie in | Fades up over 1 second. Say fade the movie in for 2 seconds to change that |
+| Fade the movie out | Fades the ending over 1 second |
+| Add a caption saying hello from 2 seconds to 5 seconds | Writes those words on the picture |
+| Remove the captions from the movie | Clears every caption |
+| Undo the movie | Puts the movie back one step |
+| Redo the movie | Puts back the step you just undid |
+| Make the movie portrait | Phone shape, 1080 by 1920. Also square, widescreen, or classic |
+| Set the movie background to blue | Colour behind clips that do not fill the frame |
+| Blur the background | Fills the empty bars with a soft copy of the clip. Stop blurring the background goes back to a flat colour |
+| Move clip 2 left | Slides that clip. Also right, up, down, or to the center |
+| Make clip 2 smaller | Also bigger, half size, or 70 percent size |
+| Stretch clip 2 wide | Also tall, or back to normal |
+| Make clip 2 half see through | Also solid, or set clip 2 opacity to 40 percent |
+| Mute clip 2 | That clip's sound only. Unmute clip 2 turns it back on |
+| Set clip 2 volume to 40 percent | That clip only. The movie volume still applies on top |
+| Speed clip 2 up twice | That clip only. Also slow clip 2 to half, or set clip 2 speed to 1.5 |
+| Hide clip 2 | The clip stays in its place, but the picture and sound are off. Show clip 2 brings it back |
+| Duplicate clip 2 | Plays that clip twice in a row |
+| Move clip 2 to the start | Also: to the end, earlier, later, or move clip 7 before clip 3 (or after). You can also drag a clip along the timeline to a new place; drag on the ruler to scrub |
+| Blur clip 2 | Softens that clip. Blur clip 2 more goes further. Unblur clip 2 makes it sharp |
+| Put a circle mask on clip 2 | The clip shows inside a circle. Remove the mask from clip 2 clears it |
+| Add cinema bars | Black bars at the top and bottom. Remove the cinema bars takes them off |
+| Blend clip 2 with multiply | Mixes the clip with the background. Also screen or overlay. Remove the blend from clip 2 clears it |
+| Zoom clip 2 | That clip pushes in slowly. Stop zooming clip 2 keeps it still |
+| Make the captions yellow | Also bigger or smaller |
+| Add the subtitles birthday | Finds an srt file with that name and uses it as the captions |
+| Reset the look of clip 2 | Size, place, blur, mask, and see-through go back to normal. The cut stays |
+| Show the grid | A guide on the preview. It is not in the exported movie. Also show the phone guide, or hide the guides |
+| Bookmark at 10 seconds | Marks that moment. With the panel open, bookmark here uses the playhead. Go to the bookmark jumps there |
+| Step forward one frame | With the panel open. Step back one frame goes the other way. This is the preview only |
+| What is in the movie | Says the clips and the length |
+| How long is the movie | Says the length |
+| Export the movie | Makes an mp4 in Movies |
+| Make the movie | Same as export |
+| Start the movie over | Clears the clips and captions. Undo can bring them back |
+| Movie orders | Opens the panel so you can read this list |
+
+Times can be `3 seconds`, `1 minute`, `1 minute 20 seconds`, `1:20`, or `half a minute`. The **Add video or photo** and **Add music** buttons open the Mac file chooser. The row under the timeline has the transitions menu, Zoom photos, Captions from speech, and Title card, which takes typed words so capitals stay. **Redo** sits next to Undo.
+
+This editor does not include a sticker library, drawn shapes, keyframe curves, a second picture on top of a clip, crop, flip, or a search of a sound library.
+
+---
+
 ## Word editor
 
 Click **Word** in the top bar. This needs the WordCraft app installed (`voice/install-wordcraft.sh`). If it is missing, the button will say so (`GET /word/installed`).
@@ -603,6 +734,26 @@ Say or type **write**, **make**, or **build**, then what you want: “make a tip
 
 ---
 
+## Browser agent
+
+The app has its own web browser, the **Browser** button (globe) at the top. You can browse in it like any browser, and the brain can work in it for you: fill in a form, place an order, look something up across several pages. The agent is a Rust rebuild of [browser-use](https://github.com/browser-use/browser-use) (`rust/src/browser/`); the browser is a WebKit view inside the window (`rust/window/src/pane.rs`).
+
+1. Open the Browser tab. Type an address or a search in the top bar. ☆ bookmarks the page; bookmarks show as a row under the bar.
+2. Give the order in the chat box, or say it. While the Browser tab is open, everything you type or say is for the browser ("fill in this form with my details"). From the chat, start with "browser:", or say "order a large pizza from dominos.jo", or "go to site.com and …".
+3. The brain answers in the chat with a short plan. If it needs something you did not say (a date, a size), it asks. Answer, or say yes to go ahead.
+4. Say yes. The Browser tab opens and you watch it work. Every step (plan, goal, actions) is written in the chat as one Browser message.
+5. Switch between the browser and the chat with the Chat button, the Browser button at the top, or Shift-Cmd-B.
+6. While it works: "tell the browser to use my work email" adds a note; "stop the browser" (or Stop) ends it after the current step.
+7. When it ends, the result is read aloud.
+
+- Each step is one Claude Sonnet call through Claude Code (no API key), about 5 to 10 seconds. A task has at most 25 steps.
+- After one yes it runs to the end, including the final submit. Check the plan before you say yes.
+- Logins you make in the Browser tab stay for later tasks.
+- It cannot attach files in the app's browser; it stops and asks you to attach them.
+- If the app window is not open, the agent uses its own Chrome window instead (profile `~/Library/Application Support/brain-browser-agent`).
+- Details it may type go in `.env` as `BROWSER_SECRET_<NAME>=value` (for example `BROWSER_SECRET_EMAIL`). Claude only sees `<secret>email</secret>`; the value is typed into the page and hidden again in everything sent back to Claude.
+- Each run is logged in `second-brain/tmp/browser/runs.jsonl` (task, steps, result; no secret values). Screenshots, taken only after two failed steps, go in the same folder.
+
 ## Terminal
 
 **Terminal** in the top bar, or say “open a terminal” / “close the terminal” (a short phrase only; “how do I open a terminal?” still goes to the model).
@@ -652,6 +803,9 @@ Short requests while Tiny mode is on, eight words or fewer: “dance”, “wave
 | Rulebook | `~/.brain/code.md` |
 | PDFs the app made or you uploaded to edit | `second-brain/pdfs/` (not in git) |
 | Decks | `second-brain/decks/` (not in git) |
+| Movies being edited | `~/.brain/movies/` |
+| Screen recordings | `second-brain/recordings/` (not in git) |
+| Finished movies | `~/Movies/` |
 | Work list (reminders, watches, drafts) | `second-brain/desk.json` |
 | Folder list | `second-brain/folders.json` |
 | API keys | `.env` in the project folder, never in git |
@@ -671,6 +825,7 @@ These are separate from `npm install`. Without them, that one feature says it is
 | `voice/install-deckcraft.sh` | PowerPoint export |
 | `voice/install-wordcraft.sh` | Word editor |
 | `voice/install-photocraft.sh` | Photo editor |
+| `cargo build --release --manifest-path second-brain/moviecut/Cargo.toml` | Movie editor. Also needs ffmpeg |
 | Ollama with `embeddinggemma` | Meaning search |
 | Whisper models under `voice/models/` | Turning speech into text |
 | `voice/kokoro_server.py` | Speaking answers for text models |
@@ -748,6 +903,7 @@ You do not need this to use the app. It is here so a later change goes in the ri
 | `folders.js` | Add, select, and reload note folders |
 | `desk.js` / `deskjobs.js` | Work cards, reminders, watches |
 | `meetings.js` | Meeting and lecture save, recap, recording |
+| `screen.js` / `screenrec.swift` / `public/screentab.js` | Screen recording (picture, Zoom sound, microphone), captions, summary, recap |
 | `skills.js` | Find and run skills |
 | `shell.js` | Run a single local command (open a file or a site) |
 | `brain.js` | Day log and `brain.md` |
@@ -758,6 +914,7 @@ You do not need this to use the app. It is here so a later change goes in the ri
 | `public/pdfedit.js` | The PDF boxes on the page |
 | `wordcraft.js` / `public/wordedit.js` | Word editor |
 | `photocraft.js` / `public/photoedit.js` | Photo editor |
+| `movies.js` / `public/movieedit.js` / `moviecut/` | Movie editor (Rust timeline, ffmpeg export) |
 | `deck.js` / `deckcraft.js` / `public/deck.js` | Slides, presenter, PowerPoint |
 | `public/deck-edit.js` | “Edit with brain” |
 | `upload.js` | Add a document to the notes |

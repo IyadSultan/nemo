@@ -11,6 +11,12 @@ function listenStatus() {
 }
 /** The listening line, plus who is writing down your words right now. */
 function wakeStatus() {
+  if (directListening()) {
+    return "Direct. No Hey. Talk in English or Arabic; when you stop, your words go to the chat as they are.";
+  }
+  if (waitListening()) {
+    return "Wait. I write down every sentence and stay quiet. Say Talk, and I switch to Direct and answer.";
+  }
   if (medicalListening()) {
     return "Medical speech. Whisper hears English and Arabic, with no Hey. GPT-OSS keeps only the medical words, in English, with names removed. A question for me goes to the brain.";
   }
@@ -215,7 +221,7 @@ async function transcribeClip(clip, meeting) {
     ? "?lang=any"
     : earsSelect.value === "whisper-both"
     ? "?lang=both"
-    : earsSelect.value === "whisper" && !medicalListening()
+    : earsSelect.value === "whisper" && !medicalListening() && !directListening() && !waitListening()
       ? ""
       : "?lang=any";
   const response = await fetch(`/transcribe${query}`, {
@@ -264,6 +270,73 @@ function medicalListening() {
   return wakeSelect.value === "medical";
 }
 
+/** Direct: every finished sentence, English or Arabic, goes to the chat as heard. */
+function directListening() {
+  return wakeSelect.value === "direct";
+}
+
+/** Wait: write down every sentence. Stay quiet until the user says Talk, then become Direct. */
+function waitListening() {
+  return wakeSelect.value === "wait";
+}
+
+// Sentences kept while Wait is on. They are the question once the user says Talk.
+let waitLines = [];
+
+/** Forget anything written down in Wait. A new call, or leaving Wait, starts clean. */
+function clearWaitLines() {
+  waitLines = [];
+}
+
+/**
+ * True when this clip is the order "talk", not a sentence that merely contains that word.
+ * "Talk", "please talk", and "talk now" count. "We should talk" does not.
+ */
+/** One line is the order when it is only the word Talk, with a small filler allowed. */
+function lineIsTalkOrder(line) {
+  const cleaned = String(line || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s']/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return /^(?:(?:ok(?:ay)?|please|now|hey)\s+)?talk(?:\s+(?:now|please))?$/.test(cleaned);
+}
+
+function isTalkOrder(text) {
+  const raw = String(text || "");
+  const lines = /^(?:English|Arabic):/im.test(raw)
+    ? raw.split("\n").map((line) => line.replace(/^(?:English|Arabic):\s*/i, "").trim()).filter(Boolean)
+    : [raw.trim()];
+  const meaningful = lines.filter((line) => line && !looksLikeSilence(line));
+  if (!meaningful.length || !meaningful.some(lineIsTalkOrder)) return false;
+  // The other whisper line may be a short translation, such as Arabic for "talk".
+  // A real sentence on either line is not the order.
+  return meaningful.every((line) => lineIsTalkOrder(line) || line.trim().split(/\s+/).length <= 3);
+}
+
+/**
+ * Remember one sentence from Wait.
+ * Returns "talk" when the sentence is the order to start answering.
+ */
+function keepWaitLine(text) {
+  if (isTalkOrder(text)) return "talk";
+  const line = String(text || "").trim();
+  if (line) waitLines.push(line);
+  return "keep";
+}
+
+/**
+ * Leave Wait and become Direct, which is saved for the next call too.
+ * Returns everything written down, as one question. Empty when they only said Talk.
+ */
+function leaveWaitForDirect() {
+  const said = waitLines.join(" ").trim();
+  waitLines = [];
+  wakeSelect.value = "direct";
+  localStorage.setItem("wake", "direct");
+  return said;
+}
+
 /** The local model takes a while to load the first time. Load the one in use now. */
 function warmJudge() {
   if (wakeSelect.value === "gemma") fetch("/jev/warm", { method: "POST" }).catch(() => {});
@@ -273,7 +346,7 @@ function warmJudge() {
   if (earsSelect.value === "voxtral") return;
   if (earsSelect.value === "whisper-both") {
     fetch("/transcribe/warm?lang=both", { method: "POST" }).catch(() => {});
-  } else if (wakeSelect.value === "medical" || earsSelect.value !== "whisper") {
+  } else if (wakeSelect.value === "medical" || wakeSelect.value === "direct" || wakeSelect.value === "wait" || earsSelect.value !== "whisper") {
     fetch("/transcribe/warm", { method: "POST" }).catch(() => {});
   }
 }
@@ -407,6 +480,8 @@ wakeSelect.value = localStorage.getItem("wake") || "hey";
 if (!wakeSelect.value) wakeSelect.value = "hey";
 wakeSelect.addEventListener("change", () => {
   localStorage.setItem("wake", wakeSelect.value);
+  // Lines from Wait belong only to Wait. Changing the mode by hand drops them.
+  if (wakeSelect.value !== "wait") clearWaitLines();
   warmJudge();
   if (connected && needsVoiceControl(selectedModel())) setStatus(listenStatus());
 });

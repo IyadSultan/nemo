@@ -20,7 +20,7 @@ use axum::{
     Json, Router,
 };
 use hyper_util::{client::legacy::connect::HttpConnector, client::legacy::Client, rt::TokioExecutor};
-use nemo_realtime_voice::{clock, js, medgem::Medgem, pricing, team, term};
+use nemo_realtime_voice::{browser, clock, js, medgem::Medgem, pricing, team, term};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,6 +37,9 @@ const RUST_ROUTES: &[&str] = &[
     "GET /here",
     "POST /meeting/folder",
     "POST /team/ask (helper team on AutoAgents; Node only)",
+    "POST /browser/plan, /browser/run, /browser/stop, /browser/say (browser agent; Node only)",
+    "GET /browser/pane (WebSocket; the app window's Browser tab)",
+    "GET, POST /browser/bookmarks (the Browser tab's bookmarks)",
     "GET /term (terminal WebSocket; this page only)",
     "static files (public/, /vendor/rive, /vendor/xterm)",
 ];
@@ -55,6 +58,8 @@ struct AppState {
     port: u16,
     /// Secret for /team/ask, made at start and written where only Node reads it.
     team_token: Arc<String>,
+    /// The repo, for the browser agent's screenshots and run log.
+    repo: PathBuf,
 }
 
 fn mark(mut res: Response, who: &'static str) -> Response {
@@ -148,6 +153,127 @@ async fn team_ask(State(s): State<AppState>, headers: axum::http::HeaderMap, bod
         .body(Body::from_stream(events))
         .unwrap();
     mark(res, "rust")
+}
+
+fn from_node(s: &AppState, headers: &axum::http::HeaderMap) -> bool {
+    let given = headers.get("x-team-token").and_then(|v| v.to_str().ok()).unwrap_or("");
+    !s.team_token.is_empty() && given == s.team_token.as_str()
+}
+
+fn not_allowed() -> Response {
+    mark((StatusCode::FORBIDDEN, Json(json!({ "error": "Not allowed." }))).into_response(), "rust")
+}
+
+/// The browser agent's plan for a task (src/browser), for the user to approve.
+async fn browser_plan(State(s): State<AppState>, headers: axum::http::HeaderMap, body: Bytes) -> Response {
+    if !from_node(&s, &headers) {
+        return not_allowed();
+    }
+    let body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    let task = body["task"].as_str().unwrap_or("").trim().to_string();
+    if task.is_empty() {
+        return mark((StatusCode::BAD_REQUEST, Json(json!({ "error": "No task." }))).into_response(), "rust");
+    }
+    // "Fill in this form": the plan should know which page the app's browser is showing.
+    let task = match browser::pane::current_url().await {
+        Some(url) => format!("{task}\n(The browser is showing {url}.)"),
+        None => task,
+    };
+    let res = match browser::plan(&browser::claude(), &task, &browser::agent::Secrets::from_env()).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(json!({ "error": e }))).into_response(),
+    };
+    mark(res, "rust")
+}
+
+/// Run an approved task. The events stream back until `done`.
+async fn browser_run(State(s): State<AppState>, headers: axum::http::HeaderMap, body: Bytes) -> Response {
+    if !from_node(&s, &headers) {
+        return not_allowed();
+    }
+    let task: browser::agent::Task = match serde_json::from_slice(&body) {
+        Ok(t) => t,
+        Err(_) => return mark((StatusCode::BAD_REQUEST, Json(json!({ "error": "Bad browser task." }))).into_response(), "rust"),
+    };
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Value>();
+    if !browser::start(task, s.repo.clone(), tx) {
+        return mark((StatusCode::CONFLICT, Json(json!({ "error": "The browser is already busy with a task." }))).into_response(), "rust");
+    }
+    let events = tokio_stream::wrappers::UnboundedReceiverStream::new(rx)
+        .map(|v| Ok::<_, std::convert::Infallible>(Bytes::from(format!("data: {v}\n\n"))));
+    let res = Response::builder()
+        .header(header::CONTENT_TYPE, "text/event-stream")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .body(Body::from_stream(events))
+        .unwrap();
+    mark(res, "rust")
+}
+
+async fn browser_stop(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Response {
+    if !from_node(&s, &headers) {
+        return not_allowed();
+    }
+    mark(Json(json!({ "ok": browser::stop() })).into_response(), "rust")
+}
+
+/// A note from the user while a task runs ("use my work email"). The next step reads it.
+async fn browser_say(State(s): State<AppState>, headers: axum::http::HeaderMap, body: Bytes) -> Response {
+    if !from_node(&s, &headers) {
+        return not_allowed();
+    }
+    let body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    let text = body["text"].as_str().unwrap_or("").trim();
+    mark(Json(json!({ "ok": !text.is_empty() && browser::say(text), "busy": browser::busy() })).into_response(), "rust")
+}
+
+/// The Browser tab's bookmarks, in second-brain/bookmarks.json.
+fn bookmarks_file(s: &AppState) -> PathBuf {
+    s.repo.join("second-brain").join("bookmarks.json")
+}
+
+fn read_bookmarks(s: &AppState) -> Value {
+    std::fs::read(bookmarks_file(s)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_else(|| json!([]))
+}
+
+async fn bookmarks(State(s): State<AppState>) -> Response {
+    mark(Json(json!({ "bookmarks": read_bookmarks(&s) })).into_response(), "rust")
+}
+
+/// The page sends the whole list. Only web addresses are kept, at most 100.
+async fn save_bookmarks(State(s): State<AppState>, headers: axum::http::HeaderMap, body: Bytes) -> Response {
+    let body = json_body(&headers, &body);
+    let Some(list) = body["bookmarks"].as_array() else {
+        return mark((StatusCode::BAD_REQUEST, Json(json!({ "error": "No bookmarks." }))).into_response(), "rust");
+    };
+    let mut kept: Vec<Value> = Vec::new();
+    for b in list.iter().take(100) {
+        let url = b["url"].as_str().unwrap_or("").trim();
+        if !(url.starts_with("https://") || url.starts_with("http://")) || url.len() > 2000 || kept.iter().any(|k| k["url"] == url) {
+            continue;
+        }
+        let title = js::slice16(js::trim(b["title"].as_str().unwrap_or("")), 0, 120);
+        kept.push(json!({ "url": url, "title": if title.is_empty() { url.to_string() } else { title } }));
+    }
+    let saved = serde_json::to_vec_pretty(&kept).map_err(|e| e.to_string()).and_then(|bytes| {
+        let tmp = bookmarks_file(&s).with_extension("json.tmp");
+        std::fs::write(&tmp, bytes).and_then(|_| std::fs::rename(&tmp, bookmarks_file(&s))).map_err(|e| e.to_string())
+    });
+    let res = match saved {
+        Ok(()) => Json(json!({ "bookmarks": kept })).into_response(),
+        Err(e) => {
+            eprintln!("Failed while saving bookmarks: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "The bookmarks were not saved." }))).into_response()
+        }
+    };
+    mark(res, "rust")
+}
+
+/// The app window's Browser tab connects here so the agent can drive it (src/browser/pane.rs).
+async fn browser_pane(State(s): State<AppState>, headers: axum::http::HeaderMap, ws: WebSocketUpgrade) -> Response {
+    if !from_node(&s, &headers) {
+        return not_allowed();
+    }
+    mark(ws.on_upgrade(browser::pane::serve), "rust")
 }
 
 /// A shell in a terminal on the page (src/term.rs). Only this server's own page may open one.
@@ -266,6 +392,12 @@ fn app(state: AppState) -> Router {
         .route("/here", get(here))
         .route("/meeting/folder", post(meeting_folder))
         .route("/team/ask", post(team_ask))
+        .route("/browser/plan", post(browser_plan))
+        .route("/browser/run", post(browser_run))
+        .route("/browser/stop", post(browser_stop))
+        .route("/browser/say", post(browser_say))
+        .route("/browser/pane", get(browser_pane))
+        .route("/browser/bookmarks", get(bookmarks).post(save_bookmarks))
         .route("/term", get(terminal))
         .route("/rust", get(status))
         .fallback(files_or_node)
@@ -287,6 +419,7 @@ async fn main() {
         xterm: repo.join("node_modules").join("@xterm"),
         port,
         team_token: Arc::new(make_team_token(&repo)),
+        repo: repo.clone(),
     };
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.unwrap_or_else(|e| panic!("port {port}: {e}"));
     println!("Second brain (Rust front) → http://localhost:{port}  (everything not yet in Rust goes to {node})");
@@ -345,6 +478,7 @@ mod tests {
             xterm: PathBuf::from("/nonexistent"),
             port: listener.local_addr().unwrap().port(),
             team_token: Arc::new("test-token".into()),
+            repo: std::env::temp_dir(),
         };
         let url = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, app(state)).await.unwrap() });

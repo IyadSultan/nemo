@@ -29,7 +29,7 @@ const EMPTY = {
   jobs: [],
   suggestions: [],
   dismissed: [],
-  memory: { summary: "", turns: [], savedAt: "" },
+  memory: { summary: "", turns: [], files: [], savedAt: "" },
 };
 
 let state = load();
@@ -44,6 +44,7 @@ function load() {
       memory: {
         summary: typeof parsed.memory?.summary === "string" ? parsed.memory.summary : "",
         turns: Array.isArray(parsed.memory?.turns) ? parsed.memory.turns : [],
+        files: Array.isArray(parsed.memory?.files) ? parsed.memory.files : [],
         savedAt: typeof parsed.memory?.savedAt === "string" ? parsed.memory.savedAt : "",
       },
     };
@@ -213,6 +214,7 @@ export function publicDesk() {
       savedAt: state.memory.savedAt,
       lastQuestion: state.memory.turns.at(-1)?.question || "",
       turns: state.memory.turns,
+      files: state.memory.files || [],
     },
   };
 }
@@ -224,20 +226,33 @@ export function savedChat() {
   };
 }
 
-export function rememberChat(summary, turns) {
+export function rememberChat(summary, turns, files) {
   state.memory = {
     summary: clip(summary, 2000),
     turns: (Array.isArray(turns) ? turns : []).slice(-6).map((turn) => ({
       question: clip(turn.question, 500),
       answer: clip(turn.answer, 1500) || "(no answer yet)",
     })).filter((turn) => turn.question),
+    // A caller that does not mention files (the compressor) keeps the ones already saved.
+    files: Array.isArray(files) ? clipFiles(files) : (state.memory.files || []),
     savedAt: nowIso(),
   };
   save();
 }
 
+/** Name, title, and a short summary. The page shows these and sends them with the next question. */
+function clipFiles(raw) {
+  return raw.slice(-8).map((item) => ({
+    name: clip(item?.name, 180),
+    title: clip(item?.title, 180),
+    summary: clip(item?.summary, 1200),
+    wiki: typeof item?.wiki === "string" ? item.wiki.trim().slice(0, 500) : "",
+    made: item?.made === true,
+  })).filter((item) => item.name);
+}
+
 export function forgetChat() {
-  state.memory = { summary: "", turns: [], savedAt: "" };
+  state.memory = { summary: "", turns: [], files: [], savedAt: "" };
   save();
 }
 

@@ -1,0 +1,13 @@
+[package]
+name = "moviecut"
+version = "0.1.0"
+edition = "2021"
+description = "Voice-driven movie timeline. Writes the finished file with ffmpeg."
+
+[[bin]]
+name = "moviecut"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

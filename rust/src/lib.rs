@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod clock;
 pub mod desk;
 pub mod docs;

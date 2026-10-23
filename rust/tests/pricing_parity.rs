@@ -44,7 +44,8 @@ fn lookups_match_node() {
 fn prices_match_node() {
     let f = raw_fixture();
     let cases = f["cases"].as_array().unwrap();
-    assert!(cases.len() > 50);
+    // Seven usages per model (gen_pricing.mjs).
+    assert_eq!(cases.len(), (VOICE_MODELS.len() + MODELS.len()) * 7);
     for c in cases {
         let model = get_any_model(c["id"].as_str().unwrap()).unwrap();
         let usage: Option<Usage> = serde_json::from_value(c["usage"].clone()).unwrap();

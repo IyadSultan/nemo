@@ -12,28 +12,51 @@ import { wantsBuild } from "./build.js";
 import { learningJob } from "./learnings.js";
 import {
   applyClassification,
+  boardForExport,
   chatMemorySticky,
+  cleanInk,
   migrate,
   parseSticky,
+  registerStickies,
   resetForTests,
+  runBrainstorm,
   runStickyCommand,
   runTool,
   sanitizeHtml,
+  setHooksForTests,
   setNowForTests,
   sortNotes,
   tagKey,
   viewForTests,
 } from "./stickies.js";
+import { boardHtml, boardMarkdown, htmlToMarkdown, snapshotPage } from "./stickyexport.js";
+import { articleText, importableUrl } from "./stickyimport.js";
 
 const file = path.join(os.tmpdir(), `stickies-test-${process.pid}.json`);
+
+// The board route, called the way the page calls it, without a listening server.
+async function fetchLike(url, body) {
+  const express = (await import("express")).default;
+  const app = express();
+  app.use(express.json());
+  registerStickies(app, {});
+  const server = app.listen(0);
+  try {
+    const port = server.address().port;
+    const response = await fetch(`http://127.0.0.1:${port}${url}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return response.json();
+  } finally {
+    server.close();
+  }
+}
 const now = new Date("2026-10-20T12:00:00+03:00");
 
 function setup() {
   resetForTests(file);
   setNowForTests(() => new Date(now));
-  const prefs = viewForTests().prefs;
-  prefs.slightRotation = false;
-  prefs.defaultColorMode = "last";
+  const look = viewForTests().board.look;
+  look.slightRotation = false;
+  look.defaultColorMode = "last";
 }
 
 test.beforeEach(setup);
@@ -357,4 +380,490 @@ test("a link needs a real note or a safe address", () => {
   assert.equal(runTool("sticky_note_link", { fromId: left.id, toId: "missing" }).status, "not_found");
   assert.equal(runTool("sticky_note_link", { fromId: left.id, href: "javascript:alert(1)" }).error, "bad_link");
   assert.equal(runTool("sticky_note_link", { fromId: left.id, href: "https://example.com" }).status, "linked");
+});
+
+test("each board keeps its own notes and its own look", () => {
+  runTool("sticky_note_create", { content: "Home note" });
+  const made = runTool("sticky_board_create", { name: "Work" });
+  assert.equal(made.status, "board_created");
+  assert.equal(viewForTests().board.name, "Work");
+  assert.equal(viewForTests().notes.length, 0);
+  runTool("sticky_note_create", { content: "Work note" });
+  viewForTests().board.look.corners = "square";
+  viewForTests().board.colorMeanings.blue = "Grants";
+  assert.equal(runTool("sticky_board_switch", { board: "board" }).status, "board_switched");
+  const home = viewForTests();
+  assert.deepEqual(home.notes.map((note) => note.content), ["Home note"]);
+  assert.equal(home.prefs.corners, "round");
+  assert.equal(home.colorMeanings.blue, "Work");
+  assert.equal(home.boards.length, 2);
+  assert.equal(runTool("sticky_board_create", { name: "work" }).ok, false);
+});
+
+test("deleting a board sends its notes to the trash, and restore puts them on the first board", () => {
+  runTool("sticky_board_create", { name: "Trip" });
+  const note = runTool("sticky_note_create", { content: "Pack bags" }).note;
+  const trip = viewForTests().board.id;
+  assert.equal(runTool("sticky_board_delete", { boardId: trip }).status, "confirm");
+  assert.equal(viewForTests().boards.length, 2);
+  const gone = runTool("sticky_board_delete", { boardId: trip, confirm: true });
+  assert.equal(gone.status, "board_deleted");
+  assert.equal(viewForTests().boards.length, 1);
+  assert.equal(viewForTests().trash.length, 1);
+  const back = runTool("sticky_note_restore", { id: note.id });
+  assert.equal(back.note.boardId, "board-main");
+  assert.equal(runTool("sticky_board_delete", { boardId: "board-main", confirm: true }).ok, false);
+});
+
+test("voice makes, switches, and moves notes between boards; search looks on every board", async () => {
+  assert.equal((await runStickyCommand("New sticky board called Research")).result.status, "board_created");
+  await runStickyCommand("Create a sticky note about the grant budget");
+  const moved = await runStickyCommand("Put that on the board board");
+  assert.equal(moved.result.status, "moved");
+  assert.equal(viewForTests().notes.length, 0);
+  const found = await runStickyCommand("Show me all sticky notes related to grant");
+  assert.equal(found.result.notes.length, 1);
+  assert.match(found.text, /1 is on another board/);
+  assert.equal((await runStickyCommand("Switch to the board board")).result.status, "board_switched");
+  assert.equal(viewForTests().notes.length, 1);
+  const missing = await runStickyCommand("Switch to the garden board");
+  assert.match(missing.text, /Your boards are Board, Research/);
+});
+
+test("an old file gives every board the shared look it had", () => {
+  const old = migrate({
+    prefs: { appearance: "dark", corners: "square", trashDays: 7 },
+    colorMeanings: { blue: "Clinic" },
+    boards: [{ id: "board-main", name: "Board" }],
+    notes: [{ id: "n1", content: "x" }],
+  });
+  assert.equal(old.prefs.appearance, "dark");
+  assert.equal(old.prefs.corners, undefined);
+  assert.equal(old.boards[0].look.corners, "square");
+  assert.equal(old.boards[0].colorMeanings.blue, "Clinic");
+  assert.equal(old.colorMeanings, undefined);
+  assert.equal(old.currentBoardId, "board-main");
+  assert.equal(old.notes[0].boardId, "board-main");
+});
+
+const IDEAS = JSON.stringify({ add: [
+  { title: "Venue", content: "Book a venue for 200 people", color: "blue" },
+  { title: "Speakers", content: "Invite three keynote speakers", color: "green" },
+  { title: "Budget", content: "Draft the budget", color: "pink" },
+  { title: "Dates", content: "Pick two possible dates", color: "yellow" },
+  { title: "Catering", content: "Get catering quotes", color: "orange" },
+] });
+
+test("brainstorm about a topic opens a board with the topic and five ideas to tick", async () => {
+  let asked = "";
+  const said = await runStickyCommand("Let's brainstorm about arranging a conference", { ask: async (instruction) => {
+    if (instruction.includes("Label")) return "{}";
+    asked = instruction;
+    return IDEAS;
+  } });
+  assert.equal(said.result.status, "brainstorm_started");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.match(asked, /Give 5 ideas/);
+  assert.match(asked, /Topic: arranging a conference/);
+  const view = viewForTests();
+  assert.equal(view.board.name, "Arranging a conference");
+  assert.equal(view.board.brainstorm.on, true);
+  const ideas = view.notes.filter((note) => note.idea);
+  assert.equal(ideas.length, 5);
+  assert.equal(viewForTests({ q: "venue" }).notes.length, 0, "an idea is not searched until it is kept");
+  assert.equal(runTool("sticky_idea_accept", { id: ideas[0].id }).status, "idea_accepted");
+  assert.equal(runTool("sticky_idea_reject", { id: ideas[1].id }).status, "idea_rejected");
+  const after = viewForTests();
+  assert.equal(after.notes.filter((note) => note.idea).length, 3);
+  assert.equal(after.notes.find((note) => note.id === ideas[0].id).idea, false);
+  assert.ok(ideas.every((note) => note.mark === "claude"), "the mascot pins every idea the model wrote");
+  assert.deepEqual(after.board.brainstorm.rejected, ["Invite three keynote speakers"]);
+});
+
+test("an edit on a brainstorm board suggests ideas and a change, and nothing changes until accepted", async () => {
+  runTool("sticky_brainstorm_set", { on: true });
+  const budget = runTool("sticky_note_create", { content: "Budget is 5000" }).note;
+  const venue = runTool("sticky_note_update", { id: runTool("sticky_note_create", { content: "x" }).note.id, content: "Venue: the big hall" });
+  assert.deepEqual(venue.brainstorm, { boardId: "board-main", noteId: venue.note.id, first: false });
+  let prompt = "";
+  const reply = JSON.stringify({ add: [{ content: "Check the hall has a projector" }], edit: [{ id: budget.id, content: "Budget is 5000, hall rent included", reason: "the hall costs money" }] });
+  const round = await runBrainstorm(venue.brainstorm, async (instruction, text) => { prompt = text; return reply; });
+  assert.equal(round.status, "ideas");
+  assert.match(prompt, /\(CHANGED\) Venue: the big hall/);
+  const view = viewForTests();
+  assert.equal(view.proposals.length, 1);
+  assert.equal(view.notes.find((note) => note.id === budget.id).content, "Budget is 5000");
+  runTool("sticky_idea_accept", { id: view.proposals[0].id });
+  assert.equal(viewForTests().notes.find((note) => note.id === budget.id).content, "Budget is 5000, hall rent included");
+  assert.equal(viewForTests().proposals.length, 0);
+});
+
+test("brainstorm stays quiet when off, and ideas never start another round", async () => {
+  const made = runTool("sticky_note_create", { content: "Plain note" });
+  assert.equal(made.brainstorm, null);
+  runTool("sticky_brainstorm_set", { on: true });
+  const seed = runTool("sticky_note_create", { content: "Seed" });
+  await runBrainstorm(seed.brainstorm, async () => JSON.stringify({ add: [{ content: "An idea" }] }));
+  const idea = viewForTests().notes.find((note) => note.idea);
+  assert.equal(runTool("sticky_note_update", { id: idea.id, content: "An edited idea" }).brainstorm, null);
+  assert.equal(runTool("sticky_idea_accept", { id: idea.id }).brainstorm, null);
+  assert.equal(parseSticky("turn off brainstorm mode").tool, "sticky_brainstorm_set");
+  assert.equal(parseSticky("brainstorm mode on").args.on, true);
+  assert.equal(parseSticky("brainstorm on a new logo").args.topic, "a new logo");
+});
+
+test("export lists the open board's kept notes top to bottom as Markdown and HTML", () => {
+  runTool("sticky_note_create", { content: "Second <b>bold</b><br>line two", title: "Lower", x: 0, y: 500 });
+  runTool("sticky_note_create", { content: "Book the hall", title: "Upper", x: 0, y: 10, checklist: [{ text: "Call venue", done: true }] });
+  runTool("sticky_note_create", { content: "an idea", title: "Idea", x: 0, y: 0 });
+  const idea = boardForExport().notes.find((note) => note.title === "Idea");
+  idea.idea = true;
+  const data = boardForExport();
+  assert.deepEqual(data.notes.map((note) => note.title), ["Upper", "Lower"]);
+  const md = boardMarkdown(data);
+  assert.match(md, /^# Board\n/);
+  assert.ok(md.indexOf("## Upper") < md.indexOf("## Lower"));
+  assert.match(md, /- \[x\] Call venue/);
+  assert.match(md, /Second \*\*bold\*\*\nline two/);
+  assert.doesNotMatch(md, /Idea/);
+  assert.match(boardHtml(data), /<h2>Upper<\/h2>/);
+  assert.equal(htmlToMarkdown("<div>a &amp; b</div><ul><li>one</li></ul>"), "a & b\n\n- one");
+});
+
+test("board drawings keep only pens, lines and arrows with sane values; pictures only load app stylesheets", () => {
+  const ink = cleanInk([
+    { tool: "pen", color: "#ff0000", size: 4, points: [[1, 2], [3, 4], [5, 6]] },
+    { tool: "arrow", color: "red", size: 400, points: [[0, 0], [5, 5], [10, 10]] },
+    { tool: "circle", points: [[0, 0], [1, 1]] },
+    { tool: "line", points: [[0, 0]] },
+  ]);
+  assert.equal(ink.length, 2);
+  assert.deepEqual(ink[1], { tool: "arrow", color: "#1e2a32", size: 40, points: [[0, 0], [10, 10]] });
+  const page = snapshotPage({ html: "<div></div>", width: 300, height: 200, css: ["http://127.0.0.1:3001/stickies.css", "https://evil.example/x.css"] });
+  assert.match(page.html, /127\.0\.0\.1:3001\/stickies\.css/);
+  assert.doesNotMatch(page.html, /evil/);
+  assert.throws(() => snapshotPage({ html: "", width: 9000, height: 10 }));
+});
+
+test("dropping a note on another asks before combining; yes folds the first into the second", async () => {
+  const a = runTool("sticky_note_create", { content: "Book the hall", title: "Venue" }).note;
+  const b = runTool("sticky_note_create", { content: "Hall needs 200 seats", title: "Seats" }).note;
+  let sent = "";
+  const ask = async (instruction, text) => {
+    if (instruction.includes("Label")) return "{}";
+    sent = text;
+    return JSON.stringify({ title: "Venue", content: "Book the hall with 200 seats" });
+  };
+  const asked = runTool("sticky_note_combine", { id: a.id, intoId: b.id });
+  assert.equal(asked.status, "thinking");
+  assert.equal(asked.brainstorm.mode, "merge");
+  await runBrainstorm(asked.brainstorm, ask);
+  assert.match(sent, /First note: Venue: Book the hall\nSecond note: Seats: Hall needs 200 seats/);
+  let view = viewForTests();
+  assert.equal(view.proposals.length, 1);
+  assert.equal(view.proposals[0].kind, "merge");
+  assert.equal(view.notes.find((note) => note.id === b.id).content, "Hall needs 200 seats", "nothing changes before yes");
+  assert.equal(runTool("sticky_idea_reject", { id: view.proposals[0].id }).status, "idea_rejected");
+  assert.equal(viewForTests().notes.length, 2, "no means both notes stay");
+  assert.deepEqual(viewForTests().board.brainstorm.rejected, [], "a refused combine is not a rejected idea");
+  await runBrainstorm(runTool("sticky_note_combine", { id: a.id, intoId: b.id }).brainstorm, ask);
+  view = viewForTests();
+  assert.equal(runTool("sticky_idea_accept", { id: view.proposals[0].id }).status, "idea_accepted");
+  view = viewForTests();
+  assert.equal(view.notes.length, 1);
+  assert.equal(view.notes[0].id, b.id);
+  assert.equal(view.notes[0].title, "Venue");
+  assert.equal(view.notes[0].content, "Book the hall with 200 seats");
+  assert.equal(view.notes[0].mark, "claude", "a rewritten note gets the mascot pin");
+  assert.equal(view.trash.length, 1, "the dragged note waits in the trash");
+  assert.equal(view.proposals.length, 0);
+});
+
+test("branch ideas ring a note with arrows; a dropped idea takes its arrow; keep all keeps the rest", async () => {
+  const seed = runTool("sticky_note_create", { content: "Invite speakers", title: "Speakers", x: 800, y: 600 }).note;
+  let asked = "";
+  const ask = async (instruction) => {
+    if (instruction.includes("Label")) return "{}";
+    asked = instruction;
+    return JSON.stringify({ add: [
+      { title: "Shortlist", content: "List ten names" }, { title: "Invite", content: "Send invitations" },
+      { title: "Travel", content: "Book flights" }, { title: "Extra", content: "Too many" }, { title: "Five", content: "Dropped by the limit" },
+    ] });
+  };
+  const made = runTool("sticky_idea_branch", { id: seed.id });
+  assert.equal(made.brainstorm.mode, "branch");
+  await runBrainstorm(made.brainstorm, ask);
+  assert.match(asked, /Give 4 ideas that grow out of/);
+  let view = viewForTests();
+  const ideas = view.notes.filter((note) => note.idea);
+  assert.equal(ideas.length, 4);
+  assert.equal(view.board.ink.length, 4);
+  assert.ok(view.board.ink.every((stroke) => stroke.tool === "arrow" && ideas.some((idea) => idea.id === stroke.noteId)));
+  assert.ok(ideas.every((idea) => Math.abs(idea.positionX - seed.positionX) > 100 || Math.abs(idea.positionY - seed.positionY) > 100), "ideas sit away from the note");
+  runTool("sticky_idea_reject", { id: ideas[0].id });
+  view = viewForTests();
+  assert.equal(view.board.ink.length, 3, "the arrow goes with the idea");
+  assert.equal(runTool("sticky_idea_accept_all", {}).count, 3);
+  view = viewForTests();
+  assert.equal(view.notes.filter((note) => note.idea).length, 0);
+  assert.equal(view.notes.length, 4);
+  assert.equal(view.board.ink.length, 3, "kept ideas keep their arrows");
+  const more = runTool("sticky_idea_more", { query: "speakers" });
+  assert.equal(more.brainstorm.mode, "more");
+});
+
+test("the brief and the wild slider steer every round; poke holes adds a pink note under each kept note", async () => {
+  runTool("sticky_brainstorm_set", { on: true });
+  const a = runTool("sticky_note_create", { content: "Book the hall", title: "Venue", x: 100, y: 100 }).note;
+  const b = runTool("sticky_note_create", { content: "Sell tickets", title: "Tickets", x: 400, y: 100 }).note;
+  await fetchLike("/stickies/board", { brief: "budget is 5000 dollars", wild: 90 });
+  let asked = "";
+  const ask = async (instruction) => {
+    if (instruction.includes("Label")) return "{}";
+    asked = instruction;
+    return JSON.stringify({ holes: [{ id: a.id, title: "Deposit", content: "Who pays the deposit?" }, { id: b.id, content: "What if nobody buys?" }, { id: "nope", content: "x" }] });
+  };
+  const round = runTool("sticky_brainstorm_challenge", {});
+  assert.equal(round.status, "thinking");
+  await runBrainstorm(round.brainstorm, ask);
+  assert.match(asked, /What the user cares about: budget is 5000 dollars/);
+  assert.match(asked, /Be bold/);
+  const holes = viewForTests().notes.filter((note) => note.idea);
+  assert.equal(holes.length, 2);
+  assert.ok(holes.every((note) => note.color === "pink"));
+  const under = holes.find((note) => note.title === "Deposit");
+  assert.equal(under.positionY, a.positionY + a.height + 16);
+  assert.equal(runTool("sticky_idea_reject_all", {}).count, 2);
+  assert.equal(viewForTests().notes.length, 2);
+});
+
+test("sort into themes tags the kept notes and groups the board by hashtag", async () => {
+  const ids = ["Book the hall", "Sell tickets", "Print posters"].map((content) => runTool("sticky_note_create", { content }).note.id);
+  const ask = async (instruction) => {
+    if (instruction.includes("Label")) return "{}";
+    return JSON.stringify({ themes: [{ name: "Venue", ids: [ids[0]] }, { name: "Promotion", ids: [ids[1], ids[2]] }] });
+  };
+  assert.equal(runTool("sticky_brainstorm_themes", {}).status, "thinking");
+  await runBrainstorm({ boardId: viewForTests().board.id, noteId: ids[0], mode: "themes" }, ask);
+  const view = viewForTests();
+  assert.equal(view.board.group, "hashtag");
+  assert.equal(view.board.layout, "organized");
+  assert.deepEqual(view.notes.find((note) => note.id === ids[2]).hashtags.map((tag) => tag.display), ["Promotion"]);
+  assert.deepEqual(parseSticky("poke holes in my plan"), { tool: "sticky_brainstorm_challenge", args: {} });
+  assert.deepEqual(parseSticky("sort the board into themes"), { tool: "sticky_brainstorm_themes", args: {} });
+  assert.deepEqual(parseSticky("keep all the ideas"), { tool: "sticky_idea_accept_all", args: {} });
+  assert.deepEqual(parseSticky("branch ideas from the note about tickets"), { tool: "sticky_idea_branch", args: { query: "tickets" } });
+});
+
+test("a pasted list makes one note per line; a dropped idea can come back", () => {
+  const made = runTool("sticky_note_create_many", { text: "- Book the hall\n2. Sell tickets\n\n• Print posters", x: 100, y: 100 });
+  assert.equal(made.status, "created_many");
+  assert.deepEqual(made.notes.map((note) => note.content), ["Book the hall", "Sell tickets", "Print posters"]);
+  assert.equal(made.notes[1].positionX, 360);
+  const home = viewForTests().board;
+  home.brainstorm.rejected = ["Hire a band"];
+  const back = runTool("sticky_idea_restore", { text: "Hire a band" });
+  assert.equal(back.status, "idea_restored");
+  assert.equal(back.note.idea, true);
+  assert.deepEqual(viewForTests().board.brainstorm.rejected, []);
+  assert.equal(runTool("sticky_idea_restore", { text: "Hire a band" }).status, "not_found");
+});
+
+test("a note that sounds like another makes the mascot offer to combine them, brainstorm off", async () => {
+  runTool("sticky_note_create", { content: "Book the big hall at the hotel for the conference dinner" });
+  const twin = runTool("sticky_note_create", { content: "Book the big hall at the hotel for the conference dinner on Friday" });
+  assert.equal(twin.brainstorm?.mode, "merge");
+  assert.equal(twin.brainstorm.why, "sounds like");
+  const other = runTool("sticky_note_create", { content: "Completely different: order flowers" });
+  assert.equal(other.brainstorm, null);
+  await runBrainstorm(twin.brainstorm, async (instruction) => instruction.includes("Label") ? "{}" : JSON.stringify({ title: "Hall", content: "Book the big hall for the dinner on Friday" }));
+  const view = viewForTests();
+  assert.equal(view.proposals.length, 1);
+  assert.match(view.proposals[0].reason, /sounds like/);
+});
+
+test("summary writes one pinned note and refreshes it; plan dates the notes and adds a plan", async () => {
+  const a = runTool("sticky_note_create", { content: "Book the hall", title: "Venue" }).note;
+  const b = runTool("sticky_note_create", { content: "Sell tickets", title: "Tickets" }).note;
+  const ask = async (instruction) => {
+    if (instruction.includes("Label")) return "{}";
+    if (instruction.includes("sum up")) return JSON.stringify({ content: "A conference. Hall and tickets planned. Date still open." });
+    return JSON.stringify({ plan: { title: "Conference prep", from: "2026-11-02", to: "2026-11-20", place: "Amman", comment: "Venue first" }, tasks: [{ id: a.id, dueAt: "2026-11-02" }, { id: b.id, dueAt: "2026-11-20" }, { id: "nope", dueAt: "2026-11-01" }] });
+  };
+  await runBrainstorm(runTool("sticky_board_summary", {}).brainstorm, ask);
+  await runBrainstorm(runTool("sticky_board_summary", {}).brainstorm, ask);
+  let view = viewForTests();
+  const summaries = view.notes.filter((note) => note.summary);
+  assert.equal(summaries.length, 1);
+  assert.equal(summaries[0].isPinned, true);
+  assert.match(summaries[0].content, /Date still open/);
+  const plans = [];
+  setHooksForTests({ addPlan: (body) => { plans.push(body); return { plan: { ...body, id: "p1" } }; } });
+  const planned = await runBrainstorm(runTool("sticky_board_plan", {}).brainstorm, ask);
+  assert.equal(planned.status, "planned");
+  assert.equal(planned.count, 2);
+  view = viewForTests();
+  const venue = view.notes.find((note) => note.id === a.id);
+  assert.equal(venue.noteType, "task");
+  assert.equal(venue.dueAt, "2026-11-02T09:00:00");
+  assert.deepEqual(plans, [{ title: "Conference prep", from: "2026-11-02", to: "2026-11-20", place: "Amman", comment: "Venue first" }]);
+  setHooksForTests({});
+});
+
+test("ideas from my files use only the found excerpts and say where each came from", async () => {
+  runTool("sticky_note_create", { content: "arranging a conference" });
+  let seen = "";
+  setHooksForTests({ findFiles: async (query) => { seen = query; return [{ name: "Conference 2025 notes", text: "Last year the hall cost 3000 and the coffee ran out." }]; } });
+  const ask = async (instruction, text) => {
+    if (instruction.includes("Label")) return "{}";
+    assert.match(instruction, /using only excerpts/);
+    assert.match(text, /### Conference 2025 notes/);
+    return JSON.stringify({ add: [{ title: "Coffee", content: "Order double the coffee", source: "Conference 2025 notes" }] });
+  };
+  const made = await runBrainstorm(runTool("sticky_ideas_from_files", { topic: "catering" }).brainstorm, ask);
+  assert.equal(made.status, "ideas");
+  assert.match(seen, /catering/);
+  const idea = viewForTests().notes.find((note) => note.idea);
+  assert.equal(idea.content, "Order double the coffee (from: Conference 2025 notes)");
+  setHooksForTests({ findFiles: async () => [] });
+  const none = await runBrainstorm(runTool("sticky_ideas_from_files", {}).brainstorm, ask);
+  assert.equal(none.status, "no_files");
+  setHooksForTests({});
+});
+
+test("a template makes a new board with lines and pinned header notes", () => {
+  const made = runTool("sticky_board_template", { template: "SWOT" });
+  assert.equal(made.status, "board_created");
+  const view = viewForTests();
+  assert.equal(view.board.name, "SWOT");
+  assert.equal(view.board.ink.length, 6, "three vertical and three horizontal lines");
+  assert.deepEqual(view.notes.map((note) => note.title).sort(), ["Opportunities", "Strengths", "Threats", "Weaknesses"]);
+  assert.ok(view.notes.every((note) => note.isPinned && note.color === "white"));
+  assert.equal(runTool("sticky_board_template", { template: "nope" }).ok, false);
+  assert.deepEqual(parseSticky("new board from the week template called Sprint 3"), { tool: "sticky_board_template", args: { template: "week", name: "Sprint 3" } });
+  assert.deepEqual(parseSticky("summarize the board"), { tool: "sticky_board_summary", args: {} });
+  assert.deepEqual(parseSticky("ideas from my files about catering"), { tool: "sticky_ideas_from_files", args: { topic: "catering" } });
+});
+
+test("a web page becomes at most ten notes plus one with the link; the model is told what kind of page it is", async () => {
+  setHooksForTests({ readPage: async (url) => ({ kind: "paper", title: "Vaccine trial", text: `Abstract of ${url}` }) });
+  let asked = "";
+  const ask = async (instruction, text) => {
+    if (instruction.includes("Label")) return "{}";
+    asked = `${instruction}\n${text}`;
+    return JSON.stringify({ add: Array.from({ length: 12 }, (_, i) => ({ title: `Point ${i + 1}`, content: `Finding number ${i + 1}` })) });
+  };
+  assert.equal(runTool("sticky_import_url", { url: "ftp://x" }).ok, false);
+  assert.equal(runTool("sticky_import_url", { url: "http://127.0.0.1:3001/" }).ok, false);
+  const made = runTool("sticky_import_url", { url: "https://pubmed.ncbi.nlm.nih.gov/33301246/" });
+  assert.equal(made.brainstorm.mode, "import");
+  const round = await runBrainstorm(made.brainstorm, ask);
+  assert.equal(round.status, "imported");
+  assert.equal(round.count, 10);
+  assert.match(asked, /scientific paper/);
+  assert.match(asked, /Abstract of https:\/\/pubmed/);
+  const view = viewForTests();
+  assert.equal(view.notes.length, 11);
+  const source = view.notes.find((note) => note.title === "Vaccine trial");
+  assert.match(source.content, /<a href="https:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/33301246\/">/);
+  assert.ok(view.notes.every((note) => note.mark === "claude" && !note.idea), "imported notes are real notes with the mascot pin");
+  setHooksForTests({ readPage: async () => { throw new Error("The page answered 404."); } });
+  const bad = await runBrainstorm(runTool("sticky_import_url", { url: "https://example.org/gone" }).brainstorm, ask);
+  assert.equal(bad.status, "no_page");
+  assert.match(bad.error, /404/);
+  setHooksForTests({});
+  assert.deepEqual(parseSticky("import https://github.com/expressjs/express as stickies"), { tool: "sticky_import_url", args: { url: "https://github.com/expressjs/express" } });
+  assert.equal(importableUrl("https://host.local/x"), null);
+  const page = articleText("<html><head><title>T</title></head><body><nav><p>menu menu menu menu menu menu menu menu</p></nav><h2>Methods</h2><p>We enrolled forty-three thousand participants in a randomized trial.</p><script>x()</script></body></html>");
+  assert.equal(page.title, "T");
+  assert.equal(page.text, "## Methods\nWe enrolled forty-three thousand participants in a randomized trial.");
+});
+
+test("the back of a note holds more text, is cleaned, searched, and exported", () => {
+  const note = runTool("sticky_note_create", { content: "Front side", title: "Card" }).note;
+  assert.equal(note.back, "");
+  const saved = runTool("sticky_note_update", { id: note.id, back: "Long notes <b>here</b> about zebras <script>x()</script>" });
+  assert.equal(saved.note.back, "Long notes <b>here</b> about zebras ");
+  assert.equal(viewForTests({ q: "zebras" }).notes.length, 1, "the back is searched");
+  const md = boardMarkdown(boardForExport());
+  assert.match(md, /Back of the note:\n\nLong notes \*\*here\*\* about zebras/);
+});
+
+test("consolidate waits for themes, then folds each theme into one note with the old ones on the back", async () => {
+  const ids = ["Book the hall", "Hall needs 200 seats", "Sell tickets", "Print posters"].map((content, i) => runTool("sticky_note_create", { content, title: `N${i}`, x: 100 * i, y: 50 }).note.id);
+  assert.match(runTool("sticky_brainstorm_consolidate", {}).error, /Sort the board into themes first/);
+  const ask = async (instruction, text) => {
+    if (instruction.includes("Label")) return "{}";
+    if (instruction.includes("tidy")) return JSON.stringify({ themes: [{ name: "Venue", ids: [ids[0], ids[1]] }, { name: "Promotion", ids: [ids[2], ids[3]] }] });
+    assert.match(text, /Theme: Venue\n- N0: Book the hall\n- N1: Hall needs 200 seats/);
+    return JSON.stringify({ themes: [{ name: "Venue", title: "Venue", content: "Book the hall with 200 seats" }, { name: "Nope", title: "x", content: "ignored" }] });
+  };
+  await runBrainstorm(runTool("sticky_brainstorm_themes", {}).brainstorm, ask);
+  const round = runTool("sticky_brainstorm_consolidate", {});
+  assert.equal(round.status, "thinking");
+  const made = await runBrainstorm(round.brainstorm, ask);
+  assert.equal(made.status, "consolidated");
+  assert.equal(made.count, 1);
+  const view = viewForTests();
+  assert.equal(view.notes.length, 3, "two Venue notes became one; Promotion was not answered and stays");
+  const venue = view.notes.find((note) => note.title === "Venue");
+  assert.equal(venue.content, "Book the hall with 200 seats");
+  assert.equal(venue.back, "<b>N0</b><br>Book the hall<br><br><b>N1</b><br>Hall needs 200 seats");
+  assert.deepEqual(venue.hashtags.map((tag) => tag.display), ["Venue"]);
+  assert.equal(venue.mark, "claude");
+  assert.equal(venue.positionX, 0, "it sits where the first old note was");
+  assert.equal(view.trash.length, 2);
+  assert.equal(view.board.group, "hashtag", "the board stays in theme view");
+  assert.deepEqual(parseSticky("consolidate the themes"), { tool: "sticky_brainstorm_consolidate", args: {} });
+});
+
+test("summarize a note shows a shorter version to approve; yes keeps the long text on the back", async () => {
+  const long = "We need to book the big hall at the hotel for the conference dinner on Friday evening, confirm the catering for 200 guests, and check that the projector and microphones work before the speakers arrive.";
+  const note = runTool("sticky_note_create", { content: long, title: "Dinner" }).note;
+  assert.match(runTool("sticky_note_summarize", { query: "nothing like this" }).status, /not_found/);
+  assert.match(runTool("sticky_note_create", { content: "Short one" }).note.id, /./);
+  assert.match(runTool("sticky_note_summarize", { query: "short one" }).error, /already short/);
+  const ask = async (instruction, text) => {
+    if (instruction.includes("Label")) return "{}";
+    assert.match(instruction, /shorten one sticky note/);
+    assert.match(text, /^Dinner: We need to book/);
+    return JSON.stringify({ content: "Book the hotel hall for Friday's dinner, confirm catering for 200, test projector and mics." });
+  };
+  const asked = runTool("sticky_note_summarize", { id: note.id });
+  assert.equal(asked.brainstorm.mode, "shorten");
+  await runBrainstorm(asked.brainstorm, ask);
+  let view = viewForTests();
+  assert.equal(view.proposals.length, 1);
+  assert.equal(view.proposals[0].kind, "shorten");
+  assert.equal(view.notes.find((item) => item.id === note.id).content, long, "nothing changes before yes");
+  runTool("sticky_idea_reject", { id: view.proposals[0].id });
+  assert.deepEqual(viewForTests().board.brainstorm.rejected, []);
+  await runBrainstorm(runTool("sticky_note_summarize", { id: note.id }).brainstorm, ask);
+  view = viewForTests();
+  runTool("sticky_idea_accept", { id: view.proposals[0].id });
+  const after = viewForTests().notes.find((item) => item.id === note.id);
+  assert.equal(after.content, "Book the hotel hall for Friday's dinner, confirm catering for 200, test projector and mics.");
+  assert.equal(after.back, long, "the full text waits on the back");
+  assert.equal(after.mark, "claude");
+  assert.deepEqual(parseSticky("summarize the note about dinner"), { tool: "sticky_note_summarize", args: { query: "dinner" } });
+});
+
+test("converting to a to-do turns the note's parts into checks: at once for a list, by the model otherwise", async () => {
+  const listed = runTool("sticky_note_create", { content: "<ul><li>Book the hall</li><li>Order coffee</li></ul>" }).note;
+  const made = runTool("sticky_note_convert_to_task", { id: listed.id });
+  assert.equal(made.brainstorm, null);
+  assert.deepEqual(made.note.checklist.map((item) => item.text), ["Book the hall", "Order coffee"]);
+  const lines = runTool("sticky_note_create", { content: "1. Call the venue<br>2. Pay the deposit<br>" }).note;
+  assert.deepEqual(runTool("sticky_note_convert_to_task", { id: lines.id }).note.checklist.map((item) => item.text), ["Call the venue", "Pay the deposit"]);
+  const prose = runTool("sticky_note_create", { content: "Arrange the conference dinner for the speakers" }).note;
+  const asked = runTool("sticky_note_convert_to_task", { id: prose.id });
+  assert.equal(asked.brainstorm.mode, "steps");
+  assert.deepEqual(asked.note.checklist, []);
+  const round = await runBrainstorm(asked.brainstorm, async (instruction) => instruction.includes("Label") ? "{}" : JSON.stringify({ items: ["Pick a restaurant", "Book a table for 12", "Send the invitations"] }));
+  assert.equal(round.status, "steps");
+  const after = viewForTests().notes.find((note) => note.id === prose.id);
+  assert.deepEqual(after.checklist.map((item) => item.text), ["Pick a restaurant", "Book a table for 12", "Send the invitations"]);
+  assert.ok(after.checklist.every((item) => item.done === false && item.id));
+  const again = runTool("sticky_note_convert_to_task", { id: prose.id });
+  assert.equal(again.brainstorm, null, "a note that already has checks keeps them");
 });

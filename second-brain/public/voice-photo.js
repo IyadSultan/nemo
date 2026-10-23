@@ -382,16 +382,27 @@ navigator.mediaDevices?.addEventListener("devicechange", () => {
 });
 
 documentBtn.addEventListener("click", () => documentFile.click());
+document.getElementById("clipBtn")?.addEventListener("click", () => documentFile.click());
 
-/** Read an uploaded document; its summary joins the conversation so it can be asked about. */
+/** Show the paperclip and the Document button as busy while a file is read. */
+function setDocumentBusy(busy) {
+  for (const button of [documentBtn, document.getElementById("clipBtn")]) {
+    if (!button) continue;
+    button.disabled = busy;
+  }
+  documentBtn.setAttribute("aria-label", busy ? "Reading the document" : "Document");
+  setPlayerName(documentBtn, busy ? "Reading" : "Document");
+}
+
+/** Read an uploaded document and keep it in this conversation so later questions can use it. */
 documentFile.addEventListener("change", async () => {
   const file = documentFile.files?.[0];
   documentFile.value = "";
   if (!file) return;
-  documentBtn.disabled = true;
-  documentBtn.setAttribute("aria-label", "Reading the document");
-  setPlayerName(documentBtn, "Reading");
+  setDocumentBusy(true);
   setStatus(`Reading ${file.name}. Long documents take a minute.`);
+  // The name is in the conversation at once, so a question asked while it is still reading knows which file.
+  noteChatFile({ name: file.name, title: file.name, summary: "Still being read.", made: false, quiet: true });
   try {
     const during = meetingOn;
     const duringKind = captureKind;
@@ -417,20 +428,24 @@ documentFile.addEventListener("change", async () => {
       else if (meetingToSave && !meetingToSave.captureDir) meetingToSave.captureDir = data.folder;
       else if (!dirToSave) dirToSave = data.folder;
     }
-    const said = `I read ${data.title}. ${data.summary}`;
     const where = during
-      ? (duringKind === "lecture" ? "It is saved with this lecture." : "It is saved with this meeting.")
+      ? (duringKind === "lecture" ? "Saved with this lecture." : "Saved with this meeting.")
       : "A copy and a wiki page are in their own folder under meetings.";
-    addBubble("assistant", `${said}\n\n${where} Ask me anything about it.`);
-    rememberTurn(`I uploaded the document "${file.name}". What is in it?`, said);
-    setStatus("Document saved. Ask me about it.");
+    noteChatFile({
+      name: file.name,
+      title: data.title || file.name,
+      summary: [data.summary, where].filter(Boolean).join(" "),
+      wiki: data.wiki || "",
+      made: false,
+    });
+    setStatus(`Added ${file.name} to the conversation. Ask me about it.`);
   } catch (err) {
     console.error("Failed while uploading a document:", err);
+    chatFiles = chatFiles.filter((item) => item.name !== file.name);
+    [...document.querySelectorAll(".bubble.file")].find((item) => item.dataset.file === file.name)?.remove();
     setStatus(err.message);
   } finally {
-    documentBtn.disabled = false;
-    documentBtn.setAttribute("aria-label", "Document");
-    setPlayerName(documentBtn, "Document");
+    setDocumentBusy(false);
   }
 });
 

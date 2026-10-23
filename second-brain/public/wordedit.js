@@ -137,6 +137,7 @@
         showTitle();
       }
       setBusy(false, backToFile ? `Saved ${data.name}.` : `Saved ${data.name} in Documents.`);
+      noteChatFile({ name: data.name, title: data.name, summary: "A Word file saved from this chat.", made: true });
     } catch (err) {
       setBusy(false, err.message);
     }
@@ -154,6 +155,13 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Could not add it.");
       addTurn("brain", `Added to the brain as "${data.title}". ${data.summary}`);
+      noteChatFile({
+        name,
+        title: data.title || name,
+        summary: data.summary || "",
+        wiki: data.wiki || "",
+        made: false,
+      });
       setBusy(false, "Added to the brain. You can ask about it in the main chat.");
     } catch (err) {
       setBusy(false, err.message);
@@ -425,9 +433,11 @@
     window.brainSlides?.close();
     window.brainR?.close();
     window.brainPhoto?.close();
+    window.brainMovie?.close();
     window.brainCalendar?.close();
     window.brainStickies?.close();
     window.brainPlans?.close();
+    window.brainScreen?.close();
     show(true);
     clearInterval(we.poll);
     we.poll = setInterval(pollSelection, 800);

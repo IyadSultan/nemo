@@ -97,3 +97,8 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 
 **Prompt:** push it
 **Response:** Committed as `f65357d` on `rust-port` and not pushed. My first commit also picked up another session's unfinished "app manual" work in `server.js` and `voice.js`. That work needs `intents.js`, `prompt.js` and `manual.md` changes that aren't committed, so that commit would have broken the app. I undid it and recommitted with only the Word changes, and checked that the committed files parse. The oth […]
+**Response:** Restarting the server and relaunching the app so the new version is the one running.
+
+## 2026-10-21 20:21 — rust
+
+**Prompt:** great, no need for a plan box , use the chat box. and all the verbosity should go to the app main page. Make it easy to toggle between broswer and chat app area. Also, add ability to bookmark a site.

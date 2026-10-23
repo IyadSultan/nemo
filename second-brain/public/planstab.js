@@ -5,7 +5,7 @@
   const btn = document.getElementById("plansBtn");
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const pl = { root: null, body: null, form: null, fields: null, status: null, tabs: {}, title: null, plans: [], view: "list", cursor: new Date(), editing: null, pending: [], showPast: false, saving: false };
+  const pl = { root: null, body: null, form: null, fields: null, status: null, tabs: {}, title: null, plans: [], view: "list", cursor: new Date(), editing: null, pending: [], showPast: false, saving: false, ask: null };
 
   const el = (tag, cls, text) => {
     const node = document.createElement(tag);
@@ -53,7 +53,12 @@
     const card = el("article", plan.time ? "pl-card is-talk" : "pl-card");
     if (plan.conflicts) card.classList.add("is-clash");
     const head = el("div", "pl-card-head");
-    head.append(el("p", "pl-when", whenText(plan)), button("Edit", "Change this plan", () => showForm(plan)));
+    const actions = el("div", "pl-card-actions");
+    actions.append(
+      button("Add to calendar", "Open this plan in Outlook. You still press Add there.", () => addPlanToCalendar(plan.id)),
+      button("Edit", "Change this plan", () => showForm(plan)),
+    );
+    head.append(el("p", "pl-when", whenText(plan)), actions);
     card.append(head, el("p", "pl-name", plan.title));
     if (plan.conflicts) card.append(el("p", "pl-clash", clashText(plan)));
     if (plan.place) card.append(el("p", "pl-place", plan.place));
@@ -175,12 +180,24 @@
     pl.body.replaceChildren(wrap);
   }
 
+  function askBar() {
+    const bar = el("div", "pl-ask");
+    const line = pl.ask.title ? `${pl.ask.title}. ${pl.ask.text}` : pl.ask.text;
+    bar.append(
+      el("p", "pl-ask-text", line),
+      button("Add to calendar", "Open this plan in Outlook. You still press Add there.", () => addPlanToCalendar(pl.ask.id)),
+      button("Not now", "Keep it in plans only", declineCalendar),
+    );
+    return bar;
+  }
+
   function draw() {
     for (const [name, tab] of Object.entries(pl.tabs)) tab.classList.toggle("is-on", name === pl.view);
     pl.nav.hidden = pl.view === "list";
     if (pl.view === "month") drawMonth();
     else if (pl.view === "year") drawYear();
     else drawList();
+    if (pl.ask) pl.body.prepend(askBar());
   }
 
   function setView(view) {
@@ -404,14 +421,38 @@
     return failed;
   }
 
-  async function send(method, url, body) {
+  // Open the saved plan in Outlook. The plan stays in the list either way.
+  async function addPlanToCalendar(id) {
+    status("Opening Outlook…");
+    try {
+      const data = await send("POST", `/plans/${encodeURIComponent(id)}/calendar`, null, "Outlook did not open.");
+      status(data.text || "Opened in Outlook. Press Add there.");
+    } catch (err) {
+      console.error("Failed while opening a plan in Outlook:", err);
+      status(err.message || "Outlook did not open.");
+    }
+  }
+
+  async function declineCalendar() {
+    try {
+      await send("POST", "/plans/calendar/skip");
+    } catch (err) {
+      console.error("Failed while skipping the calendar question:", err);
+    }
+    pl.ask = null;
+    if (typeof clearPlanCalendarAsk === "function") clearPlanCalendarAsk();
+    if (pl.root) draw();
+    status("It stays in your plans.");
+  }
+
+  async function send(method, url, body, fallback = "The plan was not saved.") {
     const response = await fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "The plan was not saved.");
+    if (!response.ok) throw new Error(data.error || fallback);
     return data;
   }
 
@@ -514,10 +555,29 @@
     window.brainSlides?.close();
     window.brainR?.close();
     window.brainPhoto?.close();
+    window.brainMovie?.close();
     window.brainStickies?.close();
     window.brainCalendar?.close();
+    window.brainScreen?.close();
     show(true);
     load();
+  }
+
+  function showCalendarAsk(ask) {
+    if (!ask?.id) return;
+    pl.ask = {
+      id: ask.id,
+      title: ask.title || "",
+      text: ask.text || "Should I add this to your calendar?",
+    };
+    if (pl.root && !pl.root.hidden) draw();
+    if (typeof showPlanCalendarAsk === "function") showPlanCalendarAsk(pl.ask);
+  }
+
+  function clearCalendarAsk() {
+    pl.ask = null;
+    if (pl.root && !pl.root.hidden) draw();
+    if (typeof clearPlanCalendarAsk === "function") clearPlanCalendarAsk();
   }
 
   window.brainPlans = {
@@ -527,6 +587,8 @@
     openPanel: open,
     close: () => pl.root && show(false),
     refresh: () => pl.root && !pl.root.hidden && load(),
+    showCalendarAsk,
+    clearCalendarAsk,
   };
 
   btn?.addEventListener("click", () => {

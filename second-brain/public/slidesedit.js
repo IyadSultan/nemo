@@ -146,6 +146,7 @@
       sl.name = data.name;
       showTitle();
       setBusy(false, backToFile ? `Saved ${data.name}.` : `Saved ${data.name} in Documents.`);
+      noteChatFile({ name: data.name, title: data.name, summary: "A PowerPoint saved from this chat.", made: true });
     } catch (err) {
       setBusy(false, err.message);
     }
@@ -443,9 +444,11 @@
     if (!sl.root) build();
     window.brainR?.close();
     window.brainPhoto?.close();
+    window.brainMovie?.close();
     window.brainCalendar?.close();
     window.brainStickies?.close();
     window.brainPlans?.close();
+    window.brainScreen?.close();
     show(true);
     clearInterval(sl.poll);
     sl.poll = setInterval(pollState, 800);

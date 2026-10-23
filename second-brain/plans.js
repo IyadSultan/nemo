@@ -4,6 +4,7 @@
  * Plans live in one private file, plans.json, next to this file (the git repo
  * ignores it). A plan is a day or a run of days, with an optional clock time
  * for a lecture, a place, and a free comment for the contact and anything else.
+ * After a plan is saved, the app asks whether to open it in Outlook too.
  * The day before a plan starts, an iMessage reminds the user
  * (PLANS_REMIND_AT in .env, 09:00 by default).
  * Files attached to a plan sit in plan-files/<plan id>/ beside plans.json (also ignored by git).
@@ -11,6 +12,7 @@
 
 import { sendControl } from "./control.js";
 import { sendIMessage } from "./imessage.js";
+import { openOutlookMeeting } from "./outlook.js";
 import { runCommand } from "./shell.js";
 import express from "express";
 import crypto from "node:crypto";
@@ -24,6 +26,10 @@ const RETRY_MS = 15 * 60_000;
 
 let filePath = process.env.PLANS_FILE || DEFAULT_FILE;
 const failedAt = new Map();
+// The plan just saved, waiting for yes or no before Outlook opens. Kept in memory only.
+let calendarAsk = null;
+const CALENDAR_ASK_MS = 10 * 60 * 1000;
+export const CALENDAR_QUESTION = "Should I add this to your calendar?";
 
 /** Tests point this at a scratch file. */
 export function usePlansFile(file) {
@@ -79,6 +85,17 @@ export function cleanPlan(body) {
   if (plan.to === plan.from) plan.to = "";
   if (plan.time && !validTime(plan.time)) return { error: "The time is not a clock time." };
   return { plan };
+}
+
+/** A plan added by another part of the app (the sticky board). No calendar question is asked. */
+export function createPlan(body) {
+  const { plan, error } = cleanPlan(body);
+  if (error) return { error };
+  const plans = loadPlans();
+  const saved = { id: crypto.randomUUID(), ...plan, createdAt: new Date().toISOString() };
+  plans.push(saved);
+  savePlans(plans);
+  return { plan: saved };
 }
 
 function sortPlans(plans) {
@@ -198,6 +215,106 @@ Reply with JSON only, no prose: {"title": "", "from": "YYYY-MM-DD", "to": "YYYY-
 Put contact names, emails, phone numbers, topics, and anything else in "comment". Do not invent anything that was not said.
 If no day was said, leave "from" empty.`;
 
+/**
+ * One plan as an Outlook event.
+ * A talk with a clock time is one hour. A trip with no time covers whole days.
+ * The end day Outlook wants is the morning after the last day.
+ */
+export function planMeeting(plan) {
+  const [year, month, day] = plan.from.split("-").map(Number);
+  const lines = [];
+  if (plan.comment) lines.push(plan.comment);
+  if (plan.to) lines.push(`Until ${plan.to}.`);
+  const meeting = {
+    subject: plan.title,
+    body: lines.join("\n"),
+    location: plan.place || "",
+  };
+  if (plan.time) {
+    const [hour, minute] = plan.time.split(":").map(Number);
+    return { ...meeting, duration: 60, date: new Date(year, month - 1, day, hour, minute, 0, 0) };
+  }
+  const last = (plan.to || plan.from).split("-").map(Number);
+  const end = new Date(last[0], last[1] - 1, last[2]);
+  end.setDate(end.getDate() + 1);
+  return { ...meeting, allDay: true, date: new Date(year, month - 1, day), end };
+}
+
+/** Remember the plan that was just saved, so the next yes can open Outlook. */
+export function rememberCalendarAsk(id) {
+  calendarAsk = { id, at: Date.now() };
+}
+
+/** Tell the page to show the question and the two buttons. */
+function showCalendarAsk(plan) {
+  rememberCalendarAsk(plan.id);
+  sendControl("plans", { ask: { id: plan.id, title: plan.title, text: CALENDAR_QUESTION } });
+}
+
+/** Drop the question. The plan itself stays saved. */
+export function declineCalendarAsk() {
+  calendarAsk = null;
+  sendControl("plans", { clearAsk: true });
+  return "OK. It stays in your plans only.";
+}
+
+/**
+ * Open one saved plan in Outlook. The user still presses Add.
+ * `keep` means the button should stay, because Outlook did not open.
+ */
+export async function openPlanOnCalendar(id) {
+  const asked = calendarAsk?.id === id;
+  if (asked) calendarAsk = null;
+  const plan = loadPlans().find((item) => item.id === id);
+  if (!plan) {
+    if (asked) sendControl("plans", { clearAsk: true });
+    return { error: "That plan is gone. Refresh the list." };
+  }
+  try {
+    await openOutlookMeeting(planMeeting(plan));
+  } catch (err) {
+    console.error("Failed while opening a plan in Outlook:", err?.message || err);
+    if (asked) calendarAsk = { id, at: Date.now() };
+    return { error: "Microsoft Outlook did not open. Is it installed?", keep: true };
+  }
+  if (asked) sendControl("plans", { clearAsk: true });
+  const span = plan.time ? "for one hour" : "as an all-day event";
+  return { text: `I opened ${plan.title} in Outlook ${span}. Press Add in that window. It is not on the calendar until you do.` };
+}
+
+/** "yes", "add it", or "yes, add it to my calendar". Nothing longer. */
+function isCalendarYes(q) {
+  if (/^(?:please )?(?:yes|yeah|yep|yup|sure|نعم|ايوه|أيوه)$/u.test(q)) return true;
+  if (/^(?:please )?(?:add it|add this|do it|please do)(?: to (?:my |the )?calendar)?$/u.test(q)) return true;
+  return /^(?:please )?(?:yes|yeah|yep|yup|sure) (?:add it|add this|do it)(?: to (?:my |the )?calendar)?$/u.test(q);
+}
+
+/**
+ * Yes or no to "Should I add this to your calendar?"
+ * Returns the sentence to say, or null when the words are about something else.
+ * `open` is replaced in tests so Outlook is not launched.
+ */
+export async function planCalendarFollowUp(question, open = openPlanOnCalendar) {
+  if (!calendarAsk) return null;
+  if (Date.now() - calendarAsk.at > CALENDAR_ASK_MS) {
+    calendarAsk = null;
+    return null;
+  }
+  const q = String(question || "").toLowerCase().replace(/[^\p{L}\p{N}\s']/gu, " ").replace(/\s+/g, " ").trim();
+  const no = /^(?:please )?(?:no|nope|nah|don'?t|do not|not now|leave it|skip it|no thanks|لا)$/u;
+  if (isCalendarYes(q)) {
+    const id = calendarAsk.id;
+    const result = await open(id);
+    if (result.keep) calendarAsk = { id, at: Date.now() };
+    else if (calendarAsk?.id === id) calendarAsk = null;
+    return result.error || result.text;
+  }
+  if (no.test(q)) return declineCalendarAsk();
+  // A different question drops the offer. The button on the page still works.
+  calendarAsk = null;
+  return null;
+}
+
 /** Read the plan out of the request with the model, save it, and return the sentence to say back. */
 export async function runPlanJob(question, ask, now = new Date()) {
   let raw = "";
@@ -217,22 +334,25 @@ export async function runPlanJob(question, ask, now = new Date()) {
   const { plan, error } = cleanPlan(fields);
   let clashes = [];
   if (error) return error === "Pick the day it starts." ? "Which day is it? Say the plan again with the date." : error;
+  let savedId = "";
   try {
     const plans = loadPlans();
-    plans.push({ id: crypto.randomUUID(), ...plan, createdAt: new Date().toISOString() });
+    savedId = crypto.randomUUID();
+    plans.push({ id: savedId, ...plan, createdAt: new Date().toISOString() });
     savePlans(plans);
     clashes = withConflicts(plans).at(-1).conflicts || [];
   } catch (err) {
     console.error("Failed while saving a plan from a request:", err?.message || err);
     return "I could not save the plan. plans.json could not be read or saved.";
   }
-  sendControl("plans", {});
+  showCalendarAsk({ id: savedId, title: plan.title });
   let said = `Saved to your plans: ${plan.title}, ${shortDay(plan.from)}`;
   if (plan.to) said += ` to ${shortDay(plan.to)}`;
   if (plan.time) said += ` at ${plan.time}`;
   if (plan.place) said += `, in ${plan.place}`;
   said += ". I will text you the day before.";
   if (clashes.length) said += ` It clashes with ${clashes.map((other) => other.title).join(" and ")}. I marked it red.`;
+  said += ` ${CALENDAR_QUESTION}`;
   return said;
 }
 
@@ -279,6 +399,9 @@ export function registerPlans(app) {
       const saved = { id: crypto.randomUUID(), ...plan, createdAt: new Date().toISOString() };
       plans.push(saved);
       savePlans(plans);
+      showCalendarAsk(saved);
+      // The form has no spoken reply of its own, so read the question aloud.
+      sendControl("job", { text: CALENDAR_QUESTION });
       res.json({ plan: saved });
     } catch (err) {
       fail(res, err, "adding a plan");
@@ -298,6 +421,19 @@ export function registerPlans(app) {
     } catch (err) {
       fail(res, err, "changing a plan");
     }
+  });
+
+  app.post("/plans/calendar/skip", (_req, res) => {
+    res.json({ text: declineCalendarAsk() });
+  });
+
+  app.post("/plans/:id/calendar", async (req, res) => {
+    const result = await openPlanOnCalendar(req.params.id);
+    if (result.error) {
+      res.status(result.error.includes("gone") ? 404 : 500).json({ error: result.error });
+      return;
+    }
+    res.json(result);
   });
 
   app.delete("/plans/:id", (req, res) => {

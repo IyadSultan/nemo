@@ -46,10 +46,18 @@ export function icsLocal(date) {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}00`;
 }
 
+/** A calendar day with no clock time, for an all-day plan. */
+export function icsDay(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
+}
+
 /** A calendar file Outlook opens as a new event on the calendar the user actually sees. */
 export function meetingIcs(meeting) {
   const start = meeting.date;
-  const end = new Date(start.getTime() + (meeting.duration || 60) * 60 * 1000);
+  const end = meeting.allDay
+    ? meeting.end
+    : new Date(start.getTime() + (meeting.duration || 60) * 60 * 1000);
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -59,8 +67,12 @@ export function meetingIcs(meeting) {
     "BEGIN:VEVENT",
     `UID:${crypto.randomUUID()}@second-brain`,
     `DTSTAMP:${icsLocal(new Date())}`,
-    `DTSTART:${icsLocal(start)}`,
-    `DTEND:${icsLocal(end)}`,
+    meeting.allDay
+      ? `DTSTART;VALUE=DATE:${icsDay(start)}`
+      : `DTSTART:${icsLocal(start)}`,
+    meeting.allDay
+      ? `DTEND;VALUE=DATE:${icsDay(end)}`
+      : `DTEND:${icsLocal(end)}`,
     `SUMMARY:${icsEscape(meeting.subject)}`,
   ];
   if (meeting.location) lines.push(`LOCATION:${icsEscape(meeting.location)}`);

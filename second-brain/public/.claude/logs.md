@@ -83,3 +83,23 @@ Append-only. Written by `session_logger.py`; digit runs are redacted.
 ## 2026-10-21 18:06 — public
 
 **Prompt:** agree.
+**Response:** The browser agent works. In a live run, Claude filled in a test form and submitted it in 3 steps (about 26 s), in a headless Chrome. I haven't restarted your running app, so you can't use it by voice yet. **Next:** I need your OK to restart the app, because it's running old code. Or run it yourself: ``` ! launchctl kickstart -k gui/$(id -u)/com.iyad.talk-to-your-brain ``` Then type: `browser: go t […]
+
+## 2026-10-21 19:42 — public
+
+**Prompt:** I don
+**Response:** A **Browser** button with a globe icon is now in the top bar, right after Plans. Your window still shows the old page: reload it, or use "Restart voice app" from the menu. I haven't looked at it on screen. Opening a second copy of the page would also start it listening, so I didn't. **What the button does:** - **When nothing is running:** it opens the browser card with a text box ("What should the […]
+
+## 2026-10-21 19:43 — public
+
+**Prompt:** i dont see the button fr browser [Image #1]
+**Response:** Your message stopped at "I don". What did you want to say?
+
+## 2026-10-21 19:44 — public
+
+**Prompt:** all changes we do should be applied to the rust app not the hammerspoon which is deprecated
+**Response:** I made all four changes and relaunched the app (it started 20:24, after the rebuild). I've only checked the bookmark saving by hand. The rest I haven't tried in the app yet. **Next:** open the Browser tab, go to `cnn.com`, click ☆, then type "check the latest news" in the chat box. **What changed:** 1. **No plan box.** Give orders in the main chat box, typed or spoken. While the Browser tab is ope […]
+
+## 2026-10-21 23:02 — public-2
+
+**Prompt:** continue

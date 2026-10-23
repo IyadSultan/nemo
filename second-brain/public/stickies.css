@@ -41,13 +41,14 @@
 .stick-title { font-size: 13px; font-weight: 600; }
 .stick-status { font-size: 12px; color: var(--stick-muted); }
 .stick-gap { flex: 1; }
-.stick-bar .ghost-btn, .stick-filters select, .stick-filters input, .stick-settings input, .stick-settings select {
+.stick-bar .ghost-btn, .stick-bar select, .stick-filters select, .stick-filters input, .stick-settings input, .stick-settings select {
   color: var(--stick-ink);
   background: var(--stick-bar);
   border: 1px solid var(--line-strong);
   border-radius: 8px;
 }
 .stick-filters select, .stick-filters input[type="search"] { height: 30px; font: 500 13px/1 var(--font-body); padding: 0 8px; }
+.stick-boards { height: 30px; max-width: 180px; font: 600 13px/1 var(--font-body); padding: 0 8px; }
 .stick-new { background: #e7c15a; border-color: #c9a227; color: #2a2110; font-weight: 600; min-height: 32px; }
 .stick-colors { display: flex; gap: 4px; }
 .stick-dot {
@@ -187,9 +188,17 @@
   z-index: 2;
 }
 .sticky-claude svg { display: block; width: 100%; height: 100%; }
-.sticky-claude .critter > rect:not(.mouth) { fill: #d97757; }
+.sticky-claude .critter > rect:not(.mouth) { fill: var(--critter, #d97757); }
+.sticky-claude[data-mascot="cat"] { --critter: #8b93a1; }
+.sticky-claude[data-mascot="robot"] { --critter: #9aaec4; }
+.sticky-claude[data-mascot="robot"] .eyes rect { fill: #3fd0e0; }
+.sticky-claude[data-mascot="brain"] { --critter: #f0a3b8; }
+.sticky-claude .critter > rect.fold { fill: #c9708a; }
+.sticky-claude .critter > rect.bulb { fill: #e5484d; }
+.sticky-claude .critter > rect.tail { fill: #6c7380; }
 .sticky-claude .eyes rect { fill: #1a120e; }
 .sticky-claude .mouth { fill: #1a120e; transform: scaleY(0); transform-box: fill-box; transform-origin: 50% 50%; }
+.sticky-claude .face { font-size: 420px; }
 .stick-board[data-pin="none"] .sticky-pin,
 .stick-board[data-pin="none"] .sticky-tape { display: none; }
 .stick-board[data-pin="tape"] .sticky-pin { display: none; }
@@ -336,6 +345,8 @@
 .stick-settings h3 { margin: 0 0 8px; font-size: 14px; }
 .stick-settings label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; margin-bottom: 8px; }
 .stick-settings input, .stick-settings select { height: 30px; padding: 0 8px; }
+.stick-settings .danger { margin-left: 6px; color: #9c2b22; }
+.stick-hint { margin: 10px 0 0; font-size: 12px; color: var(--stick-muted); }
 .stick-ask {
   position: absolute; z-index: 4; display: flex; gap: 4px; padding: 6px;
   background: rgba(255,255,255,.92); border-radius: 999px;
@@ -344,3 +355,105 @@
 @media (prefers-reduced-motion: reduce) {
   .sticky, .stick-world { transition: none !important; }
 }
+
+/* Brainstorm: ideas wait faded with a dashed edge until kept, and the mascot asks about one at a time. */
+.stick-brainbtn.is-on, .stick-brainbar .is-on { background: #e7c15a; border-color: #c9a227; color: #2a2110; }
+.sticky.is-idea { opacity: .78; outline: 2px dashed rgba(42, 33, 16, .45); outline-offset: 3px; }
+.sticky.is-idea.is-asking, .sticky.is-proposed { opacity: 1; outline: 3px solid #3fae7a; outline-offset: 3px; }
+.stick-idea-btns { display: flex; gap: 6px; }
+.sticky .stick-idea-btns { position: absolute; right: 8px; bottom: 8px; z-index: 2; }
+.stick-idea-btns button {
+  width: 30px; height: 30px; border-radius: 999px; border: 0;
+  font: 700 16px/1 var(--font-body); cursor: pointer; color: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}
+.stick-idea-btns .stick-yes { background: #2f9e62; }
+.stick-idea-btns .stick-no { background: #c2493d; }
+.stick-helper {
+  position: absolute; left: 12px; bottom: 12px; z-index: 5;
+  display: flex; align-items: flex-end; gap: 6px;
+  max-width: min(340px, calc(100% - 200px));
+  animation: stick-helper-in .25s ease-out;
+}
+.stick-helper[hidden] { display: none; }
+.stick-helper .claude-mark { display: block; width: 64px; height: 64px; flex: none; overflow: visible; }
+.stick-helper-emoji { font-size: 40px; line-height: 1; }
+.stick-helper.is-thinking .claude-mark, .stick-helper.is-thinking .stick-helper-emoji { animation: stick-helper-bob 1s ease-in-out infinite; }
+.stick-helper-bubble {
+  position: relative; padding: 10px 12px; border-radius: 14px 14px 14px 4px;
+  background: var(--stick-bar); color: var(--stick-ink); box-shadow: var(--shadow-pop);
+  font-size: 13px;
+}
+.stick-helper-bubble p { margin: 0 0 6px; }
+.stick-helper-bubble blockquote { margin: 0 0 8px; padding-left: 8px; border-left: 3px solid #3fae7a; font-weight: 600; }
+.stick-helper-why { color: var(--stick-muted); font-size: 12px; }
+@keyframes stick-helper-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes stick-helper-bob { 50% { transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .stick-helper, .stick-helper .claude-mark, .stick-helper-emoji { animation: none !important; }
+}
+
+/* Drawing on the board, and its tool strip */
+.stick-world { position: relative; }
+.stick-ink { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.stick-stage.is-inking .stick-ink { pointer-events: auto; cursor: crosshair; }
+.stick-inkbar {
+  position: absolute; top: 10px; left: 10px; z-index: 6;
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 6px 8px; border-radius: 10px;
+  background: var(--stick-bar, rgba(255,255,255,.92)); box-shadow: var(--shadow-pop, 0 4px 14px rgba(0,0,0,.18));
+}
+.stick-inkbar[hidden] { display: none; }
+.stick-inkbar .is-on { outline: 2px solid #2fa36b; }
+.stick-inkbar input[type="color"] { width: 30px; height: 26px; padding: 0; border: 0; background: none; }
+.stick-inkbar select { height: 26px; }
+
+/* Clear filters shows only while something is filtered */
+.stick-filters [hidden] { display: none; }
+
+/* Brainstorm strip: the brief, how bold, and whole-board rounds */
+.stick-brainbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 0 12px 8px; }
+.stick-brainbar[hidden] { display: none; }
+.stick-brainbar input[type="text"] { flex: 1 1 220px; min-width: 160px; height: 30px; font: 500 13px/1 var(--font-body); padding: 0 8px; }
+.stick-wild { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--stick-muted); }
+.stick-wild input { width: 110px; }
+/* The combine question: first + second = combined */
+.stick-helper-part { font-weight: 500; border-left-color: #b9c2c8; }
+.stick-helper-sign { text-align: center; font-weight: 700; margin: 0 0 6px; color: var(--stick-muted); }
+.stick-helper-all { display: flex; gap: 6px; margin-top: 4px; }
+
+/* Priority as stars on the note head and in the to-do list */
+.sticky-stars {
+  border: 0; background: none; padding: 0 2px; cursor: pointer; font-size: 13px; line-height: 1;
+  color: #d19a1b; letter-spacing: 1px; flex: none;
+}
+.sticky-stars:hover { color: #a7730a; }
+.stick-task .sticky-stars { font-size: 15px; }
+
+/* The summary note and the paste box */
+.sticky.is-summary { outline: 2px solid #9aa7b1; outline-offset: 2px; }
+.stick-askform textarea { width: 260px; font: 500 13px/1.4 var(--font-body); padding: 6px 8px; }
+
+/* The back of a note: small type, turned over with the Back button or the folded corner */
+.sticky-back {
+  display: none; position: absolute; inset: 34px 10px 12px 12px; overflow: auto;
+  font: 500 12px/1.4 var(--font-body); color: inherit; outline: none; white-space: pre-wrap;
+}
+.sticky-back:empty::before { content: attr(data-placeholder); opacity: .5; }
+.sticky.is-flipped .sticky-back { display: block; }
+.sticky.is-flipped :is(.sticky-body, .sticky-tags, .sticky-checks, .sticky-progress, .sticky-draw) { display: none; }
+.sticky.is-flipped { filter: brightness(.96); }
+.sticky-flip {
+  position: absolute; right: 8px; bottom: 6px; z-index: 3;
+  border: 0; border-radius: 6px; padding: 1px 6px; font: 600 10px/1.6 var(--font-body);
+  background: rgba(0,0,0,.08); color: inherit; cursor: pointer; opacity: 0;
+}
+.sticky:hover .sticky-flip, .sticky.is-flipped .sticky-flip, .sticky.is-selected .sticky-flip { opacity: .8; }
+.sticky-corner {
+  display: none; position: absolute; left: 0; bottom: 0; width: 26px; height: 26px; padding: 0; border: 0;
+  /* A dark triangle with its square corner at the bottom left, so the fold sits on those two edges. */
+  background: linear-gradient(45deg, rgba(0, 0, 0, .55) 0 50%, transparent 50%);
+  cursor: pointer; z-index: 2;
+}
+.sticky.has-back .sticky-corner { display: block; }
+.sticky.is-flipped .sticky-corner { display: none; }

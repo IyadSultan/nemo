@@ -193,6 +193,7 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Could not save it.");
       status(`Saved ${data.name} in Pictures.`);
+      noteChatFile({ name: data.name, title: data.name, summary: "A picture saved from this chat.", made: true });
     } catch (err) {
       status(err.message);
     } finally {
@@ -320,9 +321,11 @@
     window.brainWord?.close();
     window.brainSlides?.close();
     window.brainR?.close();
+    window.brainMovie?.close();
     window.brainCalendar?.close();
     window.brainStickies?.close();
     window.brainPlans?.close();
+    window.brainScreen?.close();
     show(true);
     if (!installed.tools) status("PhotoCraft is open. The one-step buttons need the photo tools. Run voice/install-photocraft.sh, then reload.");
   }

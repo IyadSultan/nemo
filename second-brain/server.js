@@ -17,12 +17,14 @@
  * tokens, and those are billed at the output price.
  */
 
-import { DEFAULT_MODEL, DEFAULT_REASONING, BRAIN_DIR, MEMORY_MODEL, OLLAMA_URL, PORT, WIKI_PATH, __dirname } from "./config.js";
+import { DEFAULT_MODEL, DEFAULT_REASONING, BRAIN_DIR, MEMORY_MODEL, PORT, WIKI_PATH, __dirname } from "./config.js";
 import { installAgentHooks, registerAgents, startAgentWatch } from "./agents.js";
 import { appendDayLog, dayKey, saveConversation, summarizeDay } from "./brain.js";
+import { browserFollowUp, browserJob } from "./browser.js";
 import { parseMeeting, registerCalendar, spokenCalendar, spokenMeetingWaiting } from "./calendar.js";
-import { deliverPlanReminders, planJob, registerPlans, runPlanJob } from "./plans.js";
+import { createPlan, deliverPlanReminders, planCalendarFollowUp, planJob, registerPlans, runPlanJob } from "./plans.js";
 import { chatMemorySticky, parseSticky, placeChatSticky, registerStickies, runStickyCommand } from "./stickies.js";
+import { registerStickyExport } from "./stickyexport.js";
 import { controlClients, registerControl, sendControl } from "./control.js";
 import * as desk from "./desk.js";
 import { checkWatches, deliverReminders, deliverSchedules, registerDeskjobs, runDeskCommand, syncSuggestions } from "./deskjobs.js";
@@ -31,7 +33,8 @@ import { registerFans } from "./fans.js";
 import { readSavedFolders, refreshBrainNotes, refreshDayLogNotes, registerFolders, reloadNotes } from "./folders.js";
 import { imessageHandle, registerIMessage, runTextMe, sendIMessage, textMeJob } from "./imessage.js";
 import { BRAIN_COMMANDS, wantsCommandTable } from "./commands.js";
-import { asksAboutThisApp, asksForAppOverview, asksForOutlookCalendar, calendarRead, isChatQuestion, isNoise, meetingJob, memoJob, wantsEmail } from "./intents.js";
+import { asksAboutThisApp, asksForAppOverview, asksForOutlookCalendar, calendarRead, isChatQuestion, isNoise, meetingJob, memoJob, wantsEmail, wantsZotero } from "./intents.js";
+import { reciterUrl, verseText, versesForQuestion, wantsQuran } from "./quran.js";
 import { judgeSpeech, warmJudge } from "./jev.js";
 import { learningJob, siteShortcut } from "./learnings.js";
 import { registerLive } from "./live.js";
@@ -41,7 +44,7 @@ import { cleanMeetingNotes, lectureSummaryPrompt, meetingSummaryPrompt, oneLine,
 import { lectureFolder, meetingFolder, memoFolder, memosForPrompt, runMemoryJob, spokenSavedMemo, vaultRoot } from "./memos.js";
 import { BUILD_NOTES, answerToPending, finishBuild, holdBuild, makeWorkspace, questionsFirst, skillBuildPrompt, wantsBuild } from "./build.js";
 import { askModelOnce, clientError, finishPdf, ollamaNamesMatch, replyNow, safeJson, stopAllOllamaModels, stopOllamaModel, streamAnswer, streamClaudeAnswer, streamLocalAnswer, writeEvent } from "./models.js";
-import { excerpt, notesForQuestion, parseNote, semantic } from "./notes.js";
+import { excerpt, noteBody, notesForQuestion, parseNote, semantic } from "./notes.js";
 import { findOnMacJob, openFileJob, runFindOnMac, runOpenFile } from "./openfile.js";
 import { openOutlookDraft } from "./outlook.js";
 import { registerDeck, rememberDocument } from "./deck.js";
@@ -49,17 +52,20 @@ import { pdfCatcher, registerPdf } from "./pdf.js";
 import { answerPdfTool, qaBlock, registerPdfTools, rememberPdf, wantsPdfTool } from "./pdftools.js";
 import { saveUploadedDocument } from "./upload.js";
 import { registerR } from "./rsession.js";
+import { registerMovies } from "./movies.js";
+import { registerScreen } from "./screen.js";
 import { registerPhotocraft } from "./photocraft.js";
 import { registerWordcraft } from "./wordcraft.js";
 import { registerDeckweb } from "./deckweb.js";
 import { MODELS, REASONING_LEVELS, VOICE_MODELS, getModel } from "./pricing.js";
-import { TINY_LINES, appManualPrompt, appManualText, buildPrompt, cleanHistory, cleanMemory } from "./prompt.js";
+import { TINY_LINES, appManualPrompt, appManualText, asksAboutChatFile, buildPrompt, cleanChatFiles, cleanHistory, cleanMemory, withChatFileText } from "./prompt.js";
 import { runCommand } from "./shell.js";
 import { listSkills, matchSkill, mentionsSkillStop, registerSkills, replySkillStop, skillInstructions } from "./skills.js";
 import { registerSpeech, startKokoro, startWhisperServer } from "./speech.js";
 import { hereAndNow } from "./spoken.js";
 import { loadedLocalId, notes, rawMail, selected, setLoadedLocalId, setNotes } from "./state.js";
 import { searchWeb, shouldBrowse, showSiteJob } from "./web.js";
+import { searchPubmed, wantsPubmed } from "./pubmed.js";
 import express from "express";
 import path from "node:path";
 
@@ -203,46 +209,18 @@ app.post("/compress", async (req, res) => {
     ...history.map((turn) => `User asked: ${turn.question}\nAnswered: ${turn.answer}`),
   ].filter(Boolean).join("\n\n");
 
+  const instruction = [
+    "Compress this voice chat into a short memory for the next question.",
+    "Keep every user question in the user's exact words, each on its own line starting with User asked:",
+    "After each question, write one short sentence starting with Answered:",
+    "Put the newest question last. Do not add anything that was not said.",
+  ].join(" ");
+
   try {
-    const controller = new AbortController();
-    res.on("close", () => {
-      if (!res.writableEnded) controller.abort();
-    });
-    const upstream = await fetch(`${OLLAMA_URL}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: model.id,
-        stream: false,
-        think: false,
-        messages: [
-          {
-            role: "system",
-            content: [
-              "Compress this voice chat into a short memory for the next question.",
-              "Keep every user question in the user's exact words, each on its own line starting with User asked:",
-              "After each question, write one short sentence starting with Answered:",
-              "Put the newest question last. Do not add anything that was not said.",
-            ].join(" "),
-          },
-          { role: "user", content: source },
-        ],
-        keep_alive: "30m",
-        options: { num_ctx: 4096, num_predict: 220 },
-      }),
-    });
-    if (!upstream.ok) {
-      const details = await upstream.text();
-      console.error("Failed while compressing the chat:", upstream.status, details);
-      return res.status(502).json({ error: "The local model could not compress the chat." });
-    }
-    const data = await upstream.json();
-    const memory = cleanMemory(data.message?.content || "");
+    const memory = cleanMemory(await askModelOnce(model, instruction, source, null, 220, 60000));
     if (memory) desk.rememberChat(memory, history);
     res.json({ memory });
   } catch (err) {
-    if (err?.name === "AbortError") return res.status(499).end();
     console.error("Failed while compressing the chat:", err?.message || err);
     res.status(500).json({ error: "Could not compress the chat." });
   }
@@ -268,12 +246,12 @@ app.post("/open-outlook", async (req, res) => {
 
 /** The same model the page is using, for labeling a new sticky after it is saved. */
 function stickyAsk(req) {
-  return (instruction, text) => askModelOnce(
+  return (instruction, text, maxTokens = 300) => askModelOnce(
     getModel(req.body?.model) || getModel(DEFAULT_MODEL),
     instruction,
     text,
     process.env.OPENAI_API_KEY,
-    300,
+    maxTokens,
   );
 }
 
@@ -415,6 +393,22 @@ app.post("/ask", async (req, res) => {
   if (buildReply) {
     return answerBuild(req, res, buildReply.request, true, skills.find((s) => s.id === buildReply.skillId));
   }
+  // Yes or no to a browser plan, or "stop the browser" while it works (browser.js).
+  try {
+    const browserReply = await browserFollowUp(question);
+    if (browserReply) return replyNow(res, browserReply.text, browserReply.card);
+  } catch (err) {
+    console.error("Failed while talking to the browser agent:", err?.message || err);
+    return replyNow(res, "I could not reach the browser agent.");
+  }
+  // Yes or no after a plan was saved: "Should I add this to your calendar?"
+  try {
+    const calendarReply = await planCalendarFollowUp(question);
+    if (calendarReply) return replyNow(res, calendarReply);
+  } catch (err) {
+    console.error("Failed while adding a plan to the calendar:", err?.message || err);
+    return replyNow(res, "I could not open that plan in Outlook.");
+  }
   const requestedId = typeof req.body?.skill === "string" ? req.body.skill : "";
   if (mentionsSkillStop(question)) return replySkillStop(res);
   const named = matchSkill(question, skills);
@@ -437,6 +431,14 @@ app.post("/ask", async (req, res) => {
     return replyNow(res, "I could not change the sticky notes.");
   }
   if (planJob(question)) return replyNow(res, await runPlanJob(question, stickyAsk(req)));
+  // "browser: order a pizza on dominos.jo": a plan first, then the agent's own Chrome does it.
+  try {
+    const browserPlan = await browserJob(question, req.body?.browserTab === true);
+    if (browserPlan) return replyNow(res, browserPlan.text, browserPlan.card);
+  } catch (err) {
+    console.error("Failed while planning a browser task:", err?.message || err);
+    return replyNow(res, "I could not plan that browser task.");
+  }
   const learning = learningJob(question);
   if (learning) {
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -480,6 +482,38 @@ app.post("/ask", async (req, res) => {
     writeEvent(res, { type: "ignored", message: "That was a noise, not a question." });
     writeEvent(res, { type: "done" });
     return res.end();
+  }
+  // "Recite ten verses", "recite surah Yasin", "recite 2:255": Yasir al-Adusari's voice.
+  if (wantsQuran(question)) {
+    try {
+      const picked = versesForQuestion(question);
+      if (picked.error || !picked.verses?.length) return replyNow(res, picked.error || "I could not open the Quran recording.");
+      const verses = picked.verses;
+      const last = verses[verses.length - 1];
+      const lines = (verses.length > 12 ? verses.slice(0, 2) : verses)
+        .map((verse) => `${verse.name} ${verse.chapter}:${verse.verse}. ${verse.arabic}`);
+      if (verses.length > 12) lines.push(`${verses.length} verses, ${verses[0].chapter}:${verses[0].verse} to ${last.chapter}:${last.verse}.`);
+      res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      res.flushHeaders?.();
+      writeEvent(res, {
+        type: "work",
+        card: {
+          title: "Yasir al-Adusari",
+          lines,
+        },
+      });
+      writeEvent(res, {
+        type: "quran",
+        reciter: "Yasir al-Adusari",
+        urls: verses.map(reciterUrl),
+      });
+      writeEvent(res, { type: "delta", text: verseText(verses) });
+      writeEvent(res, { type: "done" });
+      return res.end();
+    } catch (err) {
+      console.error("Failed while reciting Quran verses:", err?.message || err);
+      return replyNow(res, "I could not open the Quran recording.");
+    }
   }
   const deskCommand = desk.parseDesk(question);
   if (deskCommand?.action === "do") {
@@ -582,6 +616,9 @@ app.post("/ask", async (req, res) => {
 
   const aboutChat = isChatQuestion(question);
   const history = cleanHistory(req.body?.history);
+  // Files added with the paperclip, and files this chat made. A question about "this document" uses these, not a search of old notes.
+  const chatFiles = withChatFileText(cleanChatFiles(req.body?.files), vaultRoot());
+  const aboutFile = chatFiles.length > 0 && asksAboutChatFile(question);
   const recordedMeeting = cleanMeetingNotes(req.body?.meetingNotes);
   // A question about the recording must not open today's Outlook calendar.
   const aboutRecorded = Boolean(recordedMeeting) && !asksForOutlookCalendar(question);
@@ -589,7 +626,7 @@ app.post("/ask", async (req, res) => {
   const calendarWhen = aboutChat || meeting || aboutRecorded ? null : calendarRead(question);
   const memo = aboutChat || meeting || calendarWhen ? null : memoJob(question);
   const aboutEmail = wantsEmail(question);
-  const hits = aboutChat || memo === "save" || meeting || calendarWhen || aboutRecorded
+  const hits = aboutChat || aboutFile || memo === "save" || meeting || calendarWhen || aboutRecorded
     ? []
     : memo
       ? await memosForPrompt(memo)
@@ -618,8 +655,11 @@ app.post("/ask", async (req, res) => {
   }
   if (model.local) setLoadedLocalId(model.id);
 
-  if (!aboutChat && !memo && !meeting && !calendarWhen && !aboutRecorded && shouldBrowse(question)) writeEvent(res, { type: "status", message: "Looking on the web…" });
-  const pages = aboutChat || memo || meeting || calendarWhen || aboutRecorded ? [] : await searchWeb(question);
+  const offline = aboutChat || aboutFile || memo || meeting || calendarWhen || aboutRecorded;
+  const pubmed = !offline && wantsPubmed(question);
+  if (pubmed) writeEvent(res, { type: "status", message: "Searching PubMed…" });
+  else if (!offline && shouldBrowse(question)) writeEvent(res, { type: "status", message: "Looking on the web…" });
+  const pages = offline ? [] : pubmed ? await searchPubmed(question) : await searchWeb(question);
   const sources = [
     ...hits.map(({ note }) => ({ title: note.title, file: note.rel })),
     ...pages.map((page) => ({ title: page.title, file: page.url })),
@@ -660,7 +700,7 @@ app.post("/ask", async (req, res) => {
     const asked = steerFrom
       ? `You were answering this: ${steerFrom}\nYou had written this much: ${steerSoFar || "(nothing yet)"}\nThe user now says: ${question}\nContinue from there. Do not start over.`
       : question;
-    let prompt = buildPrompt(asked, hits, pages, history, cleanMemory(req.body?.memory), recordedMeeting, notesKind);
+    let prompt = buildPrompt(asked, hits, pages, history, cleanMemory(req.body?.memory), recordedMeeting, notesKind, chatFiles);
     // PDFs in Q/A on the page (pdfedit.js): their text goes with every question.
     prompt += await qaBlock(req.body?.qaPdfs);
     const photo = photoDataUrl(req.body?.photo);
@@ -673,6 +713,7 @@ app.post("/ask", async (req, res) => {
     const longSpoken = hits.emailJob === "read" || hits.emailJob === "reply" || hits.emailJob === "send" || hits.emailJob === "list" || hits.emailJob === "review" || hits.memoJob === "recent" || hits.memoJob === "all" || hits.memoJob === "find";
     res.locals.pdf = pdfCatcher();
     res.locals.stop = stopWhenClientLeaves(res);
+    res.locals.zotero = wantsZotero(question);
     if (model.local) await streamLocalAnswer(prompt, res, model, reasoning, spoken, longSpoken);
     else if (model.subscription) await streamClaudeAnswer(prompt, res, model, reasoning, spoken);
     else await streamAnswer(apiKey, prompt, res, model, reasoning, spoken, photo);
@@ -764,14 +805,21 @@ registerPdfTools(app);
 registerR(app);
 registerWordcraft(app);
 registerPhotocraft(app);
+registerMovies(app);
+registerScreen(app);
 registerDeckweb(app);
 registerDeck(app);
 registerDeskjobs(app);
 registerCalendar(app);
 registerPlans(app);
 registerFans(app);
+registerStickyExport(app);
 registerStickies(app, {
-  askModel: (instruction, text) => askModelOnce(getModel(DEFAULT_MODEL), instruction, text, process.env.OPENAI_API_KEY, 300),
+  // Labels need 300 tokens; a round of brainstorm ideas asks for more.
+  askModel: (instruction, text, maxTokens = 300) => askModelOnce(getModel(DEFAULT_MODEL), instruction, text, process.env.OPENAI_API_KEY, maxTokens),
+  // "Ideas from my files" reads the same wiki pages a question would.
+  findFiles: async (query) => (await notesForQuestion(query, 5)).map((hit) => ({ name: hit.note.title || hit.note.rel, text: noteBody(hit.note, hit.terms) })),
+  addPlan: createPlan,
 });
 
 /**

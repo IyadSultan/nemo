@@ -76,7 +76,7 @@ export function registerLive(app) {
           },
           {
             name: "app_manual",
-            description: "Read the app manual. Call this when the user asks what you can do, or how one function works, such as PDF tools, the Word editor, or slides. Answer only from the text it returns.",
+            description: "Read the app manual. Call this when the user asks what you can do, or how one function works, such as PDF tools, the Word editor, slides, or the movie editor. Answer only from the text it returns.",
           },
         ],
       }],
@@ -160,7 +160,7 @@ export function registerLive(app) {
         {
           type: "function",
           name: "app_manual",
-          description: "Read the app manual. Call this when the user asks what you can do, or how one function works, such as PDF tools, the Word editor, or slides. Answer only from the text it returns.",
+          description: "Read the app manual. Call this when the user asks what you can do, or how one function works, such as PDF tools, the Word editor, slides, or the movie editor. Answer only from the text it returns.",
           parameters: { type: "object", properties: {} },
         },
         {

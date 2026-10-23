@@ -211,7 +211,7 @@ export async function streamLocalAnswer(prompt, res, model, reasoning, spoken, l
             role: "system",
             content: [
               INSTRUCTIONS,
-              // A short cap keeps Bonsai from talking for minutes.
+              // A short cap keeps Bonsai 2 from talking for minutes.
               // GPT-OSS is uncapped, so it may use as many words as the answer needs.
               model.uncapped || longSpoken
                 ? "The answer will be read aloud. Write the full answer. Do not stop early."
@@ -222,7 +222,7 @@ export async function streamLocalAnswer(prompt, res, model, reasoning, spoken, l
           },
           { role: "user", content: prompt },
         ],
-        // Bonsai defaults to a 262k-token window, which reserves ~22 GB and
+        // Bonsai 2 defaults to a 262k-token window, which reserves a lot of memory and
         // made one answer take 90s. The prompt is a few note excerpts, so 16k is plenty.
         // keep_alive keeps the model loaded between questions, so no 4s reload.
         // num_predict is small so a spoken reply cannot run on for minutes.
@@ -295,16 +295,29 @@ export const CLAUDE_BIN = process.env.CLAUDE_BIN
   || [path.join(os.homedir(), ".local/bin/claude"), "/opt/homebrew/bin/claude"].find((p) => fsSync.existsSync(p))
   || "claude";
 
+// Zotero desktop's local API through zotero-mcp. Only these read tools are allowed, so Claude can never change the library.
+const ZOTERO_MCP = JSON.stringify({
+  mcpServers: { zotero: { command: path.join(os.homedir(), ".local/bin/zotero-mcp"), args: ["serve"], env: { ZOTERO_LOCAL: "true" } } },
+});
+export const ZOTERO_TOOLS = [
+  "search", "fetch", "zotero_search_items", "zotero_advanced_search", "zotero_semantic_search", "zotero_search_by_tag",
+  "zotero_search_by_citation_key", "zotero_search_notes", "zotero_get_recent", "zotero_get_item_metadata",
+  "zotero_get_item_fulltext", "zotero_get_item_children", "zotero_get_annotations", "zotero_get_notes",
+  "zotero_get_collections", "zotero_get_collection_items", "zotero_get_tags",
+].map((t) => `mcp__zotero__${t}`);
+const ZOTERO_RULE = "You can search the user's Zotero library with the zotero tools (read only). Use them for questions about their papers, references or library. If they fail, say Zotero desktop may be closed.";
+
 /**
  * Ask Claude through Claude Code (`claude -p`), which uses the logged-in Claude
  * subscription, not an API key. No saved session, no user settings,
  * so hooks and plugins from ~/.claude do not run for every answer.
  * With dirs, Claude may read (never write) files in those folders, and may start
  * helper agents (Task) that read in parallel; without dirs, it has no tools.
+ * With zotero, it may also read (never change) the Zotero library through zotero-mcp.
  * onText gets each piece of the answer; onHelpers(n) gets the number of helpers started so far.
  * Resolves with the token usage.
  */
-export function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000, dirs = [], onHelpers = () => {}, signal = null) {
+export function askClaude(model, system, prompt, effort, onText, timeoutMs = 120000, dirs = [], onHelpers = () => {}, signal = null, zotero = false) {
   return new Promise((resolve, reject) => {
     const tools = dirs.length ? "Read,Glob,Grep,Task" : "";
     const args = [
@@ -313,6 +326,7 @@ export function askClaude(model, system, prompt, effort, onText, timeoutMs = 120
       "--output-format", "stream-json", "--include-partial-messages", "--verbose",
     ];
     if (tools) args.push("--allowedTools", tools);
+    if (zotero) args.push("--mcp-config", ZOTERO_MCP, "--allowedTools", ...ZOTERO_TOOLS);
     if (dirs.length > 1) args.push("--add-dir", ...dirs.slice(1));
     if (effort) args.push("--effort", effort);
     const env = { ...process.env };
@@ -394,10 +408,11 @@ export async function streamClaudeAnswer(prompt, res, model, reasoning, spoken, 
     "When a question needs several separate searches (for example notes, email, and documents, or several folders), start helper agents with the Task tool so they search in parallel, then combine what they found. Answer simple questions yourself.",
     "You cannot write files or run commands. To give the user a file, make a PDF with PDF_BODY and the app saves it. Never type tool-call markup such as <invoke> in your answer.",
     "Do not narrate your searching. Answer only after you have looked.",
+    res.locals?.zotero ? ZOTERO_RULE : "",
   ].filter(Boolean).join(" ");
   const system = [INSTRUCTIONS, files, spoken ? SPOKEN_STYLE : "", guideBlock()].filter(Boolean).join("\n\n");
   const onHelpers = (n) => writeEvent(res, { type: "status", message: `Working with ${n} helper${n === 1 ? "" : "s"}…` });
-  const usage = await askClaude(model, system, prompt, reasoning, (text) => writeEvent(res, { type: "delta", text }), 300000, dirs, onHelpers, res.locals?.stop);
+  const usage = await askClaude(model, system, prompt, reasoning, (text) => writeEvent(res, { type: "delta", text }), 300000, dirs, onHelpers, res.locals?.stop, res.locals?.zotero);
   writeEvent(res, usageEvent(model, reasoning, usage));
 }
 
@@ -421,6 +436,7 @@ async function streamTeamAnswer(prompt, res, model, reasoning, spoken, dirs, wor
     dirs.length ? `When no helper findings are given, you can read these folders with the Read, Glob and Grep tools: ${dirs.join(", ")}. Read can open PDFs.` : "",
     "You cannot write files or run commands. To give the user a file, make a PDF with PDF_BODY and the app saves it. Never type tool-call markup such as <invoke> in your answer.",
     "Do not narrate your searching.",
+    res.locals?.zotero ? ZOTERO_RULE : "",
   ].filter(Boolean).join(" ");
   const system = [INSTRUCTIONS, rules, spoken ? SPOKEN_STYLE : "", guideBlock()].filter(Boolean).join("\n\n");
   let upstream;
@@ -431,7 +447,7 @@ async function streamTeamAnswer(prompt, res, model, reasoning, spoken, dirs, wor
     upstream = await fetch(TEAM_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-team-token": token },
-      body: JSON.stringify({ system, prompt, lead_model: model.cliModel, effort: reasoning || null, dirs, workspace: workspace || null }),
+      body: JSON.stringify({ system, prompt, lead_model: model.cliModel, effort: reasoning || null, dirs, workspace: workspace || null, zotero: !workspace && !!res.locals?.zotero }),
       // Building: up to 15 min of helpers, then up to 15 min for the lead.
       // If the page says stop, this fetch ends and the helpers are no longer read.
       signal: stop ? AbortSignal.any([timeout, stop]) : timeout,

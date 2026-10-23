@@ -83,10 +83,20 @@
         </button>
         <div class="weather-card" id="weatherPanel" hidden></div>
       </div>
+
+      <div class="fan-monitor" id="prayerMonitor">
+        <button type="button" class="clock-pill" id="prayerBtn" aria-expanded="false" aria-controls="prayerPanel" title="Prayer times">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M10.6 2.6a5.6 5.6 0 1 0 2.8 9.6 4.6 4.6 0 0 1-2.8-9.6z"></path>
+          </svg>
+          <span id="prayerNext">–:–</span>
+        </button>
+        <div class="fan-panel" id="prayerPanel" hidden></div>
+      </div>
       </div>
 
       <div class="fan-monitor" id="fanMonitor">
-        <button type="button" class="term-btn fan-btn" id="fanBtn" aria-expanded="false" aria-controls="fanPanel" title="Mac fan speed">
+        <button type="button" class="term-btn fan-btn" id="fanBtn" aria-expanded="false" aria-controls="fanPanel" title="Mac fans, memory, CPU, and GPU">
           <svg class="fan-icon" viewBox="0 0 16 16" aria-hidden="true">
             <circle cx="8" cy="8" r="1.15"></circle>
             <path d="M8 6.7c.15-2.2 2-3.7 3.5-3-1.5.55-2.4 2-2.6 3"></path>
@@ -94,11 +104,17 @@
             <path d="M6.85 8.65C4.8 9.7 3.1 9.1 2.9 7.8c1.3.35 2.6.15 3.3-.25"></path>
           </svg>
           <span id="fanSpeed">Fans</span>
+          <span class="fan-use" id="fanUse">
+            <span id="fanRam">RAM —</span>
+            <span id="fanCpu">CPU —</span>
+            <span id="fanGpu">GPU —</span>
+          </span>
         </button>
         <div class="fan-panel" id="fanPanel" hidden>
-          <p class="fan-title">Mac fans</p>
+          <p class="fan-title">This Mac</p>
           <ul class="fan-list" id="fanList"></ul>
           <p class="fan-note" id="fanNote"></p>
+          <button type="button" class="fan-clear" id="fanClearModels" title="Unload every Ollama model to free memory">Clear Ollama models</button>
         </div>
       </div>
 
@@ -123,6 +139,15 @@
         </button>
         <button type="button" class="term-btn" id="plansBtn" title="Conferences, trips, and talks. An iMessage reminds you the day before.">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14.5s-4.5-4.6-4.5-8a4.5 4.5 0 0 1 9 0c0 3.4-4.5 8-4.5 8z"/><circle cx="8" cy="6.5" r="1.6"/></svg>Plans
+        </button>
+        <button type="button" class="term-btn" id="browserBtn" title="The browser agent: give it an order, such as fill in a form or place an order. It shows a plan first.">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M1.5 8h13M8 1.5c-2 2-2.8 4.2-2.8 6.5s.8 4.5 2.8 6.5M8 1.5c2 2 2.8 4.2 2.8 6.5s-.8 4.5-2.8 6.5"/></svg>Browser
+        </button>
+        <button type="button" class="term-btn" id="screenBtn" title="Record the whole screen and the sound, then add captions, a summary, and a recap. Useful for a Zoom meeting or a tutorial.">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.2"/><circle cx="12.2" cy="13.2" r="1.3"/></svg>Screen
+        </button>
+        <button type="button" class="term-btn" id="movieBtn" title="Edit a movie. Say Hey, then an order such as add the video birthday.">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="1.2"/><path d="M6.5 6.2v3.6L10.5 8z"/></svg>Movie
         </button>
         <button type="button" class="term-btn" id="photoEditBtn" title="Edit a photo with PhotoCraft. Buttons rotate, brighten, and more. The editor also opens for crop and layers.">
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.2"/><circle cx="5.5" cy="6" r="1.2"/><path d="M14.5 10.5 11 7l-5 6.5"/></svg>Photo
@@ -153,6 +178,10 @@
         <div class="capsule" id="capsule" data-state="idle">
           <canvas class="mascot" id="mascotCanvas" width="400" height="400" aria-hidden="true"></canvas>
           <svg class="claude-mark" id="claudeMark" viewBox="0 0 100 100" aria-hidden="true"></svg>
+          <div class="brain-stage" id="brainStage">
+            <p class="brain-bubble" id="brainBubble" hidden aria-live="polite"></p>
+            <canvas class="brain-pet" id="brainPet" width="16" height="14" aria-hidden="true"></canvas>
+          </div>
           <div class="rings" aria-hidden="true"><span></span><span></span><span></span></div>
           <div class="orbit" aria-hidden="true"></div>
           <span class="think-pulse" aria-hidden="true"></span>
@@ -196,6 +225,17 @@
                 <path d="M6.5 11a5.5 5.5 0 0 0 11 0"></path>
                 <path d="M12 16.5V20"></path>
                 <path d="M9 20h6"></path>
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="ghost-btn clip-btn"
+              id="clipBtn"
+              aria-label="Add a file"
+              title="Add a PDF, Word, or PowerPoint file to this conversation."
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8.2 12.6 15 5.8a3 3 0 0 1 4.2 4.2l-8.3 8.3a4.2 4.2 0 0 1-5.9-5.9l7.4-7.4"></path>
               </svg>
             </button>
             <input
@@ -409,9 +449,13 @@
               <select id="reasoningSelect" aria-label="Thinking level"></select>
             </label>
             <label class="field">
-              <span>Mascot<em class="field-note"> · picture only</em></span>
+              <span>Mascot<em class="field-note"> · Brain is the pet</em></span>
               <select id="mascotSelect" aria-label="Mascot">
                 <option value="claude" selected>Claude</option>
+                <option value="cat">Cat</option>
+                <option value="robot">Robot</option>
+                <option value="brain" title="Pixel pet that keeps you company and shows a short reply">Brain</option>
+                <option value="emoji">Emoji face</option>
                 <option value="tiny">Tiny</option>
               </select>
             </label>
@@ -435,6 +479,8 @@
               <span>Wake</span>
               <select id="wakeSelect" aria-label="What starts a question">
                 <option value="hey" selected>Hey</option>
+                <option value="direct">Direct (no Hey, every sentence, English + Arabic)</option>
+                <option value="wait">Wait (write it down, say Talk to start Direct)</option>
                 <option value="medical">Medical speech (GPT-OSS 20B on this Mac)</option>
                 <option value="jev">Hey + Jev (TypeSafe cloud)</option>
                 <option value="gemma">Hey + Gemma (on this Mac)</option>
@@ -530,7 +576,9 @@
     <script src="/voice-page.js"></script>
     <script src="/fan.js"></script>
     <script src="/weather.js"></script>
+    <script src="/prayer.js"></script>
     <script src="/gemini.js"></script>
+    <script src="/brainpet.js"></script>
     <script src="/mascot.js"></script>
     <script src="/tinymode.js"></script>
     <script src="/vendor/xterm/xterm/lib/xterm.js"></script>
@@ -539,11 +587,16 @@
     <script src="/pdfedit.js"></script>
     <script src="/wordedit.js"></script>
     <script src="/slidesedit.js"></script>
+    <script src="/movieparse.js"></script>
+    <script src="/movieedit.js"></script>
     <script src="/photoedit.js"></script>
     <script src="/rtab.js"></script>
     <script src="/calendartab.js"></script>
     <script src="/planstab.js"></script>
+    <script src="/browsertab.js"></script>
     <script src="/stickiestab.js"></script>
+    <script src="/screenparse.js"></script>
+    <script src="/screentab.js"></script>
     <script type="module" src="/deck.js"></script>
   </body>
 </html>

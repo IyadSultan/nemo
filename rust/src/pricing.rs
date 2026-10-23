@@ -64,7 +64,6 @@ pub struct Model {
     pub reasoning: &'static [&'static str],
 }
 
-const ALL_LEVELS: &[&str] = &["none", "low", "medium", "high", "xhigh", "max"];
 const THINKING_LEVELS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 const LMH: &[&str] = &["low", "medium", "high"];
 const LOCAL_LEVELS: &[&str] = &["none", "low", "medium", "high"];
@@ -135,54 +134,8 @@ pub const VOICE_MODELS: &[Model] = &[
     },
 ];
 
-/// A free model that runs on this Mac through Ollama.
-const fn local(id: &'static str, label: &'static str, blurb: &'static str) -> Model {
-    Model { id, label, blurb, local: Some(true), hears: Some(false), reasoning: LOCAL_LEVELS, ..BASE }
-}
-
-const LOCAL_BLURB: &str = "Runs on this Mac, and the written answer is free";
-
+/// Text models. Claude uses your subscription. Bonsai 2 runs free on this Mac.
 pub const MODELS: &[Model] = &[
-    Model {
-        id: "gpt-6-luna",
-        label: "GPT-6 Luna",
-        blurb: "Cheapest and fastest",
-        input_per_million: 0.1,
-        cached_input_per_million: 0.01,
-        output_per_million: 0.5,
-        reasoning: ALL_LEVELS,
-        ..BASE
-    },
-    Model {
-        id: "gpt-6-sol",
-        label: "GPT-6 Sol",
-        blurb: "Stronger, and it can still skip thinking",
-        input_per_million: 2.0,
-        cached_input_per_million: 0.2,
-        output_per_million: 10.0,
-        reasoning: ALL_LEVELS,
-        ..BASE
-    },
-    Model {
-        id: "gpt-6.1-sol",
-        label: "GPT-6.1 Sol",
-        blurb: "Balanced. Thinking cannot be turned off",
-        input_per_million: 2.0,
-        cached_input_per_million: 0.1,
-        output_per_million: 10.0,
-        reasoning: THINKING_LEVELS,
-        ..BASE
-    },
-    Model {
-        id: "gpt-6-astra",
-        label: "GPT-6 Astra",
-        blurb: "Most capable, and the most expensive",
-        input_per_million: 10.0,
-        cached_input_per_million: 1.0,
-        output_per_million: 50.0,
-        reasoning: THINKING_LEVELS,
-        ..BASE
-    },
     // Same as Claude Sonnet below: runs through `claude -p` on your subscription.
     Model {
         id: "claude-opus",
@@ -204,18 +157,28 @@ pub const MODELS: &[Model] = &[
         reasoning: LMH,
         ..BASE
     },
-    local("MichelRosselli/bonsai-27b", "Bonsai 27B", LOCAL_BLURB),
+    // Ollama name. Small vision model that runs on this Mac. The written answer is free.
     Model {
-        // No token cap. The model stops when the answer is finished.
-        uncapped: Some(true),
-        // No "none": Ollama ignores think:false for GPT-OSS, so Low is its least thinking.
-        reasoning: LMH,
-        ..local("gpt-oss:20b", "GPT-OSS 20B", LOCAL_BLURB)
+        id: "bonsai-2:2b",
+        label: "Bonsai 2",
+        blurb: "Small model on this Mac. The written answer is free",
+        local: Some(true),
+        hears: Some(false),
+        reasoning: LOCAL_LEVELS,
+        ..BASE
     },
-    local("gemma4:12b-mlx", "Gemma 4 12B", LOCAL_BLURB),
-    local("gemma4:e4b-mlx", "Gemma 4 E4B", "Smaller Gemma 4. Runs on this Mac, and the written answer is free"),
-    local("gemma4:e2b-mlx", "Gemma 4 E2B", "Smallest Gemma 4. Runs on this Mac, and the written answer is free"),
-    local("qwen3.8:27b-mlx", "Qwen 3.8 27B", LOCAL_BLURB),
+    // Ollama name. Already installed on this Mac. The written answer is free.
+    // No length cap. Ollama will not turn thinking fully off, so Low is the least it can do.
+    Model {
+        id: "gpt-oss:20b",
+        label: "GPT-OSS 20B",
+        blurb: "Runs on this Mac, and the written answer is free",
+        local: Some(true),
+        hears: Some(false),
+        uncapped: Some(true),
+        reasoning: LMH,
+        ..BASE
+    },
 ];
 
 pub fn get_model(id: &str) -> Option<&'static Model> {

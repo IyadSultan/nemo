@@ -1,7 +1,9 @@
 /**
  * The fan pill in the top bar.
- * It asks the server for the fan speed every few seconds and paints it.
+ * It asks the server for the fan speed, memory, CPU, and GPU every few seconds.
  * Asking "how is the fan?" writes the same sentence into the transcript.
+ * If memory gets close to full, this page shows an alert.
+ * Agents that are working on code are left running.
  */
 
 const fanBtn = document.getElementById("fanBtn");
@@ -25,12 +27,16 @@ function rpmText(value) {
   return rpm.toLocaleString("en-US");
 }
 
-/** A number from 0 to 100: how far the fan is between its slowest and fastest. */
+/**
+ * A number from 0 to 100: this fan's speed compared with its fastest.
+ * Measured from zero, not from the slow idle speed. A fan at 2,000 rpm
+ * on a fan that tops out near 7,800 is about a quarter full, not empty.
+ */
 function fanPercent(fan) {
-  const span = Number(fan.max) - Number(fan.min);
-  if (!(span > 0) || !Number.isFinite(Number(fan.rpm))) return 0;
-  const portion = (Number(fan.rpm) - Number(fan.min)) / span;
-  return Math.max(0, Math.min(100, Math.round(portion * 100)));
+  const rpm = Number(fan.rpm);
+  const max = Number(fan.max);
+  if (!Number.isFinite(rpm) || rpm <= 0 || !(max > 0)) return 0;
+  return Math.max(0, Math.min(100, Math.round((rpm / max) * 100)));
 }
 
 function louderEffort(fans) {
@@ -42,54 +48,161 @@ function louderEffort(fans) {
   return best;
 }
 
+/** Quiet / light / working / working hard, from a percent. */
+function loadEffort(percent) {
+  const n = Number(percent);
+  if (!Number.isFinite(n)) return "unknown";
+  if (n < 25) return "quiet";
+  if (n < 60) return "easy";
+  if (n < 85) return "busy";
+  return "hard";
+}
+
+function gbText(bytes) {
+  const gb = Number(bytes) / (1024 ** 3);
+  if (!Number.isFinite(gb) || gb < 0) return "—";
+  const rounded = Math.round(gb * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)} GB`;
+}
+
+function meterRow(name, value, how, percent, effort) {
+  const row = document.createElement("li");
+  row.className = "fan-meter";
+  row.dataset.effort = effort || "unknown";
+  row.innerHTML = `
+    <span class="fan-name"></span>
+    <span class="fan-rpm"></span>
+    <span class="fan-how"></span>
+    <span class="fan-bar" aria-hidden="true"><span></span></span>
+  `;
+  row.querySelector(".fan-name").textContent = name;
+  row.querySelector(".fan-rpm").textContent = value;
+  row.querySelector(".fan-how").textContent = how;
+  row.querySelector(".fan-bar span").style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
+  return row;
+}
+
+// The alert is shown once per spike. A new spike has a new time.
+let shownMemoryAlarm = 0;
+
+function warnIfMemoryFull(data) {
+  const alarm = data?.load?.alarm;
+  if (!alarm?.at || alarm.at === shownMemoryAlarm) return;
+  shownMemoryAlarm = alarm.at;
+  setFanOpen(true);
+  const message = alarm.message || "Memory is getting full. Agents working on code were left running.";
+  if (typeof addBubble === "function") addBubble("assistant", message);
+  if (typeof setStatus === "function") setStatus("Memory is getting full.");
+  window.alert(message);
+}
+
+/** The closed button shows RAM, CPU, and GPU. The open menu has the same numbers in more detail. */
+function paintUse(load) {
+  const ram = document.getElementById("fanRam");
+  const cpu = document.getElementById("fanCpu");
+  const gpu = document.getElementById("fanGpu");
+  if (!ram || !cpu || !gpu) return;
+  const memory = load?.memory;
+  ram.textContent = memory ? `RAM ${memory.percent}%` : "RAM —";
+  cpu.textContent = load?.cpu?.percent == null ? "CPU —" : `CPU ${load.cpu.percent}%`;
+  gpu.textContent = load?.gpu?.percent == null ? "GPU —" : `GPU ${load.gpu.percent}%`;
+  if (fanBtn) fanBtn.dataset.memory = memory?.danger ? "danger" : "ok";
+}
+
+function paintLoad(load) {
+  paintUse(load);
+  if (!fanList || !load) return;
+  const memory = load.memory;
+  const memoryEffort = memory?.danger ? "hard" : loadEffort(memory?.percent);
+  const memoryRow = meterRow(
+    "Memory",
+    memory ? `${gbText(memory.usedBytes)} / ${gbText(memory.totalBytes)}` : "—",
+    memory ? `${memory.percent}%` : "—",
+    memory?.percent || 0,
+    memoryEffort,
+  );
+  memoryRow.classList.add("is-split");
+  fanList.appendChild(memoryRow);
+  fanList.appendChild(meterRow(
+    "CPU use",
+    load.cpu?.percent == null ? "—" : `${load.cpu.percent}%`,
+    EFFORT_LABEL[loadEffort(load.cpu?.percent)] || "—",
+    load.cpu?.percent || 0,
+    loadEffort(load.cpu?.percent),
+  ));
+  fanList.appendChild(meterRow(
+    "GPU use",
+    load.gpu?.percent == null ? "—" : `${load.gpu.percent}%`,
+    load.gpu?.percent == null ? "—" : (EFFORT_LABEL[loadEffort(load.gpu.percent)] || "—"),
+    load.gpu?.percent || 0,
+    loadEffort(load.gpu?.percent),
+  ));
+}
+
 function paintFans(data) {
   if (!fanBtn || !fanSpeed) return;
   const fans = data?.fans || [];
-  if (!data?.ok || !fans.length) {
+  const missing = !data?.ok || !fans.length;
+  if (missing) {
     fanSpeed.textContent = "No fan";
     fanBtn.dataset.effort = "unknown";
     fanBtn.title = data?.error || "This Mac did not report a fan.";
-    if (fanList) fanList.replaceChildren();
-    if (fanNote) fanNote.textContent = fanBtn.title;
-    return;
+  } else {
+    const fastest = fans.reduce((best, fan) => (Number(fan.rpm) > Number(best.rpm) ? fan : best), fans[0]);
+    const effort = louderEffort(fans);
+    fanSpeed.textContent = `${rpmText(fastest.rpm)} rpm`;
+    fanBtn.dataset.effort = effort;
+    fanBtn.title = data.line || "Mac fan speed";
   }
-  const fastest = fans.reduce((best, fan) => (Number(fan.rpm) > Number(best.rpm) ? fan : best), fans[0]);
-  const effort = louderEffort(fans);
-  fanSpeed.textContent = `${rpmText(fastest.rpm)} rpm`;
-  fanBtn.dataset.effort = effort;
-  fanBtn.title = data.line || "Mac fan speed";
 
-  if (!fanList) return;
-  fanList.replaceChildren();
-  for (const fan of fans) {
-    const row = document.createElement("li");
-    row.dataset.effort = fan.effort || "unknown";
-    const percent = fanPercent(fan);
-    row.innerHTML = `
-      <span class="fan-name"></span>
-      <span class="fan-rpm"></span>
-      <span class="fan-how"></span>
-      <span class="fan-bar" aria-hidden="true"><span></span></span>
-    `;
-    row.querySelector(".fan-name").textContent = fan.name;
-    row.querySelector(".fan-rpm").textContent = `${rpmText(fan.rpm)} rpm`;
-    row.querySelector(".fan-how").textContent = EFFORT_LABEL[fan.effort] || "Unknown";
-    row.querySelector(".fan-bar span").style.width = `${percent}%`;
-    fanList.appendChild(row);
+  if (fanList) {
+    fanList.replaceChildren();
+    if (!missing) {
+      for (const fan of fans) {
+        const row = document.createElement("li");
+        row.dataset.effort = fan.effort || "unknown";
+        const percent = fanPercent(fan);
+        row.innerHTML = `
+          <span class="fan-name"></span>
+          <span class="fan-rpm"></span>
+          <span class="fan-how"></span>
+          <span class="fan-bar" aria-hidden="true"><span></span></span>
+        `;
+        row.querySelector(".fan-name").textContent = fan.name;
+        row.querySelector(".fan-rpm").textContent = `${rpmText(fan.rpm)} rpm`;
+        row.querySelector(".fan-how").textContent = EFFORT_LABEL[fan.effort] || "Unknown";
+        row.querySelector(".fan-bar span").style.width = `${percent}%`;
+        fanList.appendChild(row);
+      }
+      for (const temp of data.temps || []) {
+        const row = document.createElement("li");
+        row.className = "fan-temp";
+        const name = document.createElement("span");
+        name.className = "fan-name";
+        name.textContent = temp.name;
+        const value = document.createElement("span");
+        value.className = "fan-rpm";
+        value.textContent = `${Math.round(Number(temp.c))}°`;
+        row.append(name, value);
+        fanList.appendChild(row);
+      }
+    }
+    paintLoad(data?.load);
   }
-  for (const temp of data.temps || []) {
-    const row = document.createElement("li");
-    row.className = "fan-temp";
-    const name = document.createElement("span");
-    name.className = "fan-name";
-    name.textContent = temp.name;
-    const value = document.createElement("span");
-    value.className = "fan-rpm";
-    value.textContent = `${Math.round(Number(temp.c))}°`;
-    row.append(name, value);
-    fanList.appendChild(row);
+  if (!fanList) paintUse(data?.load);
+  if (fanNote) {
+    if (data?.load?.alarm?.message) {
+      fanNote.textContent = data.load.alarm.message;
+      fanNote.classList.add("is-alarm");
+    } else if (missing) {
+      fanNote.textContent = fanBtn.title;
+      fanNote.classList.remove("is-alarm");
+    } else {
+      fanNote.textContent = "Each fan bar is that fan's speed compared with its fastest. Memory is the part the Mac cannot easily free.";
+      fanNote.classList.remove("is-alarm");
+    }
   }
-  if (fanNote) fanNote.textContent = "The bar runs from this fan's slowest speed to its fastest.";
+  warnIfMemoryFull(data);
 }
 
 async function refreshFans() {
@@ -126,7 +239,7 @@ function placeBarCard(panel, button, width) {
 }
 
 function placeFanPanel() {
-  placeBarCard(fanPanel, fanBtn, 260);
+  placeBarCard(fanPanel, fanBtn, 300);
 }
 
 function setFanOpen(open) {
@@ -353,7 +466,38 @@ if (fanBtn && fanMonitor) {
     if (document.hidden) return;
     refreshFans();
   }, 3000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshFans();
+  });
 }
+
+/** Unload every Ollama model at once, so their memory comes back. */
+async function clearOllamaModels(button) {
+  button.disabled = true;
+  button.textContent = "Clearing…";
+  try {
+    const response = await fetch("/stop-models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not stop the local models.");
+    const count = Array.isArray(data.stopped) ? data.stopped.length : 0;
+    button.textContent = count ? `Cleared ${count} model${count === 1 ? "" : "s"}` : "No models were loaded";
+    refreshFans();
+  } catch (err) {
+    console.error("Failed while clearing Ollama models:", err);
+    button.textContent = "Could not clear models";
+  }
+  setTimeout(() => {
+    button.disabled = false;
+    button.textContent = "Clear Ollama models";
+  }, 2500);
+}
+
+const fanClearModels = document.getElementById("fanClearModels");
+if (fanClearModels) fanClearModels.addEventListener("click", () => clearOllamaModels(fanClearModels));
 
 if (usageBtn && usageMonitor) {
   usageBtn.addEventListener("click", () => setUsageOpen(usagePanel.hidden));

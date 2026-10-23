@@ -236,8 +236,10 @@
     window.brainSlides?.close();
     window.brainR?.close();
     window.brainPhoto?.close();
+    window.brainMovie?.close();
     window.brainStickies?.close();
     window.brainPlans?.close();
+    window.brainScreen?.close();
     show(true);
     load();
   }

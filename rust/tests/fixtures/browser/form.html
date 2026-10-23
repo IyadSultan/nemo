@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><title>Pizza order</title></head>
+<body>
+  <h1>Order a pizza</h1>
+  <form id="f" onsubmit="event.preventDefault(); document.getElementById('out').textContent = 'Ordered: ' + this.who.value + ', ' + this.size.value + (this.bacon.checked ? ', bacon' : '');">
+    <label>Name <input name="who" placeholder="Your name"></label>
+    <label>Password <input name="pw" type="password" value="hunter22"></label>
+    <select name="size"><option value="small">Small</option><option value="large">Large</option></select>
+    <label><input type="checkbox" name="bacon"> Bacon</label>
+    <button type="submit">Place order</button>
+  </form>
+  <p id="out"></p>
+  <div style="display:none"><button>Hidden button</button></div>
+</body></html>

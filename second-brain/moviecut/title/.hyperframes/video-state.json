@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "historyId": "4312a42f-d2f4-4265-a65d-b2225b3aa713",
+  "currentRevision": "e89236f6-7033-489e-a913-ea13551173e9",
+  "pendingChanges": false,
+  "files": {
+    "gsap.min.js": {
+      "hash": "c3a03a345e45bc954cd48c43f11572891f5dca7a5d99348d5bc14753a728618c",
+      "content": "/Users/USER/.cache/hyperframes/history/4312a42f-d2f4-4265-a65d-b2225b3aa713/blobs/c3/c3a03a345e45bc954cd48c43f11572891f5dca7a5d99348d5bc14753a728618c"
+    },
+    "hyperframes.json": {
+      "hash": "53dbce1e19aa713cbb12ee0bc4d206143b45ab15e6ffbfcaa8f69572d4d24d50",
+      "content": "/Users/USER/.cache/hyperframes/history/4312a42f-d2f4-4265-a65d-b2225b3aa713/blobs/53/53dbce1e19aa713cbb12ee0bc4d206143b45ab15e6ffbfcaa8f69572d4d24d50"
+    },
+    "index.html": {
+      "hash": "dd1bb5888477431e302752757afac871c4abb73f9862ceb4680654a9796cc608",
+      "content": "/Users/USER/.cache/hyperframes/history/4312a42f-d2f4-4265-a65d-b2225b3aa713/blobs/dd/dd1bb5888477431e302752757afac871c4abb73f9862ceb4680654a9796cc608"
+    },
+    "meta.json": {
+      "hash": "6239a9da0b3245056321b9ba0a77ab18135a113a271ab93029b1d9ea1bbaa49d",
+      "content": "/Users/USER/.cache/hyperframes/history/4312a42f-d2f4-4265-a65d-b2225b3aa713/blobs/62/6239a9da0b3245056321b9ba0a77ab18135a113a271ab93029b1d9ea1bbaa49d"
+    }
+  },
+  "revisions": {
+    "e89236f6-7033-489e-a913-ea13551173e9": {
+      "actor": {
+        "kind": "outside",
+        "name": "Outside"
+      },
+      "label": "Changed outside the app",
+      "startedAt": 1792604080903,
+      "endedAt": 1792604080903,
+      "files": {
+        "index.html": {
+          "before": "/Users/USER/.cache/hyperframes/history/4312a42f-d2f4-4265-a65d-b2225b3aa713/blobs/2e/2e4a5e754e8a16927e8849197ffb1aa91b578b79dc65bdedc612c974db45050b",
+          "after": "/Users/USER/.cache/hyperframes/history/4312a42f-d2f4-4265-a65d-b2225b3aa713/blobs/dd/dd1bb5888477431e302752757afac871c4abb73f9862ceb4680654a9796cc608"
+        }
+      }
+    }
+  },
+  "checks": {
+    "latest": null,
+    "revisions": {},
+    "unversioned": []
+  },
+  "snapshots": {
+    "latest": null,
+    "revisions": {},
+    "unversioned": []
+  },
+  "renders": {
+    "latest": {
+      "id": "3f0850ef-95e3-4b1b-a63b-1e5a918ca289",
+      "completedAt": 1792604730486,
+      "output": "/Users/USER/.brain/movies/title-check/titles/Title The End.mp4",
+      "status": "completed",
+      "revision": "e89236f6-7033-489e-a913-ea13551173e9"
+    },
+    "retainedRevisions": [
+      "e89236f6-7033-489e-a913-ea13551173e9"
+    ]
+  },
+  "pendingArtifactCleanup": []
+}

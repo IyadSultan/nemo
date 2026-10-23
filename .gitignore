@@ -12,6 +12,9 @@ second-brain/desk.json.tmp
 second-brain/stickies.json
 second-brain/stickies.json.tmp
 
+# Movie editor (cargo build --release --manifest-path second-brain/moviecut/Cargo.toml)
+second-brain/moviecut/target/
+
 # Fan reader binary (built from second-brain/fanread.c when the server starts)
 second-brain/bin/
 
@@ -27,6 +30,9 @@ second-brain/daylog/
 
 # PDFs the brain printed (second-brain/pdf.js)
 second-brain/pdfs/
+
+# Screen recordings (second-brain/screen.js). The recorder program is built into second-brain/bin/.
+second-brain/recordings/
 
 # Presentations the brain made (second-brain/deck.js)
 second-brain/decks/
@@ -44,3 +50,5 @@ graft/
 second-brain/plans.json
 second-brain/plans.json.tmp
 second-brain/plan-files/
+second-brain/bookmarks.json
+second-brain/bookmarks.json.tmp

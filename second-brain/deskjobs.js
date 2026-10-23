@@ -10,7 +10,7 @@ import { sendIMessage } from "./imessage.js";
 import { cleanMailAddress, emailLines, indexRawMail, polishReply, replyWithOriginal } from "./mail.js";
 import { askClaude } from "./models.js";
 import { openOutlookDraft, openOutlookMeeting } from "./outlook.js";
-import { cleanHistory, cleanMemory } from "./prompt.js";
+import { cleanChatFiles, cleanHistory, cleanMemory } from "./prompt.js";
 import { speakTitle, spokenWhen } from "./spoken.js";
 import { rawMail } from "./state.js";
 import crypto from "node:crypto";
@@ -469,7 +469,7 @@ export function registerDeskjobs(app) {
 
   app.post("/desk/memory", (req, res) => {
     try {
-      desk.rememberChat(cleanMemory(req.body?.memory), cleanHistory(req.body?.turns));
+      desk.rememberChat(cleanMemory(req.body?.memory), cleanHistory(req.body?.turns), cleanChatFiles(req.body?.files));
       res.json(desk.publicDesk());
     } catch (err) {
       console.error("Failed while saving the conversation:", err?.message || err);

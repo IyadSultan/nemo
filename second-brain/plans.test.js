@@ -11,7 +11,8 @@ import test from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { cleanFileName, cleanPlan, plansClash, withConflicts, dueReminders, loadPlans, planJob, reminderText, runPlanJob, usePlansFile } from "./plans.js";
+import { meetingIcs } from "./outlook.js";
+import { cleanFileName, cleanPlan, plansClash, withConflicts, dueReminders, loadPlans, planCalendarFollowUp, planJob, planMeeting, rememberCalendarAsk, reminderText, runPlanJob, usePlansFile } from "./plans.js";
 
 test("a plan needs a title and a real start day", () => {
   assert.equal(cleanPlan({ from: "2026-11-02" }).error, "Give the plan a title.");
@@ -64,12 +65,47 @@ test("a spoken plan is read by the model and saved", async () => {
   };
   const said = await runPlanJob("add a plan, grand rounds talk on the 29th at 2 pm at KHCC, Dr. Y invited me", ask, new Date(2026, 9, 21, 9));
   assert.match(told, /Today is Wednesday 2026-10-21/);
-  assert.equal(said, "Saved to your plans: Grand rounds talk, Thu 29 Oct at 14:00, in KHCC. I will text you the day before.");
+  assert.equal(said, "Saved to your plans: Grand rounds talk, Thu 29 Oct at 14:00, in KHCC. I will text you the day before. Should I add this to your calendar?");
   assert.equal(loadPlans()[0].comment, "Dr. Y invited me");
   const noDay = await runPlanJob("add a plan for ESMO", async () => '{"title": "ESMO", "from": ""}');
   assert.match(noDay, /Which day/);
   assert.equal(loadPlans().length, 1);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("a talk becomes a one-hour event, and a trip becomes whole days", () => {
+  const talk = planMeeting({ title: "Grand rounds", from: "2026-10-29", time: "14:00", place: "KHCC", comment: "Dr. Y" });
+  assert.equal(talk.duration, 60);
+  assert.equal(talk.date.getHours(), 14);
+  assert.equal(talk.location, "KHCC");
+  assert.match(meetingIcs(talk), /DTSTART:20261029T140000/);
+  assert.match(meetingIcs(talk), /DTEND:20261029T150000/);
+  const trip = planMeeting({ title: "ESMO", from: "2026-11-02", to: "2026-11-05", place: "Berlin" });
+  assert.equal(trip.allDay, true);
+  const file = meetingIcs(trip);
+  assert.match(file, /DTSTART;VALUE=DATE:20261102/);
+  assert.match(file, /DTEND;VALUE=DATE:20261106/);
+  assert.match(file, /LOCATION:Berlin/);
+});
+
+test("yes opens the calendar offer, and no or another question drops it", async () => {
+  let opened = "";
+  const open = async (id) => {
+    opened = id;
+    return { text: "opened" };
+  };
+  rememberCalendarAsk("plan-1");
+  assert.equal(await planCalendarFollowUp("Yes, add it to my calendar.", open), "opened");
+  assert.equal(opened, "plan-1");
+  assert.equal(await planCalendarFollowUp("yes", open), null, "one yes is enough");
+
+  rememberCalendarAsk("plan-2");
+  assert.equal(await planCalendarFollowUp("not now"), "OK. It stays in your plans only.");
+  assert.equal(await planCalendarFollowUp("yes", open), null);
+
+  rememberCalendarAsk("plan-3");
+  assert.equal(await planCalendarFollowUp("what meetings do I have today"), null);
+  assert.equal(await planCalendarFollowUp("sure", open), null, "a different question drops the offer");
 });
 
 test("an attached file keeps only a plain name", () => {

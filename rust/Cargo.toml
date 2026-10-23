@@ -28,9 +28,10 @@ async-trait = "0.1"
 futures = "0.3"
 tokio-stream = "0.1"
 portable-pty = "0.9"
+# The browser agent talks to Chrome over CDP (rust/src/browser).
+tokio-tungstenite = "0.26"
 
 [dev-dependencies]
 futures-core = "0.3"
 tokio-stream = "0.1"
 http-body-util = "0.1"
-tokio-tungstenite = "0.26"

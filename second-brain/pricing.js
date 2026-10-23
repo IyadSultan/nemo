@@ -69,42 +69,6 @@ export const VOICE_MODELS = [
 
 export const MODELS = [
   {
-    id: "gpt-6-luna",
-    label: "GPT-6 Luna",
-    blurb: "Cheapest and fastest",
-    inputPerMillion: 0.1,
-    cachedInputPerMillion: 0.01,
-    outputPerMillion: 0.5,
-    reasoning: ["none", "low", "medium", "high", "xhigh", "max"],
-  },
-  {
-    id: "gpt-6-sol",
-    label: "GPT-6 Sol",
-    blurb: "Stronger, and it can still skip thinking",
-    inputPerMillion: 2,
-    cachedInputPerMillion: 0.2,
-    outputPerMillion: 10,
-    reasoning: ["none", "low", "medium", "high", "xhigh", "max"],
-  },
-  {
-    id: "gpt-6.1-sol",
-    label: "GPT-6.1 Sol",
-    blurb: "Balanced. Thinking cannot be turned off",
-    inputPerMillion: 2,
-    cachedInputPerMillion: 0.1,
-    outputPerMillion: 10,
-    reasoning: ["low", "medium", "high", "xhigh", "max"],
-  },
-  {
-    id: "gpt-6-astra",
-    label: "GPT-6 Astra",
-    blurb: "Most capable, and the most expensive",
-    inputPerMillion: 10,
-    cachedInputPerMillion: 1,
-    outputPerMillion: 50,
-    reasoning: ["low", "medium", "high", "xhigh", "max"],
-  },
-  {
     id: "claude-opus",
     // Same as Claude Sonnet below: runs through `claude -p` on your subscription.
     cliModel: "opus",
@@ -130,9 +94,10 @@ export const MODELS = [
     reasoning: ["low", "medium", "high"],
   },
   {
-    id: "MichelRosselli/bonsai-27b",
-    label: "Bonsai 27B",
-    blurb: "Runs on this Mac, and the written answer is free",
+    // Ollama name. Small vision model (about 2 billion parameters) that runs on this Mac.
+    id: "bonsai-2:2b",
+    label: "Bonsai 2",
+    blurb: "Small model on this Mac. The written answer is free",
     local: true,
     hears: false,
     inputPerMillion: 0,
@@ -141,62 +106,19 @@ export const MODELS = [
     reasoning: ["none", "low", "medium", "high"],
   },
   {
+    // Ollama name. Already installed on this Mac. The written answer is free.
     id: "gpt-oss:20b",
     label: "GPT-OSS 20B",
     blurb: "Runs on this Mac, and the written answer is free",
     local: true,
     hears: false,
-    // No token cap. The model stops when the answer is finished.
+    // No length cap. The model stops when the answer is finished.
     uncapped: true,
     inputPerMillion: 0,
     cachedInputPerMillion: 0,
     outputPerMillion: 0,
-    // No "none": Ollama ignores think:false for GPT-OSS, so Low is its least thinking.
+    // Ollama will not turn thinking fully off for this model, so Low is the least it can do.
     reasoning: ["low", "medium", "high"],
-  },
-  {
-    id: "gemma4:12b-mlx",
-    label: "Gemma 4 12B",
-    blurb: "Runs on this Mac, and the written answer is free",
-    local: true,
-    hears: false,
-    inputPerMillion: 0,
-    cachedInputPerMillion: 0,
-    outputPerMillion: 0,
-    reasoning: ["none", "low", "medium", "high"],
-  },
-  {
-    id: "gemma4:e4b-mlx",
-    label: "Gemma 4 E4B",
-    blurb: "Smaller Gemma 4. Runs on this Mac, and the written answer is free",
-    local: true,
-    hears: false,
-    inputPerMillion: 0,
-    cachedInputPerMillion: 0,
-    outputPerMillion: 0,
-    reasoning: ["none", "low", "medium", "high"],
-  },
-  {
-    id: "gemma4:e2b-mlx",
-    label: "Gemma 4 E2B",
-    blurb: "Smallest Gemma 4. Runs on this Mac, and the written answer is free",
-    local: true,
-    hears: false,
-    inputPerMillion: 0,
-    cachedInputPerMillion: 0,
-    outputPerMillion: 0,
-    reasoning: ["none", "low", "medium", "high"],
-  },
-  {
-    id: "qwen3.8:27b-mlx",
-    label: "Qwen 3.8 27B",
-    blurb: "Runs on this Mac, and the written answer is free",
-    local: true,
-    hears: false,
-    inputPerMillion: 0,
-    cachedInputPerMillion: 0,
-    outputPerMillion: 0,
-    reasoning: ["none", "low", "medium", "high"],
   },
 ];
 

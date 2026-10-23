@@ -49,6 +49,7 @@ async fn plan_helpers_and_streamed_answer() {
         effort: Some("low".into()),
         dirs: vec![dir.clone()],
         workspace: None,
+        zotero: false,
     };
     team::run(req, tx).await;
     let mut events = Vec::new();

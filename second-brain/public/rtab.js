@@ -389,6 +389,10 @@ ${parts.join("\n")}
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Could not save the export.");
       status(data.cancelled ? "Export cancelled." : `Saved ${data.path}`);
+      if (!data.cancelled && data.path) {
+        const name = String(data.path).split("/").pop();
+        if (name) noteChatFile({ name, title: name, summary: "An R export saved from this chat.", made: true });
+      }
     } catch (err) {
       status(err.message);
     }
@@ -469,9 +473,11 @@ ${parts.join("\n")}
     window.brainWord?.close();
     window.brainSlides?.close();
     window.brainPhoto?.close();
+    window.brainMovie?.close();
     window.brainCalendar?.close();
     window.brainStickies?.close();
     window.brainPlans?.close();
+    window.brainScreen?.close();
     show(true);
   }
 

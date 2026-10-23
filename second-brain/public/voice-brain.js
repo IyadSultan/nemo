@@ -25,6 +25,136 @@ function steerIntent(question) {
   return "";
 }
 
+// Every verse file that is open, so a new question can stop all of them.
+let reciterAudios = [];
+let reciterToken = 0;
+
+function stopReciter() {
+  reciterToken += 1;
+  const audios = reciterAudios;
+  reciterAudios = [];
+  for (const audio of audios) {
+    audio.onended = null;
+    audio.onerror = null;
+    audio.ontimeupdate = null;
+    try {
+      audio.pause();
+    } catch (err) {
+      console.error("Failed while stopping the recitation:", err);
+    }
+  }
+}
+
+/** A click starts the recording when the window will not play it on its own. */
+function offerReciterButton(bubble, urls) {
+  if (!bubble || bubble.querySelector(".quran-play")) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost-btn small quran-play";
+  button.textContent = "Play the recitation";
+  button.addEventListener("click", () => {
+    button.disabled = true;
+    playReciter(urls, bubble).finally(() => {
+      button.disabled = false;
+    });
+  });
+  bubble.append(button);
+}
+
+/** Get the next verse file ready before this one finishes. */
+function warmReciter(audio) {
+  if (!audio || audio.dataset.warm === "1") return;
+  audio.dataset.warm = "1";
+  audio.preload = "auto";
+  if (!audio.src) audio.src = audio.dataset.verse || "";
+  try {
+    audio.load();
+  } catch (err) {
+    console.error("Failed while preparing the next verse:", err);
+  }
+}
+
+/**
+ * Play Yasir al-Adusari's verses one after another.
+ * The next verse starts just before this file's ending silence, so the gap stays short.
+ * Only a couple of files are downloaded ahead, even for a long surah.
+ */
+function playReciter(urls, bubble) {
+  stopReciter();
+  const token = reciterToken;
+  let failed = 0;
+  const prepared = urls.map((url) => {
+    const audio = new Audio();
+    audio.preload = "none";
+    audio.dataset.verse = url;
+    return audio;
+  });
+  reciterAudios = prepared;
+  warmReciter(prepared[0]);
+  warmReciter(prepared[1]);
+  return new Promise((resolve) => {
+    let index = 0;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (failed >= urls.length && urls.length) {
+        setStatus("The recitation could not be played.");
+        offerReciterButton(bubble, urls);
+      }
+      resolve();
+    };
+    const step = () => {
+      if (token !== reciterToken || finished) {
+        finish();
+        return;
+      }
+      if (index >= prepared.length) {
+        finish();
+        return;
+      }
+      const audio = prepared[index];
+      index += 1;
+      warmReciter(prepared[index]);
+      warmReciter(prepared[index + 1]);
+      let handed = false;
+      const goNext = () => {
+        if (handed || token !== reciterToken) return;
+        handed = true;
+        step();
+      };
+      // The last verse plays out. Earlier verses hand off during the short tail.
+      audio.ontimeupdate = () => {
+        if (index >= prepared.length) return;
+        if (!audio.duration || !Number.isFinite(audio.duration)) return;
+        if (audio.duration - audio.currentTime <= 0.2) goNext();
+      };
+      audio.onended = () => goNext();
+      audio.onerror = () => {
+        console.error("Failed while playing this verse recording:", audio.dataset.verse || audio.src);
+        failed += 1;
+        goNext();
+      };
+      setStatus("Yasir al-Adusari is reciting…");
+      setCapsuleState("speaking");
+      audio.play().catch((err) => {
+        console.error("Failed while starting the recitation:", err);
+        if (token !== reciterToken) return;
+        offerReciterButton(bubble, urls);
+        stopReciter();
+        finish();
+      });
+    };
+    try {
+      step();
+    } catch (err) {
+      console.error("Failed while playing the recitation:", err);
+      offerReciterButton(bubble, urls);
+      finish();
+    }
+  });
+}
+
 /**
  * Stop the answer that is running. A follow-up starts again from the words already written.
  * Minutes and talk summaries are not steered (liveQuestion is empty while they are written).
@@ -51,6 +181,64 @@ function steerWhileBusy(question) {
 }
 
 /** Bonsai and GPT-6 write the answer. Voice control is what speaks it. */
+/** One spoken sentence for a failed answer, with the reason when we have one. */
+function failureLine(err) {
+  const reason = String(err?.message || "The selected model could not answer.").replace(/\s+/g, " ").trim();
+  if (/^I could not\b/i.test(reason)) return reason;
+  return reason ? `I could not do that. ${reason}` : "I could not do that.";
+}
+
+/**
+ * Leave the failure in the chat and read it aloud.
+ * A quiet summary stays on screen only. Stopping the answer skips the voice.
+ */
+async function showFailedAnswer(bubble, line, opts) {
+  const quiet = Boolean(opts?.quiet);
+  const macOnly = Boolean(opts?.macOnly);
+  let voice = opts?.speech || null;
+  bubble.classList.remove("partial");
+  const body = bubble.querySelector(".text");
+  if (body) {
+    const already = body.textContent.trim();
+    if (!already) body.textContent = line;
+    else if (!already.endsWith(line)) body.append(document.createTextNode(`\n\n${line}`));
+  }
+  followTranscript();
+  setStatus(line);
+  const settle = () => {
+    if (cancelAnswer || localStop) return;
+    setCapsuleState(connected ? "listening" : "idle");
+    setStatus(line);
+  };
+  if (quiet || cancelAnswer) {
+    settle();
+    return;
+  }
+  clearThinkCue();
+  // Reuse the voice that was already speaking. Otherwise open the same voice a normal answer would use.
+  if (!voice) {
+    try {
+      if (!voiceBlocked && !macOnly && !voxtralMouth()) voice = speakStream(await ensureSpeaker());
+    } catch (err) {
+      console.error("Failed while opening the voice for a failure, using the voice on this Mac:", err);
+      voice = null;
+    }
+    voice ??= (voxtralMouth() || macOnly || voiceBlocked) ? kokoroVoice() : macVoice("Speaking with the Mac voice.");
+    activeSpeech = voice;
+  }
+  setCapsuleState("speaking");
+  try {
+    voice.push(forSpeech(line));
+    voice.end();
+    await voice.done;
+  } catch (err) {
+    console.error("Failed while speaking a failure:", err);
+  } finally {
+    if (activeSpeech === voice) activeSpeech = null;
+  }
+  settle();
+}
+
 async function answerWithBrain(question, extras) {
   const writingMinutes = Boolean(extras?.summarizeMeeting);
   const writingLecture = Boolean(extras?.summarizeLecture);
@@ -68,12 +256,14 @@ async function answerWithBrain(question, extras) {
   if (!writingNotes && window.brainWord?.command(question)) return;
   if (!writingNotes && window.brainSlides?.command(question)) return;
   if (!writingNotes && window.brainR?.command(question)) return;
+  if (!writingNotes && window.brainMovie?.handle(question)) return;
   if (!writingNotes && window.brainPhoto?.ask(question)) return;
   if (!writingNotes && window.brainPhoto?.command(question)) return;
   if (!writingNotes && runStickiesAsk(question)) return;
   if (!writingNotes && runCalendarAsk(question)) return;
   if (!writingNotes && runTerminalAsk(question)) return;
   if (!writingNotes && runFanAsk(question)) return;
+  if (!writingNotes && window.brainScreen?.handle(question)) return;
   const tinyMove = writingNotes ? "" : playTinyMove(question);
   if (!connected) setBusy(true);
   compressAbort?.abort();
@@ -90,6 +280,8 @@ async function answerWithBrain(question, extras) {
   if (micStream && !muted) watchWhileAnswering(micStream);
   setStatus(`Thinking with ${selectedModel()?.label || "the selected model"}…`);
   setCapsuleState("thinking");
+  // Brain the pet treats this as "you asked": a one-second celebration.
+  window.dispatchEvent(new CustomEvent("brain-pet", { detail: { kind: "sent" } }));
   // Local models (Bonsai) always use the Kokoro voice on this Mac: free, no OpenAI.
   // A quiet summary never opens a voice, so nothing is read aloud.
   const macOnly = Boolean(selectedModel()?.local);
@@ -123,9 +315,12 @@ async function answerWithBrain(question, extras) {
         presenter: extras?.presenter || "",
         title: extras?.title || "",
         photo: writingNotes ? "" : photoForQuestion(question),
+        files: chatFiles,
         qaPdfs: writingNotes ? [] : window.brainPdfEdit?.qaIds() || [],
         tinyMove,
         skill: activeSkillId,
+        // The Browser tab is open: this is an order for the browser.
+        browserTab: Boolean(window.brainBrowser?.open),
         model: modelSelect.value,
         reasoning: reasoningSelect.value,
         spoken: true,
@@ -150,6 +345,8 @@ async function answerWithBrain(question, extras) {
     let buffer = "";
     let unspoken = "";
     let heardCue = false;
+    // Set when this answer is a recording, so the English voice stays quiet.
+    let reciterUrls = null;
     const speakReady = async (force) => {
       while (unspoken.trim()) {
         const cut = force ? unspoken.length : sentenceCut(unspoken, speech ? 200 : 40);
@@ -204,6 +401,8 @@ async function answerWithBrain(question, extras) {
           if (/look|search/i.test(event.message || "Looking")) setActivity("searching");
         } else if (event.type === "work" && event.card) {
           showFlash(event.card);
+        } else if (event.type === "quran" && Array.isArray(event.urls)) {
+          reciterUrls = event.urls.filter((url) => typeof url === "string" && url.startsWith("https://everyayah.com/"));
         } else if (event.type === "sources") {
           if (event.sources?.length) setActivity("searching");
         } else if (event.type === "outlook") {
@@ -225,10 +424,22 @@ async function answerWithBrain(question, extras) {
           pdfMade = event;
           bubble ??= addBubble("assistant", "", true);
           attachPdf(bubble, event);
+          noteChatFile({
+            name: event.name || "document.pdf",
+            title: event.name || "document.pdf",
+            summary: "A PDF made in this chat.",
+            made: true,
+          });
         } else if (event.type === "deck" && event.id) {
           // The server saved a deck. Show its first slide with Present and PowerPoint buttons.
           bubble ??= addBubble("assistant", "", true);
           window.brainDeck?.attach(bubble, event);
+          noteChatFile({
+            name: event.title || "slides",
+            title: event.title || "slides",
+            summary: "A slide deck made in this chat.",
+            made: true,
+          });
         } else if (event.type === "skill") {
           // The server grabbed a skill, or put one away. One the brain chose
           // by itself (auto) is used for this answer only.
@@ -266,7 +477,7 @@ async function answerWithBrain(question, extras) {
         }
         else if (event.type === "error") throw new Error(event.message || "The selected model failed.");
       }
-      if (!quietNotes) await speakReady(false);
+      if (!quietNotes && !reciterUrls) await speakReady(false);
     }
 
     if (cancelAnswer) {
@@ -306,8 +517,13 @@ async function answerWithBrain(question, extras) {
     }
     rememberTurn(question, answer);
     remembered = true;
+    // The bubble shows the answer. A "shipped" line also gets a proud hop.
+    window.dispatchEvent(new CustomEvent("brain-pet", { detail: { kind: "reply", text: spoken || written } }));
     compressWhileSpeaking();
-    if (!quietNotes) {
+    if (!quietNotes && reciterUrls?.length) {
+      unspoken = "";
+      await playReciter(reciterUrls, bubble);
+    } else if (!quietNotes) {
       await speakReady(true);
       speech?.end();
       await speech?.done;
@@ -334,15 +550,19 @@ async function answerWithBrain(question, extras) {
         : "Type another question, or press Start talking.");
     }
   } catch (err) {
-    speech?.stop();
     if (err?.name === "AbortError") {
+      speech?.stop();
+      stopReciter();
       answer = rawAnswer.trim();
       return;
     }
     console.error("Failed while asking the selected model:", err);
-    bubble?.classList.remove("partial");
-    setStatus(err.message || "The selected model could not answer.");
+    window.dispatchEvent(new CustomEvent("brain-pet", { detail: { kind: "fail" } }));
+    const line = failureLine(err);
+    answer = rawAnswer.trim() ? `${rawAnswer.trim()}\n\n${line}` : line;
+    bubble ??= addBubble("assistant", "", false);
     scriptedReply = false;
+    await showFailedAnswer(bubble, line, { quiet: quietNotes, macOnly, speech });
   } finally {
     clearThinkCue();
     if (capsule.dataset.activity !== "saved") setActivity("");
@@ -508,6 +728,53 @@ function endPointerScroll() {
   userScrollTimer = setTimeout(releaseRecapIfIdle, USER_SCROLL_MS);
 }
 
+/**
+ * Remember a file in this conversation and show it in the transcript.
+ * made is true when the chat created the file. Otherwise the user added it.
+ * quiet means the name is shown, but it is not written into the chat history yet.
+ */
+function noteChatFile(file) {
+  const name = String(file?.name || "").replace(/[\r\n]/g, " ").trim();
+  if (!name) return;
+  const entry = {
+    name,
+    title: String(file.title || "").replace(/[\r\n]/g, " ").trim(),
+    summary: String(file.summary || "").trim(),
+    wiki: String(file.wiki || "").trim(),
+    made: file.made === true,
+  };
+  chatFiles = chatFiles.filter((item) => item.name !== entry.name);
+  chatFiles.push(entry);
+  if (chatFiles.length > 8) chatFiles = chatFiles.slice(-8);
+  let bubble = [...document.querySelectorAll(".bubble.file")].find((item) => item.dataset.file === entry.name);
+  if (!bubble) {
+    bubble = addBubble("file", "");
+    bubble.dataset.file = entry.name;
+  }
+  const body = bubble.querySelector(".text");
+  body.textContent = "";
+  const line = document.createElement("div");
+  line.className = "file-name";
+  line.textContent = entry.made ? `Made ${entry.name}` : `Added ${entry.name}`;
+  body.append(line);
+  if (entry.title && entry.title !== entry.name) {
+    const title = document.createElement("div");
+    title.textContent = entry.title;
+    body.append(title);
+  }
+  if (entry.summary) {
+    const sum = document.createElement("div");
+    sum.className = "file-summary";
+    sum.textContent = entry.summary;
+    body.append(sum);
+  }
+  if (file.quiet) return;
+  rememberTurn(
+    entry.made ? `A file was made in this chat: "${entry.name}".` : `I added the file "${entry.name}" to this conversation.`,
+    [entry.title, entry.summary].filter(Boolean).join(". ") || entry.name,
+  );
+}
+
 function addBubble(role, text, partial) {
   clearEmptyHint();
   const bubble = document.createElement("article");
@@ -519,6 +786,7 @@ function addBubble(role, text, partial) {
     : role === "meeting" ? "Meeting"
     : role === "lecture" ? "Lecture"
     : role === "recap" ? "Recap"
+    : role === "file" ? "File"
     : "Brain";
   const body = document.createElement("div");
   body.className = "text";
@@ -841,11 +1109,16 @@ async function openAgentTerminal(bubble) {
  * One at a time, after the brain stops talking. Quiet while a meeting or lecture is written down.
  */
 let agentSpeech = Promise.resolve();
+// Cmd+Opt+S bumps this, so the line playing stops and the queued ones are dropped.
+let agentSpeechGen = 0;
+let agentAudio = null;
+let agentAudioDone = null;
 function sayAgentDone(name, text, bubble) {
   const line = forSpeech(`${name} finished. ${String(text || "").replace(/\[REDACTED-DIGITS\]/g, "a number")}`);
+  const gen = agentSpeechGen;
   agentSpeech = agentSpeech.then(async () => {
     while (brainBusy) await sleep(200);
-    if (meetingOn || !bubble?.isConnected) return;
+    if (gen !== agentSpeechGen || meetingOn || !bubble?.isConnected) return;
     // The mouth stays open and shut for the whole spoken line.
     // On a folded card, the face you can see is the one that talks.
     const group = bubble.closest(".agent-group");
@@ -861,18 +1134,25 @@ function sayAgentDone(name, text, bubble) {
           : { text: line, voice: localStorage.getItem("voice:kokoro") || "af_heart" }),
       });
       if (!response.ok) throw new Error(`${useVoxtral ? "Voxtral" : "Kokoro"} returned ${response.status}`);
-      const url = URL.createObjectURL(await response.blob());
+      const blob = await response.blob();
+      if (gen !== agentSpeechGen) return;
+      const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
+      agentAudio = audio;
       try {
         await new Promise((resolve) => {
+          agentAudioDone = resolve;
           audio.onended = resolve;
           audio.onerror = resolve;
           audio.play().catch(resolve);
         });
       } finally {
+        agentAudio = null;
+        agentAudioDone = null;
         URL.revokeObjectURL(url);
       }
     } catch (err) {
+      if (gen !== agentSpeechGen) return;
       console.error(`Failed while speaking an agent's summary with ${useVoxtral ? "Voxtral" : "Kokoro"}, using the Mac voice:`, err);
       await new Promise((resolve) => {
         const utterance = new SpeechSynthesisUtterance(line);
@@ -885,6 +1165,14 @@ function sayAgentDone(name, text, bubble) {
       group?.classList.remove("is-talking");
     }
   }).catch((err) => console.error("Failed while speaking an agent's summary:", err));
+}
+
+/** Silence the agent summary playing now, and drop the ones waiting their turn. */
+function stopAgentSpeech() {
+  agentSpeechGen += 1;
+  agentAudio?.pause();
+  agentAudioDone?.();
+  speechSynthesis.cancel();
 }
 
 function showAgentVisit(data) {

@@ -302,6 +302,7 @@ function stopSpeaking() {
   activeSpeech?.stop();
   kokoroSpeech?.stop();
   speechSynthesis.cancel();
+  if (typeof stopReciter === "function") stopReciter();
   silenceGeminiTurn();
   try { remoteAudio.pause(); } catch { /* nothing is playing */ }
   if (dc && dc.readyState === "open") {
@@ -333,7 +334,7 @@ function listenForNewQuestion() {
       setStatus("Type the presenter's name and edit the title, then press Write summary.");
       setCapsuleState(muted ? "muted" : "listening");
     } else {
-      setStatus(medicalListening() ? "Stopped. Keep talking. Only a real question goes to the brain." : "Say Hey, or press Command and Control together, then your new question.");
+      setStatus(directListening() ? "Stopped. Keep talking. Every sentence goes to the chat." : waitListening() ? "Waiting. I am writing this down. Say Talk when you want me to answer." : medicalListening() ? "Stopped. Keep talking. Only a real question goes to the brain." : "Say Hey, or press Command and Control together, then your new question.");
       setCapsuleState(muted ? "muted" : "listening");
     }
   } else {
@@ -354,7 +355,14 @@ function stopAnswer() {
   listenForNewQuestion();
 }
 
-// Cmd+Opt+S stops the answer. Option changes e.key (to "ß"), so match the physical key.
+/** Cmd+Opt+S: everyone stops talking, the answer, a notice, and any agent reading its summary. */
+function stopAllTalking() {
+  stopAgentSpeech();
+  if (connected || brainBusy) listenForNewQuestion();
+  else stopSpeaking();
+}
+
+// Cmd+Opt+S stops everyone talking. Option changes e.key (to "ß"), so match the physical key.
 // Command and Control together starts listening, the same as saying Hey.
 // A letter pressed while both are held is a different shortcut, so it does not listen.
 function isCommandOrControl(code) {
@@ -364,7 +372,7 @@ function isCommandOrControl(code) {
 document.addEventListener("keydown", (event) => {
   if (event.metaKey && event.altKey && event.code === "KeyS" && !event.repeat) {
     event.preventDefault();
-    stopAnswer();
+    stopAllTalking();
     return;
   }
   const cleanChord = event.metaKey && event.ctrlKey && !event.altKey && !event.shiftKey;
@@ -422,7 +430,7 @@ function wakeFromKeyboard() {
 
 // The same shortcuts from any app: Hammerspoon posts here, the server passes them on.
 const control = new EventSource("/control");
-control.addEventListener("stop", stopAnswer);
+control.addEventListener("stop", stopAllTalking);
 control.addEventListener("listen", wakeFromKeyboard);
 /** Read a notice aloud when the page is quiet (a briefing, a reminder, a page change). */
 async function speakNotice(text) {
@@ -447,7 +455,18 @@ control.addEventListener("job", (event) => {
   loadDesk();
 });
 control.addEventListener("desk", () => loadDesk());
-control.addEventListener("plans", () => window.brainPlans?.refresh());
+control.addEventListener("plans", (event) => {
+  let data = {};
+  try {
+    data = JSON.parse(event.data || "{}");
+  } catch (err) {
+    console.error("Failed while reading a plans notice:", err);
+  }
+  if (data.clearAsk) window.brainPlans?.clearCalendarAsk();
+  if (data.ask) window.brainPlans?.showCalendarAsk(data.ask);
+  // A yes or a no only hides the question. Reloading here would wipe the sentence just shown.
+  if (!data.clearAsk) window.brainPlans?.refresh();
+});
 
 // A typed question skips the wake phrase. Use it when the mic or dictation fails.
 typeForm.addEventListener("submit", (event) => {
@@ -562,9 +581,11 @@ async function askTyped(raw) {
   questionEndedAt = performance.now();
 
   // Gemini Live takes typed words on the same line.
-  if (gemini?.ready) {
+  // A Quran recitation still goes to the installed text, not to Gemini.
+  if (gemini?.ready && !wantsQuranAsk(question)) {
     stopGeminiAudio();
     addBubble("user", question, false);
+    window.dispatchEvent(new CustomEvent("brain-pet", { detail: { kind: "sent" } }));
     gemini.ws.send(JSON.stringify({ realtimeInput: { text: question } }));
     return;
   }
@@ -665,6 +686,7 @@ function clearTranscript() {
   assistantPartialEl = null;
   userPartialEl = null;
   chatTurns = [];
+  chatFiles = [];
   chatMemory = "";
   savedMeeting = "";
   savedNotesKind = "";
@@ -677,6 +699,8 @@ function clearTranscript() {
 
 let chosenModelId = "";
 let chatTurns = [];
+// Files added with the paperclip, and files this chat made. Sent with every question.
+let chatFiles = [];
 let chatMemory = "";
 let compressAbort = null;
 let compressGen = 0;
@@ -753,11 +777,13 @@ async function startCall() {
 
   // Medical speech stays on this Mac. It never opens Gemini Live.
   // GPT-OSS 20B writes the transcript. The model you picked answers only a real question.
-  if (medicalListening()) {
+  // Direct also stays on this Mac: whisper writes each sentence and the chat answers it.
+  // Wait does the same, but stays quiet until the user says Talk.
+  if (medicalListening() || directListening() || waitListening()) {
     try {
       await startLocalListen();
     } catch (err) {
-      console.error("Failed while starting medical listening:", err);
+      console.error("Failed while starting local listening on this Mac:", err);
       await failStart(err);
     }
     return;

@@ -9,6 +9,8 @@
 async function startLocalListen() {
   localStop = false;
   localEars = true;
+  // A new call does not answer sentences left over from an earlier Wait.
+  clearWaitLines();
   micStream = await ensureMic();
   connected = true;
   voiceSelect.disabled = true;
@@ -178,10 +180,36 @@ async function startLocalListen() {
       setCapsuleState("listening");
       continue;
     }
+    // Wait writes the sentence down and does not answer. "Talk" leaves Wait and becomes Direct.
+    if (waitListening()) {
+      if (keepWaitLine(text) === "talk") {
+        const said = leaveWaitForDirect();
+        if (!said) {
+          clearThinkCue();
+          setStatus(listenStatus());
+          setCapsuleState("listening");
+          continue;
+        }
+        addBubble("user", said, false);
+        await answerWithBrain(said);
+        continue;
+      }
+      clearThinkCue();
+      const heard = addBubble("note", text, false);
+      heard.querySelector(".who").textContent = "Heard";
+      setStatus("Waiting. I am writing this down. Say Talk when you want me to answer.");
+      setCapsuleState("listening");
+      continue;
+    }
     // Two whispers: show both lines before anything else happens to the words.
     if (earsSelect.value === "whisper-both") {
       const heard = addBubble("note", text, false);
       heard.querySelector(".who").textContent = "Heard";
+    }
+    if (directListening()) {
+      addBubble("user", text, false);
+      await answerWithBrain(text);
+      continue;
     }
     if (medicalListening()) {
       const cleaned = await medicalTurn({ text, at: performance.now() });

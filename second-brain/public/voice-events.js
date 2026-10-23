@@ -254,6 +254,11 @@ function handleServerEvent(event) {
       if (runCalendarAsk(question)) return;
       if (runTerminalAsk(question)) return;
       if (runFanAsk(question)) return;
+      // The live voice would make up verses. The installed Quran text answers this.
+      if (wantsQuranAsk(question)) {
+        answerWithBrain(question);
+        return;
+      }
       playTinyMove(question);
       sendEvent({ type: "response.create" });
     }

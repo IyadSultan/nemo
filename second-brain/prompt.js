@@ -10,6 +10,7 @@ import { isVaultQuestion, wantsEmail, wantsFile, wantsNews } from "./intents.js"
 import { learningsBlock } from "./learnings.js";
 import { replyDraftNote, sendDraftNote } from "./mail.js";
 import { noteBody } from "./notes.js";
+import { wantsPubmed } from "./pubmed.js";
 import { hereAndNow } from "./spoken.js";
 import { selected } from "./state.js";
 import fs from "node:fs";
@@ -54,7 +55,7 @@ export function appManualPrompt(question, history = [], memory = "") {
   ].filter(Boolean).join("\n\n");
 }
 
-export function buildPrompt(question, hits, pages = [], history = [], memory = "", meetingNotes = "", notesKind = "") {
+export function buildPrompt(question, hits, pages = [], history = [], memory = "", meetingNotes = "", notesKind = "", files = []) {
   const learned = brainBlock();
   const today = todayBlock();
   // A brain.md day, or a call already in today's block, is not repeated as a note.
@@ -76,6 +77,11 @@ export function buildPrompt(question, hits, pages = [], history = [], memory = "
     : hits.memoJob === "recent" || hits.memoJob === "all"
       ? `These are the user's own memos. The first sentence must be: ${hits.sayThis || "You have no memos."} Then say each memo in clearer words, one short sentence each, newest first. Say the date that is on the Date line, in those words. Do not say the word Saved. Do not add facts that are not there. Do not mention a file name. If there are no memos below, stop after that first sentence.`
       : "";
+  const pubmedNote = wantsPubmed(question)
+    ? pages.length
+      ? "The user asked to search PubMed. The pages that start with PubMed: are the articles it found. Answer from them: name each article's first author, year and main finding in one short sentence. Do not invent articles or numbers that are not there."
+      : "The user asked to search PubMed, but the search found nothing or PubMed did not answer. Say so in one sentence and suggest a different search term."
+    : "";
   const newsNote = wantsNews(question)
     ? "The user wants today's news. Summarize three or four headlines from the web pages in plain sentences. Do not ask which topic."
     : "";
@@ -147,6 +153,8 @@ export function buildPrompt(question, hits, pages = [], history = [], memory = "
     "Notes:",
     blocks.length ? blocks.join("\n\n---\n\n") : "(no notes matched the words in this question)",
     "",
+    conversationFilesBlock(files),
+    "",
     "Web pages:",
     webBlocks.length ? webBlocks.join("\n\n---\n\n") : "(no web pages were looked up)",
     "",
@@ -154,6 +162,7 @@ export function buildPrompt(question, hits, pages = [], history = [], memory = "
     "Reminder: if you can tell what the user wants, answer it, even if the wording is clumsy.",
     "Ask one short clarifying question only when there is no topic, for example a noise or 'can you hear me'.",
     newsNote,
+    pubmedNote,
     memoNote,
     vaultNote,
     chatNote,
@@ -177,6 +186,86 @@ export function cleanMemory(raw) {
   return typeof raw === "string" ? raw.trim().slice(0, 2000) : "";
 }
 
+/**
+ * Files the user added with the paperclip, or files this chat made (a PDF, a deck, a Word file).
+ * A file with no name is dropped. Only the latest few are kept.
+ */
+export function cleanChatFiles(raw) {
+  if (!Array.isArray(raw)) return [];
+  const files = [];
+  for (const item of raw) {
+    const name = typeof item?.name === "string" ? item.name.replace(/[\r\n]/g, " ").trim().slice(0, 180) : "";
+    if (!name) continue;
+    files.push({
+      name,
+      title: typeof item?.title === "string" ? item.title.replace(/[\r\n]/g, " ").trim().slice(0, 180) : "",
+      summary: typeof item?.summary === "string" ? item.summary.replace(/\s+/g, " ").trim().slice(0, 1200) : "",
+      wiki: typeof item?.wiki === "string" ? item.wiki.trim().slice(0, 500) : "",
+      made: item?.made === true,
+    });
+  }
+  return files.slice(-8);
+}
+
+/**
+ * True when the question is about a file already in this chat, not a search of the notes.
+ * "What is this document about? I just uploaded it" counts. "Find the ketamine paper" does not.
+ */
+export function asksAboutChatFile(question) {
+  const q = String(question || "").toLowerCase();
+  if (/\b(this|that)\s+(document|file|pdf|paper|deck|slides?|presentation)\b/.test(q)) return true;
+  if (/\b(just\s+)?(uploaded|attached)\b/.test(q)) return true;
+  if (/\b(the|this)\s+(file|document|pdf|deck|slides)\s+(i|you)\s+(just\s+)?(made|saved|wrote|uploaded|added|attached)\b/.test(q)) return true;
+  if (/\b(i|you)\s+(just\s+)?(made|saved|wrote|uploaded|added|attached)\s+(this|that|the|a|an)?\s*(file|document|pdf|deck|slides)\b/.test(q)) return true;
+  return false;
+}
+
+/** The words the model sees for the files in this chat. Empty when there are none. */
+export function conversationFilesBlock(files) {
+  if (!files?.length) return "";
+  const lines = files.map((file) => {
+    const kind = file.made ? "Made in this chat" : "Added to this chat";
+    const title = file.title && file.title !== file.name ? ` — ${file.title}` : "";
+    const summary = file.summary ? `\n${file.summary}` : "";
+    const text = file.text ? `\nText from the file:\n${file.text}` : "";
+    return `- ${kind}: ${file.name}${title}${summary}${text}`;
+  });
+  return [
+    "Files in this conversation:",
+    ...lines,
+    "The newest file is the current document. If the user says this document, this file, the file I uploaded, the file you made, or asks what they just added, answer from that file. Its name is the one listed. Do not say the file has no name. Do not answer about a different note.",
+  ].join("\n");
+}
+
+/**
+ * Read the wiki page of the newest file, but only if it sits inside the vault.
+ * A path outside the vault is ignored, so a question cannot pull in some other file.
+ */
+export function withChatFileText(files, root) {
+  if (!files?.length) return [];
+  const base = path.resolve(String(root || ""));
+  return files.map((file, index) => {
+    if (index !== files.length - 1) return file;
+    const text = wikiExcerpt(file.wiki, base);
+    return text ? { ...file, text } : file;
+  });
+}
+
+/** The start of a wiki page, or "" when the path is missing, outside the vault, or unreadable. */
+export function wikiExcerpt(wikiPath, root) {
+  const wiki = String(wikiPath || "");
+  if (!wiki.toLowerCase().endsWith(".md")) return "";
+  const full = path.resolve(wiki);
+  const base = path.resolve(String(root || ""));
+  if (!base || (full !== base && !full.startsWith(base + path.sep))) return "";
+  try {
+    return fs.readFileSync(full, "utf8").slice(0, 3500);
+  } catch (err) {
+    console.error("Failed while reading a conversation file:", err?.code || "");
+    return "";
+  }
+}
+
 // Short map of CLAUDE.md, the vault's operating manual.
 // The full manual is long. This is the part the model needs to find files.
 export const BRAIN_MAP = [
@@ -198,6 +287,7 @@ export const APP_ABILITIES = [
   "Keep a standing rule for every answer: say from now on, remember, or save a memory, then the rule. That rule also goes on the stickies board with the Claude mark instead of a pin. Say save a sticky or add a sticky for an ordinary note with a pin. List rules and memos: say what are your memories. Remove one: say forget, then what it was about.",
   "Draft an email: say send an email to, then the name and what it says. A draft waits on the page. The user says send it, or presses Open. Outlook opens the draft. The user presses Send. Say don't to drop it.",
   "Put a meeting on the calendar: say schedule a meeting with, then the person, day, and time. It waits until the user says send it. Outlook then opens the event to check and save. Say don't to drop it.",
+  "Save a plan: say add a plan, then the trip or the talk and the day. It is saved with the plans and a text goes out the day before. The app then asks: should I add this to your calendar? The user says yes, or presses Add to calendar. Outlook opens it. The user presses Add. Say no to leave it in the plans only.",
   "Show a web page in the browser: say show me, then the address, such as show me cnn.com. It opens right away. A saved place works the same way: if a memory says go to inotes opens a site, then go to inotes opens that site.",
   "Watch a public web page: say watch, then the address. A change texts the user's phone.",
   "Watch for a person: say tell me when, then the name, then emails. A new saved email from that person texts the phone. Say stop watching email from, then the name, to stop.",

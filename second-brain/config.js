@@ -15,8 +15,8 @@ dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
 export const DEFAULT_MODEL = "claude-opus";
 export const DEFAULT_REASONING = "low";
-// Chat memory is compressed by a local Ollama model, whatever model answers.
-export const MEMORY_MODEL = "gpt-oss:20b";
+// Chat memory is compressed by Claude Sonnet on the subscription, whatever model answers.
+export const MEMORY_MODEL = "claude-sonnet";
 // Same live voice model as Nemo (voice control). It hears the microphone.
 export const VOICE_MODEL = "gpt-realtime-2.1-mini";
 export const LOCAL_VOICE_MODEL = path.join(__dirname, "..", "voice", "models", "ggml-small.en.bin");
@@ -35,7 +35,7 @@ export const KOKORO_PYTHON = "/usr/local/bin/python3.11";
 export const KOKORO_SCRIPT = path.join(__dirname, "..", "voice", "kokoro_server.py");
 export const KOKORO_URL = "http://127.0.0.1:8179";
 export const FFMPEG_BIN = "/opt/homebrew/bin/ffmpeg";
-// Ollama runs local models on this Mac. Bonsai is already installed there.
+// Ollama runs local models on this Mac. Bonsai 2 (bonsai-2:2b) is the local chat model.
 export const OLLAMA_URL = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
 // Meaning search runs next to keyword search. Small local model; ~20 ms per question.
 export const EMBED_MODEL = "embeddinggemma";

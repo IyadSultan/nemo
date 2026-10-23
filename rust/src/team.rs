@@ -59,6 +59,20 @@ const LEAD_TIMEOUT: Duration = Duration::from_secs(300);
 /// Writing and testing code takes longer than reading notes.
 const BUILD_TIMEOUT: Duration = Duration::from_secs(900);
 
+/// Read-only Zotero tools from zotero-mcp (same list as second-brain/models.js), so the library is never changed.
+pub const ZOTERO_TOOLS: &[&str] = &[
+    "search", "fetch", "zotero_search_items", "zotero_advanced_search", "zotero_semantic_search", "zotero_search_by_tag",
+    "zotero_search_by_citation_key", "zotero_search_notes", "zotero_get_recent", "zotero_get_item_metadata",
+    "zotero_get_item_fulltext", "zotero_get_item_children", "zotero_get_annotations", "zotero_get_notes",
+    "zotero_get_collections", "zotero_get_collection_items", "zotero_get_tags",
+];
+
+/// zotero-mcp on Zotero desktop's local API, as an inline `--mcp-config`.
+fn zotero_mcp() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    json!({ "mcpServers": { "zotero": { "command": format!("{home}/.local/bin/zotero-mcp"), "args": ["serve"], "env": { "ZOTERO_LOCAL": "true" } } } }).to_string()
+}
+
 /// Path of the Claude Code program. The server may start without ~/.local/bin on its PATH.
 pub fn claude_bin() -> PathBuf {
     if let Ok(p) = std::env::var("CLAUDE_BIN") {
@@ -97,6 +111,8 @@ pub struct ClaudeCli {
     pub on_log: Option<OnDoing>,
     /// Build mode: it may write files and run commands, only inside this folder.
     pub workspace: Option<PathBuf>,
+    /// It may also read (never change) the Zotero library.
+    pub zotero: bool,
 }
 
 impl ClaudeCli {
@@ -123,14 +139,23 @@ impl ClaudeCli {
         if let Some(e) = &self.effort {
             a.extend(["--effort".into(), e.clone()]);
         }
+        if self.zotero {
+            a.extend(["--mcp-config".into(), zotero_mcp(), "--allowedTools".into()]);
+            a.extend(ZOTERO_TOOLS.iter().map(|t| format!("mcp__zotero__{t}")));
+        }
         a
     }
 
     /// Run one call. Each piece of answer text goes to `on_text`; resolves with the whole text.
-    async fn run(&self, messages: &[ChatMessage], mut on_text: impl FnMut(&str)) -> Result<String, LLMError> {
+    async fn run(&self, messages: &[ChatMessage], on_text: impl FnMut(&str)) -> Result<String, LLMError> {
         let (system, prompt) = split_messages(messages);
+        self.ask(&system, &prompt, on_text).await
+    }
+
+    /// One call with a plain system prompt and prompt (the browser agent uses this).
+    pub async fn ask(&self, system: &str, prompt: &str, mut on_text: impl FnMut(&str)) -> Result<String, LLMError> {
         let mut cmd = tokio::process::Command::new(&self.bin);
-        cmd.args(self.args(&system))
+        cmd.args(self.args(system))
             .current_dir(self.workspace.clone().or_else(|| self.dirs.first().cloned()).unwrap_or_else(std::env::temp_dir))
             // An API key here would bill the API instead of the subscription.
             .env_remove("ANTHROPIC_API_KEY")
@@ -268,6 +293,7 @@ pub fn doing(msg: &Value) -> Option<String> {
         "Read" => format!("Reading {}", base(input["file_path"].as_str().unwrap_or("a file"))),
         "Grep" => format!("Searching for “{}”", short(input["pattern"].as_str().unwrap_or(""))),
         "Glob" => format!("Looking for {}", short(input["pattern"].as_str().unwrap_or("files"))),
+        name if name.starts_with("mcp__zotero__") => "Searching Zotero".into(),
         other => format!("Using {other}"),
     })
 }
@@ -344,6 +370,7 @@ impl ClaudeCli {
             on_doing: self.on_doing.clone(),
             workspace: self.workspace.clone(),
             on_log: self.on_log.clone(),
+            zotero: self.zotero,
         }
     }
 }
@@ -424,6 +451,9 @@ pub struct Request {
     /// Build mode: the folder where code and files are written. Nothing is written elsewhere.
     #[serde(default)]
     pub workspace: Option<PathBuf>,
+    /// The question is about the Zotero library: helpers and the lead may search it.
+    #[serde(default)]
+    pub zotero: bool,
 }
 
 fn default_lead() -> String {
@@ -536,13 +566,14 @@ pub fn final_prompt(prompt: &str, found: &[(String, String, String)], asked: &[S
 pub type Send_ = mpsc::UnboundedSender<Value>;
 
 fn provider(model: &str, dirs: &[PathBuf], effort: Option<String>, timeout: Duration, tokens: &Arc<Mutex<Tokens>>, on_doing: Option<OnDoing>, on_log: Option<OnDoing>) -> Arc<ClaudeCli> {
-    builder_provider(model, dirs, effort, timeout, tokens, on_doing, on_log, None)
+    builder_provider(model, dirs, effort, timeout, tokens, on_doing, on_log, None, false)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn builder_provider(model: &str, dirs: &[PathBuf], effort: Option<String>, timeout: Duration, tokens: &Arc<Mutex<Tokens>>, on_doing: Option<OnDoing>, on_log: Option<OnDoing>, workspace: Option<PathBuf>) -> Arc<ClaudeCli> {
+fn builder_provider(model: &str, dirs: &[PathBuf], effort: Option<String>, timeout: Duration, tokens: &Arc<Mutex<Tokens>>, on_doing: Option<OnDoing>, on_log: Option<OnDoing>, workspace: Option<PathBuf>, zotero: bool) -> Arc<ClaudeCli> {
     Arc::new(ClaudeCli {
         workspace,
+        zotero,
         bin: claude_bin(),
         model: model.into(),
         dirs: dirs.to_vec(),
@@ -573,6 +604,8 @@ pub async fn run(req: Request, tx: Send_) {
     let dirs: Vec<PathBuf> = req.dirs.iter().filter(|d| d.is_dir()).cloned().collect();
     let ws = req.workspace.clone().filter(|w| w.is_dir());
     let building = ws.is_some();
+    let zotero = req.zotero && !building;
+    let zotero_note = if zotero { "\n\nThe helpers can also search the user's Zotero library (papers, references, notes) with the zotero tools." } else { "" };
 
     // 1. Plan.
     send(json!({ "type": "status", "message": "Deciding whether helpers are needed…" }));
@@ -580,7 +613,7 @@ pub async fn run(req: Request, tx: Send_) {
     let planned = if building {
         run_once(BuildPlanner {}, planner, Task::new(req.prompt.clone())).await
     } else {
-        run_once(Planner {}, planner, Task::new(req.prompt.clone())).await
+        run_once(Planner {}, planner, Task::new(format!("{}{zotero_note}", req.prompt))).await
     };
     let plan = match planned {
         Ok(text) => parse_plan(&text),
@@ -615,13 +648,13 @@ pub async fn run(req: Request, tx: Send_) {
                 Arc::new(move |text: String| { let _ = tx.send(json!({ "type": "agent", "id": id, "log": text })); })
             };
             let timeout = if building { BUILD_TIMEOUT } else { HELPER_TIMEOUT };
-            let llm = builder_provider(HELPER_MODEL, &dirs, None, timeout, &tokens, Some(on_doing), Some(on_log.clone()), ws.clone());
+            let llm = builder_provider(HELPER_MODEL, &dirs, None, timeout, &tokens, Some(on_doing), Some(on_log.clone()), ws.clone(), zotero);
             let short = task_text(task);
             let earlier = recall(name)
                 .map(|(t, f)| format!("\n\nEarlier in this chat your job was: {t}\nWhat you found then:\n{f}"))
                 .unwrap_or_default();
             let task = Task::new(format!(
-                "Your name is {name}. Your job: {task}{earlier}\n\nThe user's request and the note excerpts you were given:\n\n{}",
+                "Your name is {name}. Your job: {task}{earlier}{zotero_note}\n\nThe user's request and the note excerpts you were given:\n\n{}",
                 req.prompt
             ));
             let (name, short_task) = (name.clone(), short);
@@ -656,7 +689,7 @@ pub async fn run(req: Request, tx: Send_) {
     if building {
         send(json!({ "type": "status", "message": if crew.is_empty() { "Writing the code…" } else { "Putting the parts together and testing…" } }));
     }
-    let lead = builder_provider(&req.lead_model, &lead_dirs, req.effort.clone(), lead_timeout, &tokens, None, None, ws.clone());
+    let lead = builder_provider(&req.lead_model, &lead_dirs, req.effort.clone(), lead_timeout, &tokens, None, None, ws.clone(), zotero);
     let mut task = Task::new(final_prompt(&req.prompt, &found, &asked, building));
     task.system_prompt = Some(req.system.clone());
     let handle = AgentBuilder::<_, DirectAgent>::new(BasicAgent::new(Lead {}))
@@ -687,7 +720,15 @@ pub async fn run(req: Request, tx: Send_) {
     }
     if let Some(err) = failed {
         eprintln!("Team lead failed: {err}");
-        send(json!({ "type": "error", "message": "The team's lead could not write the answer." }));
+        // The page reads this aloud. Keep the real reason, but only the first short line of it.
+        let why: String = err.split_whitespace().collect::<Vec<_>>().join(" ");
+        let why: String = why.chars().take(180).collect();
+        let message = if why.is_empty() {
+            "The team's lead could not write the answer.".to_string()
+        } else {
+            format!("The team's lead could not write the answer. {why}")
+        };
+        send(json!({ "type": "error", "message": message }));
     }
     let t = *tokens.lock().unwrap();
     send(json!({

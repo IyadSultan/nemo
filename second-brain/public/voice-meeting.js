@@ -323,7 +323,10 @@ async function answerDuringMeeting(question) {
   } catch (err) {
     console.error("Failed while answering during the meeting:", err);
     bubble.classList.remove("partial");
-    text.textContent = err.message || "I could not answer that.";
+    const line = failureLine(err);
+    text.textContent = line;
+    setStatus(line);
+    return;
   }
   setStatus(`Answered on screen. I'm still writing down the ${kind}.`);
 }

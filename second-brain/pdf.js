@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const PDF_DIR = path.join(__dirname, "pdfs");
 const MARKER = "PDF_BODY";
-const CHROME = process.env.CHROME_BIN
+export const CHROME = process.env.CHROME_BIN
   || ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium"]
     .find((p) => fsSync.existsSync(p))
   || "";
@@ -103,7 +103,7 @@ function wholePage(raw) {
   return html;
 }
 
-function runChrome(args, timeoutMs) {
+export function runChrome(args, timeoutMs) {
   return new Promise((resolve, reject) => {
     const child = spawn(CHROME, args, { stdio: ["ignore", "ignore", "pipe"] });
     const timer = setTimeout(() => child.kill(), timeoutMs);

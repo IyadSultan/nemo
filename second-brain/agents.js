@@ -569,6 +569,40 @@ export async function exitAgent({ cwd, place }) {
   return { ok: true, did: "exit" };
 }
 
+/**
+ * Tell every Claude that is open in Terminal to quit, by typing /exit.
+ * One folder is only told once. A Claude inside Cursor is left alone.
+ * The memory warning does not call this: an agent working on code is left running.
+ */
+export async function exitOpenAgents() {
+  const open = await listOpenClaudes();
+  const byFolder = new Map();
+  for (const proc of open) {
+    if (!byFolder.has(proc.cwd)) byFolder.set(proc.cwd, proc);
+  }
+  const exited = [];
+  const failed = [];
+  await Promise.all([...byFolder.values()].map(async (proc) => {
+    const name = agentName(proc.cwd);
+    try {
+      const result = await exitAgent({ cwd: proc.cwd });
+      if (result.ok) {
+        exited.push({ name, cwd: proc.cwd });
+        remember(AGENTS_FILE, `\n## ${stamp()} — ${name} — closed\n\nSummary: Memory was getting full, so it was told to /exit.\n`);
+        tellPage("done", name, `memory-${proc.pid}`, "Memory was getting full, so it was told to exit.", { cwd: proc.cwd, place: "terminal" });
+        console.log(`Exited ${name} because memory was getting full.`);
+      } else if (!result.asleep) {
+        failed.push({ name, cwd: proc.cwd, error: result.error || "It did not exit." });
+        console.error(`Could not exit ${name} while memory was full:`, result.error || "It did not exit.");
+      }
+    } catch (err) {
+      failed.push({ name, cwd: proc.cwd, error: err?.message || "It did not exit." });
+      console.error(`Failed while exiting ${name} because memory was full:`, err?.message || err);
+    }
+  }));
+  return { ok: failed.length === 0, exited, failed };
+}
+
 /** 30 hours with nothing new. Used by the quiet-agent sweep below. */
 export const QUIET_MS = 30 * 60 * 60 * 1000;
 

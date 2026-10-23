@@ -200,13 +200,19 @@ if menu then
     checkHealth()
 end
 
--- Cmd+Opt+S from any app: stop the answer that is playing.
+-- Cmd+Opt+S from any app: everyone stops talking (the answer, agent summaries, notices).
 -- The server passes it to the open voice page (/control).
+-- This binding replaces claude-voice's own Cmd+Opt+S in init.lua, so it stops claude-voice too.
+local CLAUDE_VOICE_PY = os.getenv("HOME") .. "/code/claude-voice/claude_voice.py"
+local CLAUDE_VOICE_PYTHON = "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3"
 if _G.heyMyBrainStopKey then _G.heyMyBrainStopKey:delete() end
 _G.heyMyBrainStopKey = hs.hotkey.bind({ "cmd", "alt" }, "s", function()
     hs.http.asyncPost("http://127.0.0.1:" .. PORT .. "/control/stop", "", nil, function(status)
         if status ~= 200 then hs.alert.show("Voice app is not running.", 2) end
     end)
+    if hs.fs.attributes(CLAUDE_VOICE_PY) and hs.fs.attributes(CLAUDE_VOICE_PYTHON) then
+        hs.task.new(CLAUDE_VOICE_PYTHON, nil, { CLAUDE_VOICE_PY, "stop" }):start()
+    end
 end)
 
 -- Command and Control together, from any app: start listening. Saying Hey still works too.

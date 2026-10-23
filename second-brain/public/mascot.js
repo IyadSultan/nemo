@@ -12,9 +12,11 @@
  * When nothing happens for a while, Tiny does a little idle move now and then.
  * If the character cannot load, the orb stays.
  *
- * Settings > Mascot picks Tiny or the Claude Code critter (the default). The
- * critter is a pixel SVG animated by CSS from the same data-state and
- * data-activity; Tiny's Rive file only loads once Tiny is picked.
+ * Settings > Mascot picks Tiny or a pixel mascot: the Claude Code critter (the
+ * default), a cat, a robot, Brain, or an emoji face. Brain is the pixel pet in
+ * brainpet.js (it celebrates, shows a reply bubble, and dresses for the time
+ * of day). The other pixel mascots are SVGs animated by CSS from the same
+ * data-state and data-activity. Tiny's Rive file only loads once Tiny is picked.
  *
  * The .riv file holds a view model with two enums:
  *   pose            idle, thinking, celebration, hand_wave, bookreading, writing,
@@ -39,23 +41,77 @@
   let lastState = capsule.dataset.state;
   let lastActivity = capsule.dataset.activity || "";
   let tiny = null;
-  let choice = localStorage.getItem("mascot") === "tiny" ? "tiny" : "claude";
+  const CHOICES = ["claude", "cat", "robot", "brain", "emoji", "tiny"];
+  const pick = (value) => (CHOICES.includes(value) ? value : "claude");
+  let choice = pick(localStorage.getItem("mascot"));
 
-  // The Claude Code critter: a square body, two arms, four legs, open eyes, a hidden mouth.
-  if (mark) {
-    mark.setAttribute("viewBox", "20 0 560 470");
-    mark.innerHTML = `<g class="critter">
-      <rect class="arm arm-l" x="35" y="140" width="52" height="105"/>
+  // The pixel mascots. Each uses the same parts (critter, arm, leg, eyes, mouth), so one set of
+  // CSS animations in voice.css moves them all. The Claude Code critter is the default.
+  const legs = (xs, y, w, h) => xs.map((x, i) =>
+    `<rect class="leg" style="--i:${i}" x="${x}" y="${y}" width="${w}" height="${h}"/>`).join("");
+  const eyes = (y, w, h, xs) => `<g class="eyes">${xs.map((x) =>
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}"/>`).join("")}</g>`;
+  const DRAWINGS = {
+    // Square body, two arms, four legs, open eyes, a hidden mouth.
+    claude: `<rect class="arm arm-l" x="35" y="140" width="52" height="105"/>
       <rect class="arm arm-r" x="513" y="140" width="52" height="105"/>
-      ${[85, 180, 370, 465].map((x, i) =>
-        `<rect class="leg" style="--i:${i}" x="${x}" y="340" width="50" height="110"/>`).join("")}
+      ${legs([85, 180, 370, 465], 340, 50, 110)}
       <rect class="body" x="85" y="35" width="430" height="310"/>
-      <g class="eyes">
-        <rect x="160" y="120" width="40" height="80"/>
-        <rect x="400" y="120" width="40" height="80"/>
-      </g>
-      <rect class="mouth" x="270" y="235" width="60" height="40"/>
-    </g>`;
+      ${eyes(120, 40, 80, [160, 400])}
+      <rect class="mouth" x="270" y="235" width="60" height="40"/>`,
+    // The ears wave like arms; the tail flicks while it thinks.
+    cat: `<rect class="tail" x="475" y="60" width="45" height="260"/>
+      <rect class="arm arm-l" x="130" y="40" width="70" height="90"/>
+      <rect class="arm arm-r" x="400" y="40" width="70" height="90"/>
+      ${legs([140, 210, 340, 410], 340, 50, 100)}
+      <rect class="body" x="120" y="110" width="360" height="250"/>
+      ${eyes(170, 40, 60, [200, 360])}
+      <rect class="mouth" x="275" y="260" width="50" height="30"/>`,
+    // The antenna light blinks while it thinks or talks.
+    robot: `<rect x="292" y="20" width="16" height="45"/>
+      <rect class="bulb" x="275" y="0" width="50" height="30"/>
+      <rect class="arm arm-l" x="40" y="150" width="60" height="110"/>
+      <rect class="arm arm-r" x="500" y="150" width="60" height="110"/>
+      ${legs([180, 370], 340, 50, 110)}
+      <rect class="body" x="100" y="55" width="400" height="290"/>
+      ${eyes(130, 70, 60, [170, 360])}
+      <rect class="mouth" x="230" y="240" width="140" height="40"/>`,
+    // Lumpy on top, a fold down the middle, small arms and legs.
+    brain: `<rect class="arm arm-l" x="50" y="170" width="50" height="80"/>
+      <rect class="arm arm-r" x="500" y="170" width="50" height="80"/>
+      ${legs([200, 355], 310, 45, 110)}
+      <rect x="140" y="30" width="100" height="40"/>
+      <rect x="260" y="20" width="100" height="50"/>
+      <rect x="380" y="30" width="90" height="40"/>
+      <rect class="body" x="100" y="60" width="400" height="260"/>
+      <rect class="fold" x="296" y="40" width="8" height="90"/>
+      ${eyes(150, 40, 70, [200, 360])}
+      <rect class="mouth" x="270" y="245" width="60" height="35"/>`,
+    // One emoji; follow() swaps it with the state.
+    emoji: `<text class="face" x="300" y="245" font-size="380" text-anchor="middle"
+      dominant-baseline="central">🙂</text>`,
+  };
+  // The emoji for each state and activity. An activity wins, as with Tiny.
+  const FACES = {
+    idle: "🙂", listening: "😊", muted: "🤐", thinking: "🤔", connecting: "🤔",
+    speaking: "😃", meeting: "🧐", lecture: "🧐",
+    searching: "🔎", writing: "✍️", saved: "🥳", move: "🕺",
+  };
+
+  function draw() {
+    if (!mark || choice === "tiny") return;
+    mark.setAttribute("viewBox", "20 0 560 470");
+    mark.dataset.mascot = choice;
+    mark.innerHTML = `<g class="critter">${DRAWINGS[choice]}</g>`;
+    showFace();
+  }
+
+  function showFace() {
+    const face = choice === "emoji" && mark?.querySelector(".face");
+    if (!face) return;
+    const activity = capsule.dataset.activity || "";
+    face.textContent = FACES[activity.startsWith("move-") ? "move" : activity]
+      || FACES[capsule.dataset.state] || FACES.idle;
   }
 
   // A blink every 4-7 s: the eyes redraw for those few frames only.
@@ -71,8 +127,12 @@
   if (mark) blinkLater();
 
   function applyChoice() {
-    capsule.classList.toggle("is-claude", choice === "claude");
-    if (choice === "claude") {
+    const brainOn = choice === "brain" && window.brainPet?.setOn(true);
+    if (!brainOn) window.brainPet?.setOn(false);
+    capsule.classList.toggle("is-brain", Boolean(brainOn));
+    capsule.classList.toggle("is-claude", choice !== "tiny");
+    if (choice !== "tiny") {
+      if (!brainOn) draw();
       capsule.classList.toggle("has-mascot", Boolean(mark));
       stopMouth();
       tiny?.stopRendering?.();
@@ -90,7 +150,7 @@
   }
 
   select?.addEventListener("change", () => {
-    choice = select.value === "tiny" ? "tiny" : "claude";
+    choice = pick(select.value);
     localStorage.setItem("mascot", choice);
     applyChoice();
   });
@@ -197,6 +257,7 @@
     const activity = capsule.dataset.activity || "";
     if (state === lastState && activity === lastActivity) return;
     if (choice === "tiny") render();
+    else showFace();
     lastState = state;
     lastActivity = activity;
     scheduleIdleMove(8000);

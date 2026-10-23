@@ -23,6 +23,56 @@ function runStickiesAsk(question) {
   return true;
 }
 
+// Spoken surah names, folded the same way as surahNamePattern() in quran.js.
+const QURAN_SURAH_KEYS = "almuddaththir|almutaffifin|adhdhariyat|almumtahana|almunafiqun|almuzzammil|muddaththir|almujadila|attaghabun|almursalat|mutaffifin|alinshiqaq|alghashiya|attakathur|almuminun|ashshuara|alankabut|azzukhruf|aljathiya|alhujurat|mumtahana|munafiqun|muzzammil|alinfitar|albayyina|azzalzala|alkawthar|alkafirun|alfatiha|albaqara|aliimran|alanbiya|alfurqan|assaffat|fussilat|ashshura|addukhan|muhammad|dhariyat|arrahman|mujadila|taghabun|attahrim|almaarij|alqiyama|mursalat|annaziat|attakwir|inshiqaq|ghashiya|ashshams|inshirah|aladiyat|takathur|alhumaza|elephant|alikhlas|opening|fatihat|baqarah|alimran|almaida|alanfal|attawba|ibrahim|muminun|alqasas|ankabut|assajda|alahzab|azzumar|zukhruf|jathiya|alahqaf|hujurat|alqamar|alwaqia|alhadid|alhashr|aljumua|attalaq|alqalam|alhaqqa|alinsan|infitar|alburuj|attariq|albalad|addhuha|ashshar|inshira|bayyina|zalzala|alqaria|quraysh|kawthar|kauthar|kafirun|almasad|alfalaq|mankind|fatiha|baqara|bakara|annisa|alanam|alaraf|tawbah|alhijr|annahl|alisra|alkahf|maryam|anbiya|alhajj|furqan|shuara|annaml|luqman|yassin|saffat|ghafir|dukhan|annajm|rahman|rehman|assaff|tahrim|almulk|maarij|aljinn|qiyama|annaba|naziat|takwir|alfajr|allail|alalaq|alqadr|adiyat|humaza|qurais|qurays|almaun|annasr|ikhlas|imran|maida|anfal|tawba|tauba|yunus|yusuf|arrad|annur|qasas|arrum|sajda|ahzab|fatir|yasin|zumar|shura|ahqaf|alfat|attur|qamar|waqia|hadid|hashr|jumua|talaq|qalam|haqqa|insan|abasa|buruj|tariq|alala|balad|shams|dhuha|attin|qaria|alasr|alfil|masad|lahab|falaq|annas|nisa|anam|araf|hijr|nahl|isra|kahf|cave|mary|taha|hajj|naml|saba|fath|najm|saff|mulk|noah|jinn|naba|fajr|lail|shar|alaq|qadr|maun|nasr|cow|hud|rad|nur|rum|sad|qaf|tur|nuh|ala|tin|asr|fil|nas";
+
+/** "Al-Baqarah" and "Baqara" become the same letters. */
+function foldSurahWord(text) {
+  const key = String(text || "")
+    .toLowerCase()
+    .replace(/aa/g, "a")
+    .replace(/ee/g, "i")
+    .replace(/ii/g, "i")
+    .replace(/oo/g, "u")
+    .replace(/uu/g, "u")
+    .replace(/[^a-z0-9]/g, "");
+  return key.endsWith("h") && key.length > 4 ? key.slice(0, -1) : key;
+}
+
+/** True when the sentence names a surah, even without the word "surah". */
+function mentionsSurahName(q) {
+  const keys = new Set(QURAN_SURAH_KEYS.split("|"));
+  const words = q.split(/\s+/).map(foldSurahWord);
+  for (let i = 0; i < words.length; i += 1) {
+    if (words[i].length >= 3 && keys.has(words[i])) return true;
+    if (words[i + 1] && keys.has(words[i] + words[i + 1])) return true;
+    const stripped = words[i].replace(/^(?:al|an|ar|as|at|ad|ash)/, "");
+    if (stripped.length >= 3 && keys.has(stripped)) return true;
+  }
+  return false;
+}
+
+/**
+ * Same test as wantsQuran in quran.js.
+ * A live voice model would answer this itself. The installed Quran text must answer instead.
+ */
+function wantsQuranAsk(question) {
+  const raw = String(question || "");
+  const q = raw.toLowerCase().replace(/['’]/g, "").replace(/[^\p{L}\p{N}\s:]/gu, " ").replace(/\s+/g, " ").trim();
+  if (!q) return false;
+  if (/^(?:what|why|how|when|where|who|which)\b/.test(q)) return false;
+  if (/\b(?:mean|meaning|means|explain|tafsir|interpret)\b/.test(q)) return false;
+  if (/\b(?:notes?|emails?|memos?|files?|documents?|pdf|paper|wiki)\b/.test(q)) return false;
+  if (/\b(?:bible|poem|poetry|song|songs|shakespeare|lyrics|torah|gospel)\b/.test(q)) return false;
+  const asks = /\b(?:recite|quote|chant|play|listen|read|give|share)\b/.test(q) || /اقرأ|اتل/.test(raw);
+  if (!asks) return false;
+  if (/\b(?:verses?|ayahs?|ayat|aya|quran|koran|surahs?|surat|sura|chapters?|kursi)\b/.test(q)) return true;
+  if (/قرآن|قران|سورة|سوره|آيات|آية|ايات/.test(raw)) return true;
+  if (/\b(?:recite|quote|chant|play|read)\s+(?:\d{1,3}|[a-z]+(?:\s+[a-z]+)?)\b/.test(q) && mentionsSurahName(q)) return true;
+  if (/\b(?:recite|quote|chant|play|read)\s+(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b/.test(q)) return true;
+  return mentionsSurahName(q);
+}
+
 /** "Open the calendar" or "close the calendar", done here without asking a model. */
 function runCalendarAsk(question) {
   const ask = window.brainCalendar?.command(question);
@@ -388,11 +438,28 @@ function showFlash(card) {
   renderDesk();
 }
 
+/** The question after a plan is saved, with Add to calendar and Not now. */
+function showPlanCalendarAsk(ask) {
+  flashes = flashes.filter((card) => !card.calendarAsk);
+  showFlash({
+    title: ask.title || "Plan",
+    lines: [ask.text || "Should I add this to your calendar?"],
+    calendarAsk: true,
+    planId: ask.id,
+  });
+}
+
+function clearPlanCalendarAsk() {
+  if (!flashes.some((card) => card.calendarAsk)) return;
+  flashes = flashes.filter((card) => !card.calendarAsk);
+  renderDesk();
+}
+
 function persistChat() {
   fetch("/desk/memory", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ memory: chatMemory, turns: chatTurns }),
+    body: JSON.stringify({ memory: chatMemory, turns: chatTurns, files: chatFiles }),
   }).then(async (response) => {
     if (!response.ok) throw new Error("Could not save the conversation.");
     const data = await response.json();
@@ -516,6 +583,35 @@ function renderDesk() {
       list.append(item);
     }
     article.append(kicker, list);
+    if (card.calendarAsk && card.planId) {
+      const actions = document.createElement("div");
+      actions.className = "work-actions";
+      addCardButton(actions, "Add to calendar", async (event) => {
+        event.currentTarget.disabled = true;
+        setStatus("Opening Outlook…");
+        try {
+          const response = await fetch(`/plans/${encodeURIComponent(card.planId)}/calendar`, { method: "POST" });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.error || "Outlook did not open.");
+          setStatus(data.text || "Opened in Outlook. Press Add there.");
+        } catch (err) {
+          console.error("Failed while opening a plan in Outlook:", err);
+          setStatus(err.message || "Outlook did not open.");
+          event.currentTarget.disabled = false;
+        }
+      });
+      addCardButton(actions, "Not now", async () => {
+        try {
+          await fetch("/plans/calendar/skip", { method: "POST" });
+        } catch (err) {
+          console.error("Failed while skipping the calendar question:", err);
+        }
+        clearPlanCalendarAsk();
+        window.brainPlans?.clearCalendarAsk();
+        setStatus("It stays in your plans.");
+      });
+      article.append(actions);
+    }
     deskCards.append(article);
   }
 
@@ -629,6 +725,7 @@ function renderDesk() {
     actions.className = "work-actions";
     addCardButton(actions, "Forget this", () => {
       chatTurns = [];
+      chatFiles = [];
       chatMemory = "";
       savedMeeting = "";
       forgetSavedChat();
@@ -649,6 +746,7 @@ async function loadDesk() {
       if (!chatTurns.length) {
         chatMemory = memory.summary || "";
         chatTurns = Array.isArray(memory.turns) ? memory.turns : [];
+        chatFiles = Array.isArray(memory.files) ? memory.files : [];
       }
     }
     renderDesk();
@@ -783,9 +881,10 @@ let dictating = false;
 
 /**
  * Record until the person pauses, or until stop() is called.
+ * With hold, a pause does not end it: it records until Space is let go.
  * The clip stays on this Mac and is written down by the local voice model.
  */
-function recordPromptClip(stream) {
+function recordPromptClip(stream, hold) {
   return new Promise((resolve) => {
     const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
@@ -823,7 +922,7 @@ function recordPromptClip(stream) {
     }
 
     timer = setInterval(() => {
-      if (stopNow) {
+      if (stopNow || hold?.released) {
         finish();
         return;
       }
@@ -838,12 +937,12 @@ function recordPromptClip(stream) {
       if (loudness > 0.025) {
         heard = true;
         quietSince = 0;
-      } else if (heard && now - started > 400) {
+      } else if (!hold && heard && now - started > 400) {
         if (!quietSince) quietSince = now;
         // A short pause means the prompt is finished.
         if (now - quietSince > 900) finish();
       }
-      if (now - started > 20000) finish();
+      if (now - started > (hold ? 120000 : 20000)) finish();
     }, 80);
 
     dictateStop = () => {
@@ -888,14 +987,22 @@ function paintDictate(on) {
   dictateBtn.disabled = false;
 }
 
-dictateBtn?.addEventListener("click", async () => {
+dictateBtn?.addEventListener("click", () => {
   if (dictating) {
     dictateStop?.();
     return;
   }
+  dictatePrompt(null);
+});
+
+/**
+ * Hear one prompt. The microphone button asks it at once.
+ * Holding Space (hold is set) writes it into the chat box instead, so it can be edited first.
+ */
+async function dictatePrompt(hold) {
   dictating = true;
   paintDictate(true);
-  setStatus("Listening… say the prompt. Press the microphone again to stop.");
+  setStatus(hold ? "Listening… let go of Space when you're done." : "Listening… say the prompt. Press the microphone again to stop.");
   const hadMic = micStream?.getAudioTracks().some((track) => track.readyState === "live");
   dictateHold = true;
   let stream = null;
@@ -905,7 +1012,7 @@ dictateBtn?.addEventListener("click", async () => {
     const waitUntil = performance.now() + 2500;
     while ((recordingClip || micBusy) && performance.now() < waitUntil) await sleep(40);
     stream = await ensureMic();
-    const clip = await recordPromptClip(stream);
+    const clip = await recordPromptClip(stream, hold);
     paintDictate(false);
     dictateBtn.disabled = true;
     setStatus("Writing down what you said…");
@@ -933,11 +1040,61 @@ dictateBtn?.addEventListener("click", async () => {
       if (micStream === stream) micStream = null;
     }
   }
+  if (heard && hold) {
+    const at = typeInput.selectionStart ?? typeInput.value.length;
+    const gap = /\S$/.test(typeInput.value.slice(0, at)) ? " " : "";
+    typeInput.setRangeText(gap + heard, at, typeInput.selectionEnd ?? at, "end");
+    typeInput.focus();
+    setStatus("Edit it if you like, then press Enter.");
+    return;
+  }
   // Asked after the mic is given back, so Hey and "stop" are heard while this answer is written.
   if (heard) {
     typeInput.value = heard;
     askTyped(heard).catch((err) => console.error("Failed while asking the dictated prompt:", err));
   }
+}
+
+// Hold Space to dictate into the chat box, like Claude Code. A tap still types a space.
+// Only in the chat box or with nothing focused, so buttons, editors and the terminal keep Space.
+const SPACE_HOLD_MS = 400;
+let spaceTimer = null;
+let spaceHold = null;
+document.addEventListener("keydown", (event) => {
+  // defaultPrevented: the slide show already took Space as "next slide".
+  if (event.code !== "Space" || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+  const el = event.target;
+  if (el !== typeInput && el !== document.body) return;
+  if (event.repeat) {
+    // A held key would fill the box with spaces.
+    event.preventDefault();
+    return;
+  }
+  if (dictating || spaceHold) return;
+  clearTimeout(spaceTimer);
+  spaceTimer = setTimeout(() => {
+    spaceTimer = null;
+    if (dictating) return;
+    // Take back the space the first press typed.
+    const at = typeInput.selectionStart;
+    if (el === typeInput && at && typeInput.value[at - 1] === " ") {
+      typeInput.setRangeText("", at - 1, at, "end");
+    }
+    spaceHold = { released: false };
+    dictatePrompt(spaceHold).finally(() => { spaceHold = null; });
+  }, SPACE_HOLD_MS);
+});
+document.addEventListener("keyup", (event) => {
+  if (event.code !== "Space") return;
+  clearTimeout(spaceTimer);
+  spaceTimer = null;
+  if (spaceHold) spaceHold.released = true;
+});
+// Switching apps while Space is down never sends the keyup.
+window.addEventListener("blur", () => {
+  clearTimeout(spaceTimer);
+  spaceTimer = null;
+  if (spaceHold) spaceHold.released = true;
 });
 
 /** Read the skill files the server keeps, and show their names. */

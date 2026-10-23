@@ -280,6 +280,15 @@ function handleGeminiMessage(g, msg) {
     if (!g.userBubble) g.userBubble = addBubble("user", "", true);
     g.userBubble.querySelector(".text").textContent += heard;
     followTranscript();
+    // Hand a recitation to the installed Quran text, and keep Gemini quiet.
+    const full = g.userBubble.querySelector(".text").textContent.trim();
+    const asked = questionAfterWake(full);
+    if (!g.quranHanded && wantsQuranAsk(asked || full)) {
+      g.quranHanded = true;
+      g.silenced = true;
+      stopGeminiAudio(g);
+      answerWithBrain((asked || full).trim());
+    }
   }
 
   for (const part of content.modelTurn?.parts || []) {
@@ -295,20 +304,27 @@ function handleGeminiMessage(g, msg) {
   }
 
   const said = content.outputTranscription?.text;
-  if (said) {
+  if (said && !g.quranHanded) {
     if (g.userBubble) {
       g.userBubble.classList.remove("partial");
       lastQuestion = g.userBubble.querySelector(".text").textContent.trim();
       playTinyMove(questionAfterWake(lastQuestion) || lastQuestion);
       g.userBubble = null;
+      window.dispatchEvent(new CustomEvent("brain-pet", { detail: { kind: "sent" } }));
     }
     appendAssistantPartial(said);
   }
 
   if (content.turnComplete) {
+    const handed = g.quranHanded;
     g.silenced = false;
-    if (assistantPartialEl) logDay(questionAfterWake(lastQuestion) || lastQuestion, assistantPartialEl.querySelector(".text").textContent);
-    assistantPartialEl?.classList.remove("partial");
-    assistantPartialEl = null;
+    g.quranHanded = false;
+    if (!handed) {
+      const replyText = assistantPartialEl?.querySelector(".text")?.textContent || "";
+      if (replyText) window.dispatchEvent(new CustomEvent("brain-pet", { detail: { kind: "reply", text: replyText } }));
+      if (assistantPartialEl) logDay(questionAfterWake(lastQuestion) || lastQuestion, assistantPartialEl.querySelector(".text").textContent);
+      assistantPartialEl?.classList.remove("partial");
+      assistantPartialEl = null;
+    }
   }
 }

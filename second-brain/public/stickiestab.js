@@ -10,7 +10,6 @@
     upcoming: { due: "upcoming" },
     overdue: { due: "overdue" },
     completed: { taskStatus: "done" },
-    high: { priority: "high+", taskStatus: "open" },
   };
   // The same words the server skips when it searches (stickies.js), so a spoken search shows what it found.
   const SEARCH_SKIP = new Set(["the", "a", "an", "my", "to", "of", "and", "for", "about", "that", "this", "note", "notes"]);
@@ -18,7 +17,10 @@
     root: null, stage: null, world: null, board: null, status: null, menu: null, map: null,
     data: null, selected: "", filter: {}, view: "board", timers: new Map(), undo: new Map(),
     zoom: 1, panX: 40, panY: 30, drawing: false, stale: false,
+    // Drawing on the board itself (not inside a note): pen, line, arrow or eraser.
+    ink: { on: false, tool: "pen", color: "#d1342f", size: 4, live: null },
   };
+  const SVG = "http://www.w3.org/2000/svg";
 
   const el = (tag, cls, text) => {
     const node = document.createElement(tag);
@@ -38,6 +40,23 @@
     if (!ui.data) return [];
     if (ui.view === "trash") return ui.data.trash || [];
     return ui.data.notes || [];
+  }
+
+  // Priority shows as 1 to 3 stars. A click goes 1 → 2 → 3 → 1. The server still stores low/medium/high.
+  const STARS = { critical: 3, high: 3, medium: 2, low: 1, none: 1 };
+  const STAR_PRIORITY = ["", "low", "medium", "high"];
+  function starButton(note) {
+    const count = STARS[note.priority] || 1;
+    const button = el("button", "sticky-stars", "★".repeat(count) + "☆".repeat(3 - count));
+    button.type = "button";
+    button.title = `${count} of 3 stars. Click for ${count === 3 ? 1 : count + 1}.`;
+    button.setAttribute("aria-label", `Priority ${count} of 3 stars`);
+    button.addEventListener("pointerdown", (event) => event.stopPropagation());
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      tool("sticky_note_set_priority", { id: note.id, priority: STAR_PRIORITY[count === 3 ? 1 : count + 1] }).then(() => load()).catch((err) => say(err.message));
+    });
+    return button;
   }
 
   // Same rule as tagKey() in stickies.js, so "#Mobile App" finds the tag mobileapp.
@@ -94,7 +113,43 @@
     applyLook();
     if (ui.sortBox) ui.sortBox.value = data.board?.sort || "manual";
     if (ui.groupBox) ui.groupBox.value = data.board?.group || "";
+    fillBoards();
     draw();
+  }
+
+  const NEW_BOARD = "__new";
+
+  function fillBoards() {
+    if (!ui.boardBox) return;
+    ui.boardBox.replaceChildren();
+    (ui.data?.boards || []).forEach((item) => {
+      const option = el("option", "", item.name);
+      option.value = item.id;
+      ui.boardBox.append(option);
+    });
+    const add = el("option", "", "+ New board…");
+    add.value = NEW_BOARD;
+    ui.boardBox.append(add);
+    ui.boardBox.value = board().id || "";
+  }
+
+  async function pickBoard(value) {
+    if (value !== NEW_BOARD) {
+      const made = await tool("sticky_board_switch", { boardId: value });
+      if (!made.ok) say(made.error);
+      await load();
+      return;
+    }
+    ui.boardBox.value = board().id || "";
+    const rect = ui.boardBox.getBoundingClientRect();
+    ui.menuAt = [rect.left, rect.bottom + 4];
+    const field = el("input");
+    field.placeholder = "Board name";
+    const name = await askIn("New board", field, "Make board");
+    if (!name?.trim()) return;
+    const made = await tool("sticky_board_create", { name });
+    say(made.ok ? `Made the ${made.board.name} board.` : made.error);
+    await load();
   }
 
   function applyLook() {
@@ -124,6 +179,8 @@
       const title = typing.querySelector(".sticky-title");
       if (note && title && document.activeElement !== title && !title.value && note.title) title.value = note.title;
       ui.stale = true;
+      // Ideas can arrive while you type. The mascot can still ask about them.
+      drawHelper();
       return;
     }
     ui.stale = false;
@@ -140,7 +197,26 @@
       ui.board.append(grid);
     } else list.forEach((note) => ui.board.append(noteCard(note)));
     applyTransform();
+    drawInk();
     drawMap();
+    drawHelper();
+    if (ui.brainBtn) {
+      ui.brainBtn.classList.toggle("is-on", Boolean(board().brainstorm?.on));
+      ui.brainBtn.setAttribute("aria-pressed", board().brainstorm?.on ? "true" : "false");
+    }
+    if (ui.brainBar) {
+      ui.brainBar.hidden = !(board().brainstorm?.on && ui.view === "board");
+      if (document.activeElement !== ui.briefBox) ui.briefBox.value = board().brainstorm?.brief || "";
+      ui.wildBox.value = String(board().brainstorm?.wild ?? 50);
+      const themed = board().group === "hashtag";
+      ui.themesBtn.classList.toggle("is-on", themed);
+      ui.themesBtn.setAttribute("aria-pressed", themed ? "true" : "false");
+      ui.themesBtn.textContent = themed ? "Themes on" : "Sort into themes";
+      ui.consolidateBtn.disabled = !(themed && (ui.data?.groups || []).some((group) => group.noteIds.length >= 2));
+      const gone = (board().brainstorm?.rejected || []).length;
+      ui.droppedBtn.textContent = gone ? `Dropped (${gone})` : "Dropped";
+    }
+    if (ui.clearBtn) ui.clearBtn.hidden = ui.view === "board" && !Object.values(ui.filter).some(Boolean);
     const count = list.length;
     say(`${count} ${count === 1 ? "note" : "notes"}.`);
   }
@@ -178,10 +254,15 @@
     }
   }
 
+  // The pin on a note the model wrote or rewrote: the mascot chosen in Settings. Tiny has no
+  // drawing to copy, so the Claude critter stands in; the emoji mascot keeps its face.
   function claudeMark() {
     const mark = el("span", "sticky-claude");
     mark.setAttribute("aria-hidden", "true");
-    mark.innerHTML = `<svg viewBox="20 0 560 470"><g class="critter">
+    const source = document.getElementById("claudeMark");
+    const critter = source?.querySelector(".critter");
+    mark.dataset.mascot = critter ? source.dataset.mascot || "claude" : "claude";
+    mark.innerHTML = `<svg viewBox="20 0 560 470">${critter ? critter.outerHTML : `<g class="critter">
       <rect class="arm arm-l" x="35" y="140" width="52" height="105"/>
       <rect class="arm arm-r" x="513" y="140" width="52" height="105"/>
       <rect class="leg" x="85" y="340" width="50" height="110"/>
@@ -191,11 +272,10 @@
       <rect class="body" x="85" y="35" width="430" height="310"/>
       <g class="eyes"><rect x="160" y="120" width="40" height="80"/><rect x="400" y="120" width="40" height="80"/></g>
       <rect class="mouth" x="270" y="235" width="60" height="40"/>
-    </g></svg>`;
+    </g>`}</svg>`;
     return mark;
   }
 
-  // A reminder replaces the pin with a small clock, so a timed note is easy to spot.
   function clockPin(note) {
     const pin = el("span", "sticky-clock");
     const when = new Date(note.reminderAt);
@@ -256,12 +336,8 @@
       openMenu(event.clientX, event.clientY, noteMenu(note));
     });
     head.append(title, lock, more);
-    if (note.noteType === "task" || (note.priority && note.priority !== "none")) {
-      const bits = [];
-      if (note.noteType === "task") bits.push(note.taskStatus === "done" ? "Done" : "Task");
-      if (note.priority && note.priority !== "none") bits.push(note.priority);
-      head.append(el("span", "sticky-badge", bits.join(" · ")));
-    }
+    if (note.noteType === "task") head.append(el("span", "sticky-badge", note.taskStatus === "done" ? "Done" : "Task"));
+    head.append(starButton(note));
 
     const body = el("div", "sticky-body");
     body.contentEditable = ui.view === "trash" ? "false" : "true";
@@ -322,6 +398,35 @@
     card.append(head, body, tags, checks);
     if (progress) card.append(progress);
     card.append(canvas, resize);
+    // The back: small type, more room. A turned-down corner shows there is something there.
+    const back = el("div", "sticky-back");
+    back.contentEditable = ui.view === "trash" ? "false" : "true";
+    back.setAttribute("role", "textbox");
+    back.setAttribute("aria-label", "Back of the note");
+    back.dataset.placeholder = "Write on the back…";
+    back.innerHTML = note.back || "";
+    back.addEventListener("input", () => scheduleSave(note.id, back.innerHTML, 400, "back"));
+    back.addEventListener("pointerdown", (event) => { select(note.id); event.stopPropagation(); });
+    const flip = el("button", "sticky-flip", ui.flipped === note.id ? "Front" : "Back");
+    flip.type = "button";
+    flip.title = ui.flipped === note.id ? "Turn the note over to the front" : "Turn the note over and write on the back";
+    flip.addEventListener("pointerdown", (event) => event.stopPropagation());
+    flip.addEventListener("click", (event) => {
+      event.stopPropagation();
+      ui.flipped = ui.flipped === note.id ? "" : note.id;
+      // A focused side keeps draw() from redrawing, so let go of it first.
+      if (card.contains(document.activeElement)) document.activeElement.blur();
+      draw();
+      if (ui.flipped === note.id) ui.board.querySelector(`[data-id="${note.id}"] .sticky-back`)?.focus();
+    });
+    const corner = el("button", "sticky-corner");
+    corner.type = "button";
+    corner.setAttribute("aria-label", "There is writing on the back. Turn the note over.");
+    corner.addEventListener("pointerdown", (event) => event.stopPropagation());
+    corner.addEventListener("click", (event) => { event.stopPropagation(); flip.click(); });
+    card.append(back, flip, corner);
+    card.classList.toggle("has-back", Boolean(strip(note.back || "").trim()));
+    card.classList.toggle("is-flipped", ui.flipped === note.id);
     head.addEventListener("pointerdown", (event) => startDrag(event, card, note));
     card.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -335,7 +440,102 @@
     });
     card.addEventListener("pointerup", () => clearTimeout(press));
     card.addEventListener("pointermove", () => clearTimeout(press));
+    if (note.summary) card.classList.add("is-summary");
+    if (note.idea) {
+      card.classList.add("is-idea");
+      card.append(ideaButtons(note.id));
+    }
+    if ((ui.data?.proposals || []).some((item) => item.noteId === note.id)) card.classList.add("is-proposed");
     return card;
+  }
+
+  // ✓ keeps an idea or a suggested change, ✗ drops it. Both the note and the mascot use these.
+  function ideaButtons(id) {
+    const row = el("div", "stick-idea-btns");
+    [["✓", "Keep", true], ["✗", "Drop", false]].forEach(([mark, name, keep]) => {
+      const button = el("button", keep ? "stick-yes" : "stick-no", mark);
+      button.type = "button";
+      button.setAttribute("aria-label", name);
+      button.addEventListener("pointerdown", (event) => event.stopPropagation());
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        tool(keep ? "sticky_idea_accept" : "sticky_idea_reject", { id }).then(() => load()).catch((err) => say(err.message));
+      });
+      row.append(button);
+    });
+    return row;
+  }
+
+  // The mascot from the top of the app, copied. Tiny and Brain are drawn elsewhere, so they get a stand-in.
+  function helperFace() {
+    const source = document.getElementById("claudeMark");
+    if (source?.querySelector(".critter")) {
+      const face = source.cloneNode(true);
+      face.removeAttribute("id");
+      return face;
+    }
+    return el("span", "stick-helper-emoji", "💡");
+  }
+
+  // One suggestion at a time: a combined note first, then changes to your notes, then new ideas.
+  // Shows with brainstorm off too, since two notes can be combined on any board.
+  function drawHelper() {
+    if (!ui.helper) return;
+    const proposals = ui.data?.proposals || [];
+    const merges = proposals.filter((item) => item.kind === "merge").map((item) => ({ kind: "merge", item }));
+    const changes = proposals.filter((item) => item.kind !== "merge").map((item) => ({ kind: "edit", item }));
+    const ideas = (ui.data?.notes || []).filter((note) => note.idea).map((item) => ({ kind: "idea", item }));
+    const next = [...merges, ...changes, ...ideas][0];
+    const left = merges.length + changes.length + ideas.length;
+    if (ui.view !== "board" || (!next && !ui.thinking && !ui.helperNote)) {
+      ui.helper.hidden = true;
+      return;
+    }
+    const noteText = (id) => {
+      const note = (ui.data?.notes || []).find((item) => item.id === id);
+      return note ? `${note.title ? `${note.title}: ` : ""}${strip(note.content)}` : "(gone)";
+    };
+    const bubble = el("div", "stick-helper-bubble");
+    if (next?.kind === "merge") {
+      bubble.append(el("p", "", "Combine these two notes?"));
+      bubble.append(el("blockquote", "stick-helper-part", noteText(next.item.fromId)));
+      bubble.append(el("p", "stick-helper-sign", "+"));
+      bubble.append(el("blockquote", "stick-helper-part", noteText(next.item.noteId)));
+      bubble.append(el("p", "stick-helper-sign", "="));
+      bubble.append(el("blockquote", "", `${next.item.title ? `${next.item.title}: ` : ""}${strip(next.item.content)}`));
+      bubble.append(el("p", "stick-helper-why", "Yes keeps the combined note and moves the dragged one to the trash."));
+      bubble.append(ideaButtons(next.item.id));
+    } else if (next?.kind === "edit") {
+      const target = (ui.data?.notes || []).find((note) => note.id === next.item.noteId);
+      const shorter = next.item.kind === "shorten";
+      bubble.append(el("p", "", `${shorter ? "Shorten" : "Change"} “${target?.title || strip(target?.content || "").slice(0, 40) || "this note"}”?`));
+      bubble.append(el("p", "stick-helper-sign", "Before"));
+      bubble.append(el("blockquote", "stick-helper-part", strip(target?.content || "")));
+      bubble.append(el("p", "stick-helper-sign", "After"));
+      bubble.append(el("blockquote", "", strip(next.item.content)));
+      if (next.item.reason) bubble.append(el("p", "stick-helper-why", next.item.reason));
+      bubble.append(ideaButtons(next.item.id));
+    } else if (next) {
+      bubble.append(el("p", "", "Add this idea?"));
+      bubble.append(el("blockquote", "", strip(next.item.content) || next.item.title));
+      bubble.append(ideaButtons(next.item.id));
+    } else bubble.append(el("p", "", ui.thinking ? (ui.thinkingWhat || "Thinking of ideas…") : ui.helperNote));
+    if (left > 1) {
+      bubble.append(el("p", "stick-helper-why", `${left - 1} more after this one.`));
+      const all = el("div", "stick-helper-all");
+      [["Keep all", "sticky_idea_accept_all"], ["Drop all", "sticky_idea_reject_all"]].forEach(([label, name]) => {
+        const button = el("button", "ghost-btn small", label);
+        button.type = "button";
+        button.addEventListener("click", () => tool(name, {}).then(() => load()).catch((err) => say(err.message)));
+        all.append(button);
+      });
+      bubble.append(all);
+    }
+    ui.helper.replaceChildren(helperFace(), bubble);
+    ui.helper.classList.toggle("is-thinking", Boolean(ui.thinking && !next));
+    ui.helper.hidden = false;
+    if (next?.kind === "idea") ui.board.querySelector(`[data-id="${next.item.id}"]`)?.classList.add("is-asking");
+    if (next?.kind === "merge") [next.item.fromId, next.item.noteId].forEach((id) => ui.board.querySelector(`[data-id="${id}"]`)?.classList.add("is-proposed"));
   }
 
   function taskRow(note) {
@@ -347,8 +547,8 @@
     box.addEventListener("change", () => savePatch(note.id, { taskStatus: box.checked ? "done" : "open" }));
     const text = el("div");
     text.append(el("strong", "", note.title || "Untitled"), el("p", "", strip(note.content)));
-    const when = el("span", "sticky-badge", [note.priority, note.dueAt ? note.dueAt.slice(0, 10) : ""].filter(Boolean).join(" · "));
-    row.append(box, text, when);
+    row.append(box, text, starButton(note));
+    if (note.dueAt) row.append(el("span", "sticky-badge", note.dueAt.slice(0, 10)));
     return row;
   }
 
@@ -379,13 +579,18 @@
       card.style.top = `${y}px`;
     };
     // Listen on the window, so a fast move or a release off the card still lands.
-    const up = () => {
+    const up = (ev) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       if (x == null) return;
       note.positionX = x;
       note.positionY = y;
-      savePatch(note.id, { x, y });
+      // Let go over another note: the move stays, and the mascot offers to combine the two.
+      const under = document.elementsFromPoint(ev.clientX, ev.clientY).find((node) => node.classList?.contains("sticky") && node !== card);
+      savePatch(note.id, { x, y }).then(() => {
+        if (under?.dataset.id) return tool("sticky_note_combine", { id: note.id, intoId: under.dataset.id }).then(() => load());
+        return null;
+      }).catch((err) => say(err.message));
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -441,11 +646,11 @@
   }
 
   // The board copy is updated at once, so a redraw before the save lands still shows the latest typing.
-  function scheduleSave(id, content, wait = 400) {
+  function scheduleSave(id, content, wait = 400, field = "content") {
     const note = (ui.data?.notes || []).find((item) => item.id === id);
-    if (note) note.content = content;
-    clearTimeout(ui.timers.get(id));
-    ui.timers.set(id, setTimeout(() => savePatch(id, { content }), wait));
+    if (note) note[field] = content;
+    clearTimeout(ui.timers.get(`${id}:${field}`));
+    ui.timers.set(`${id}:${field}`, setTimeout(() => savePatch(id, { [field]: content }), wait));
   }
 
   async function savePatch(id, body) {
@@ -585,10 +790,12 @@
       { label: "Copy note link", action: () => navigator.clipboard.writeText(`sticky:${note.id}`).then(() => say("Copied the link.")) },
       { label: "Add a check", action: () => savePatch(note.id, { checklist: [...(note.checklist || []), { text: "New item", done: false }] }) },
       { label: note.noteType === "task" ? "Make a note again" : "Convert to to-do", action: () => tool(note.noteType === "task" ? "sticky_note_convert_to_note" : "sticky_note_convert_to_task", { id: note.id }).then(() => load()) },
-      { label: "Priority: high", action: () => tool("sticky_note_set_priority", { id: note.id, priority: "high" }).then(() => load()) },
       { label: "Set reminder", action: () => remind(note) },
       { label: note.isPinned ? "Unpin" : "Pin", action: () => savePatch(note.id, { isPinned: !note.isPinned }).then(load) },
       { label: "Duplicate", action: () => duplicate(note) },
+      { label: "Summarize this note", action: () => tool("sticky_note_summarize", { id: note.id }).then((made) => { if (made.error) say(made.error); return load(); }) },
+      { label: "Branch ideas from this", action: () => tool("sticky_idea_branch", { id: note.id }).then(() => load()) },
+      { label: "More like this", action: () => tool("sticky_idea_more", { id: note.id }).then(() => load()) },
       { label: "Draw", action: () => { ui.drawing = true; ui.selected = note.id; draw(); } },
       { label: note.archivedAt || note.deletedAt ? "Restore" : "Archive", action: () => tool(note.archivedAt || note.deletedAt ? "sticky_note_restore" : "sticky_note_archive", { id: note.id }).then(() => load()) },
       { label: "Delete", danger: true, action: () => confirmDelete(note) },
@@ -836,13 +1043,368 @@
     scheduleBoard();
   }
 
+  // Board drawings live in an SVG over the notes. It moves and zooms with them,
+  // and only catches the pointer while Draw is on.
+  function freeform() {
+    return board().layout !== "organized" && ui.view === "board";
+  }
+
+  function inkShape(stroke) {
+    const style = (node) => {
+      node.setAttribute("stroke", stroke.color);
+      node.setAttribute("stroke-width", String(stroke.size));
+      node.setAttribute("stroke-linecap", "round");
+      node.setAttribute("stroke-linejoin", "round");
+      node.setAttribute("fill", "none");
+      return node;
+    };
+    const pts = stroke.points;
+    if (stroke.tool === "pen") {
+      const path = style(document.createElementNS(SVG, "path"));
+      path.setAttribute("d", pts.map((p, i) => `${i ? "L" : "M"}${p[0]} ${p[1]}`).join(" "));
+      return path;
+    }
+    const group = document.createElementNS(SVG, "g");
+    const [a, b] = [pts[0], pts[pts.length - 1]];
+    const line = style(document.createElementNS(SVG, "line"));
+    line.setAttribute("x1", a[0]); line.setAttribute("y1", a[1]);
+    line.setAttribute("x2", b[0]); line.setAttribute("y2", b[1]);
+    group.append(line);
+    if (stroke.tool === "arrow") {
+      // Two short lines back from the tip, 28 degrees either side.
+      const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      const len = stroke.size * 3 + 10;
+      const wing = (turn) => [b[0] - len * Math.cos(angle + turn), b[1] - len * Math.sin(angle + turn)];
+      const [l, r] = [wing(0.49), wing(-0.49)];
+      const head = style(document.createElementNS(SVG, "path"));
+      head.setAttribute("d", `M${l[0]} ${l[1]} L${b[0]} ${b[1]} L${r[0]} ${r[1]}`);
+      group.append(head);
+    }
+    return group;
+  }
+
+  function drawInk() {
+    if (!ui.inkLayer) return;
+    ui.inkLayer.style.display = freeform() ? "" : "none";
+    const strokes = [...(board().ink || []), ...(ui.ink.live ? [ui.ink.live] : [])];
+    ui.inkLayer.replaceChildren(...strokes.map(inkShape));
+    ui.stage.classList.toggle("is-inking", ui.ink.on && freeform());
+    ui.inkBar.hidden = !(ui.ink.on && freeform());
+    ui.inkBar.querySelectorAll("[data-tool]").forEach((button) => button.classList.toggle("is-on", button.dataset.tool === ui.ink.tool));
+    ui.inkBtn.classList.toggle("is-on", ui.ink.on);
+    ui.inkBtn.setAttribute("aria-pressed", ui.ink.on ? "true" : "false");
+  }
+
+  function inkPoint(event) {
+    const rect = ui.world.getBoundingClientRect();
+    return [(event.clientX - rect.left) / ui.zoom, (event.clientY - rect.top) / ui.zoom];
+  }
+
+  function saveInk(ink) {
+    board().ink = ink;
+    drawInk();
+    fetch("/stickies/board", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ boardId: board().id, ink }),
+    }).then((response) => { if (!response.ok) say("Could not save the drawing."); })
+      .catch(() => say("Could not save the drawing."));
+  }
+
+  /** Strokes that pass within reach of the point (board units). */
+  function inkNear(point, reach) {
+    const near = (p, a, b) => {
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const t = dx || dy ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy))) : 0;
+      return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+    };
+    return (board().ink || []).filter((stroke) => stroke.points.some((p, i) => i > 0 && near(point, stroke.points[i - 1], p) <= reach + stroke.size / 2));
+  }
+
+  function startInk(event) {
+    if (!ui.ink.on || !freeform() || event.button > 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    try { ui.inkLayer.setPointerCapture(event.pointerId); } catch (err) { /* the pointer can already be gone */ }
+    const first = inkPoint(event);
+    let erased = false;
+    const erase = (point) => {
+      const hit = inkNear(point, 8 / ui.zoom);
+      if (!hit.length) return;
+      board().ink = board().ink.filter((stroke) => !hit.includes(stroke));
+      erased = true;
+      drawInk();
+    };
+    if (ui.ink.tool === "eraser") erase(first);
+    else ui.ink.live = { tool: ui.ink.tool, color: ui.ink.color, size: ui.ink.size, points: [first, first] };
+    const move = (ev) => {
+      const point = inkPoint(ev);
+      if (ui.ink.tool === "eraser") return erase(point);
+      if (ui.ink.tool === "pen") ui.ink.live.points.push(point);
+      else ui.ink.live.points = [first, point];
+      drawInk();
+    };
+    const up = () => {
+      ui.inkLayer.removeEventListener("pointermove", move);
+      ui.inkLayer.removeEventListener("pointerup", up);
+      ui.inkLayer.removeEventListener("pointercancel", up);
+      const done = ui.ink.live;
+      ui.ink.live = null;
+      if (erased) saveInk(board().ink);
+      else if (done) {
+        const [a, b] = [done.points[0], done.points[done.points.length - 1]];
+        // A click without a drag leaves nothing.
+        if (done.points.length > 2 || Math.hypot(b[0] - a[0], b[1] - a[1]) > 2) saveInk([...(board().ink || []), done]);
+        else drawInk();
+      }
+    };
+    ui.inkLayer.addEventListener("pointermove", move);
+    ui.inkLayer.addEventListener("pointerup", up);
+    ui.inkLayer.addEventListener("pointercancel", up);
+  }
+
+  function inkBar() {
+    const bar = el("div", "stick-inkbar");
+    bar.hidden = true;
+    [["pen", "✎ Pen"], ["line", "╱ Line"], ["arrow", "↗ Arrow"], ["eraser", "⌫ Eraser"]].forEach(([name, label]) => {
+      const button = el("button", "ghost-btn small", label);
+      button.type = "button";
+      button.dataset.tool = name;
+      button.addEventListener("click", () => { ui.ink.tool = name; drawInk(); });
+      bar.append(button);
+    });
+    const color = el("input");
+    color.type = "color";
+    color.value = ui.ink.color;
+    color.setAttribute("aria-label", "Pen color");
+    color.addEventListener("input", () => { ui.ink.color = color.value; if (ui.ink.tool === "eraser") ui.ink.tool = "pen"; drawInk(); });
+    const size = selectOf(["2", "4", "8", "14"], String(ui.ink.size));
+    size.setAttribute("aria-label", "Line thickness");
+    size.addEventListener("change", () => { ui.ink.size = Number(size.value); });
+    const clear = el("button", "ghost-btn small danger", "Clear all");
+    clear.type = "button";
+    clear.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (!(board().ink || []).length) return say("Nothing is drawn on this board.");
+      openMenu(event.clientX, event.clientY, [
+        { label: "Clear every drawing on this board", danger: true, action: () => { saveInk([]); say("Cleared the drawings."); } },
+        { label: "Keep them", action: () => {} },
+      ]);
+    });
+    const done = el("button", "ghost-btn small", "Done");
+    done.type = "button";
+    done.addEventListener("click", () => { ui.ink.on = false; drawInk(); });
+    bar.append(color, size, clear, done);
+    return bar;
+  }
+
+  /**
+   * A copy of the board as drawn, cropped to the notes and drawings, for a picture export.
+   * Typed titles, ticks and note drawings are not in the HTML, so they are written in.
+   */
+  function snapshot() {
+    const copy = ui.world.cloneNode(true);
+    const pairs = (selector) => [...ui.world.querySelectorAll(selector)].map((node, i) => [node, copy.querySelectorAll(selector)[i]]);
+    pairs("input").forEach(([live, dead]) => {
+      if (live.type === "checkbox") dead.toggleAttribute("checked", live.checked);
+      else dead.setAttribute("value", live.value);
+    });
+    pairs("canvas").forEach(([live, dead]) => {
+      const img = document.createElement("img");
+      img.className = live.className;
+      img.src = live.toDataURL("image/png");
+      dead.replaceWith(img);
+    });
+    copy.querySelectorAll(".sticky.is-idea, .sticky-resize, .sticky-more, .sticky-lock, .stick-yes, .stick-no").forEach((node) => node.remove());
+    copy.querySelectorAll(".is-selected, .is-proposed").forEach((node) => node.classList.remove("is-selected", "is-proposed"));
+    const scale = freeform() ? ui.zoom : 1;
+    const origin = ui.board.getBoundingClientRect();
+    const boxes = [...ui.board.querySelectorAll(".sticky:not(.is-idea)")].map((card) => {
+      const rect = card.getBoundingClientRect();
+      return [(rect.left - origin.left) / scale, (rect.top - origin.top) / scale, (rect.right - origin.left) / scale, (rect.bottom - origin.top) / scale];
+    });
+    if (freeform()) (board().ink || []).forEach((stroke) => stroke.points.forEach(([x, y]) => boxes.push([x - stroke.size, y - stroke.size, x + stroke.size, y + stroke.size])));
+    if (!boxes.length) throw new Error("This board is empty, so there is nothing to picture.");
+    const pad = 40;
+    const left = Math.max(0, Math.min(...boxes.map((b) => b[0])) - pad);
+    const top = Math.max(0, Math.min(...boxes.map((b) => b[1])) - pad);
+    const width = Math.ceil(Math.max(...boxes.map((b) => b[2])) + pad - left);
+    const height = Math.ceil(Math.max(...boxes.map((b) => b[3])) + pad - top);
+    copy.style.transform = "none";
+    copy.style.position = "absolute";
+    copy.style.left = `${-left}px`;
+    copy.style.top = `${-top}px`;
+    const frame = el("div");
+    frame.style.cssText = `position:relative;overflow:hidden;width:${width}px;height:${height}px`;
+    frame.append(copy);
+    const css = [...document.styleSheets].map((sheet) => sheet.href).filter(Boolean);
+    return { html: frame.outerHTML, width, height, css, appearance: ui.root.dataset.appearance };
+  }
+
+  async function exportBoard(format) {
+    say("Exporting…");
+    const body = { format };
+    if (format === "jpg" || format === "image-pdf") body.snapshot = snapshot();
+    const response = await fetch("/stickies/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not export the board.");
+    say(`Saved ${data.name} in Downloads.`);
+  }
+
+  // Things done to the whole board: from the Board button and a right-click on the bare board.
+  function boardMenu(point) {
+    const run = (name, args = {}, after = "") => () => tool(name, args)
+      .then((made) => { if (made.error) say(made.error); else if (after) say(after); return load(); })
+      .catch((err) => say(err.message));
+    return [
+      { label: "New note", action: () => createAt(point?.x, point?.y) },
+      { label: "Paste a list…", action: () => pasteList(point) },
+      { label: "Summarize this board", action: run("sticky_board_summary", {}, "Summing up…") },
+      { label: "Turn board into a plan", action: run("sticky_board_plan", {}, "Planning…") },
+      { label: "Ideas from my files", action: run("sticky_ideas_from_files", {}, "Reading your files…") },
+      { label: "Import a web page…", action: () => importPage() },
+      { label: "New board from template…", action: () => templateBoard() },
+    ];
+  }
+
+  // One note per line. Bullets and numbers at the start of a line are dropped.
+  async function pasteList(point, text = "") {
+    const box = el("textarea");
+    box.rows = 6;
+    box.placeholder = "One note per line";
+    box.value = text;
+    const lines = await askIn("Paste a list", box, "Make notes");
+    if (!lines) return;
+    const made = await tool("sticky_note_create_many", { text: lines, x: point?.x, y: point?.y });
+    if (made.error) say(made.error);
+    else say(`Made ${made.notes.length} notes.`);
+    await load();
+  }
+
+  // A GitHub repo, a paper, or any article becomes up to ten notes plus one with the link.
+  async function importPage(url = "") {
+    let address = url;
+    if (!address) {
+      const box = el("input");
+      box.type = "url";
+      box.placeholder = "https://github.com/… or a paper";
+      box.style.width = "260px";
+      address = await askIn("Import a web page", box, "Import");
+    }
+    if (!address) return;
+    const made = await tool("sticky_import_url", { url: address });
+    if (made.error) say(made.error);
+    else say("Reading the page…");
+    await load();
+  }
+
+  async function templateBoard() {
+    const pick = selectOf(["swot", "proscons", "eisenhower", "week"], "swot", { swot: "SWOT", proscons: "Pros and cons", eisenhower: "Urgent and important", week: "Week" });
+    const template = await askIn("New board from", pick, "Create");
+    if (!template) return;
+    const made = await tool("sticky_board_template", { template });
+    if (made.error) say(made.error);
+    await load();
+    fit();
+  }
+
+  // Ideas you dropped on this board, to bring back.
+  function droppedMenu() {
+    const list = board().brainstorm?.rejected || [];
+    if (!list.length) return [{ label: "Nothing dropped yet", action: () => {} }];
+    return list.slice().reverse().map((text) => ({
+      label: `↩ ${text.length > 60 ? `${text.slice(0, 57)}…` : text}`,
+      action: () => tool("sticky_idea_restore", { text }).then(() => load()).catch((err) => say(err.message)),
+    }));
+  }
+
+  function exportMenu() {
+    const run = (format) => () => exportBoard(format).catch((err) => say(err.message));
+    return [
+      { label: "Text: Markdown (.md)", action: run("md") },
+      { label: "Text: Word (.docx)", action: run("docx") },
+      { label: "Text: PDF", action: run("pdf") },
+      { label: "Picture: JPEG", action: run("jpg") },
+      { label: "Picture: PDF", action: run("image-pdf") },
+    ];
+  }
+
+  // Shown while the board is brainstorming: what matters, how bold to be, and two whole-board rounds.
+  function brainBar() {
+    const bar = el("div", "stick-brainbar");
+    bar.hidden = true;
+    const brief = el("input");
+    brief.type = "text";
+    brief.placeholder = "What matters: budget, deadline, audience…";
+    brief.setAttribute("aria-label", "What the ideas should keep in mind");
+    brief.addEventListener("change", () => saveBoard({ brief: brief.value }).catch((err) => say(err.message)));
+    ui.briefBox = brief;
+    const wildWrap = el("label", "stick-wild");
+    const wild = el("input");
+    wild.type = "range";
+    wild.min = "0";
+    wild.max = "100";
+    wild.step = "10";
+    wild.setAttribute("aria-label", "Practical to wild");
+    wild.addEventListener("change", () => saveBoard({ wild: Number(wild.value) }).catch((err) => say(err.message)));
+    ui.wildBox = wild;
+    wildWrap.append(el("span", "", "Practical"), wild, el("span", "", "Wild"));
+    const round = (label, name, title) => {
+      const button = el("button", "ghost-btn small", label);
+      button.type = "button";
+      button.title = title;
+      button.addEventListener("click", () => tool(name, {}).then((made) => { if (made.error) say(made.error); return load(); }).catch((err) => say(err.message)));
+      return button;
+    };
+    // Themes is a switch: on sorts the board into theme groups, off is the free board again (the tags stay).
+    const themes = el("button", "ghost-btn small", "Sort into themes");
+    themes.type = "button";
+    themes.title = "Tag the kept notes by theme and group the board by those tags. Click again for the free board.";
+    ui.themesBtn = themes;
+    themes.addEventListener("click", () => {
+      if (board().group === "hashtag") return saveBoard({ group: "", layout: "freeform" }).catch((err) => say(err.message));
+      return tool("sticky_brainstorm_themes", {}).then((made) => { if (made.error) say(made.error); return load(); }).catch((err) => say(err.message));
+    });
+    // Greyed out until the board is sorted into themes and a theme has two notes to merge.
+    const consolidate = el("button", "ghost-btn small", "Consolidate");
+    consolidate.type = "button";
+    consolidate.disabled = true;
+    consolidate.title = "One note per theme, with the old notes written on its back. Sort into themes first.";
+    ui.consolidateBtn = consolidate;
+    consolidate.addEventListener("click", () => tool("sticky_brainstorm_consolidate", {})
+      .then((made) => { if (made.error) say(made.error); return load(); }).catch((err) => say(err.message)));
+    const dropped = el("button", "ghost-btn small", "Dropped");
+    dropped.type = "button";
+    dropped.title = "Ideas you said no to on this board. Click one to bring it back.";
+    ui.droppedBtn = dropped;
+    dropped.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const rect = dropped.getBoundingClientRect();
+      openMenu(rect.left, rect.bottom + 4, droppedMenu());
+    });
+    bar.append(
+      brief, wildWrap,
+      round("Poke holes", "sticky_brainstorm_challenge", "One pink note under each kept note with its biggest risk or open question"),
+      themes, consolidate, dropped,
+    );
+    return bar;
+  }
+
   function scheduleBoard() {
     clearTimeout(ui.timers.get("board"));
+    // Remember which board was moved, in case another board opens before this saves.
+    const boardId = board().id;
+    const view = { zoom: ui.zoom, panX: ui.panX, panY: ui.panY };
     ui.timers.set("board", setTimeout(() => {
       fetch("/stickies/board", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zoom: ui.zoom, panX: ui.panX, panY: ui.panY }),
+        body: JSON.stringify({ boardId, ...view }),
       }).catch((err) => console.error("Failed while saving the board view:", err));
     }, 300));
   }
@@ -855,6 +1417,19 @@
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "Could not save the board.");
+    await load();
+  }
+
+  async function deleteBoard() {
+    const current = board();
+    // The server counts the notes, archived ones too, and words the question.
+    const asked = await tool("sticky_board_delete", { boardId: current.id });
+    if (asked.status !== "confirm") return say(asked.error || "Could not delete that board.");
+    const yes = await askIn(asked.error, null, "Delete board");
+    await tool("sticky_note_cancel", {});
+    if (!yes) return;
+    const made = await tool("sticky_board_delete", { boardId: current.id, confirm: true });
+    say(made.ok ? `Deleted the ${current.name} board.` : made.error);
     await load();
   }
 
@@ -872,7 +1447,11 @@
   function settingsPanel() {
     const box = el("form", "stick-settings");
     box.hidden = true;
-    box.append(el("h3", "", "Board"));
+    box.append(el("h3", "", "This board"));
+    const name = el("input");
+    name.value = board().name || "";
+    name.maxLength = 60;
+    box.append(labeled("Name", name));
     const background = selectOf(["wood", "cork", "darkwood", "white", "black", "gray", "color", "image"], board().background);
     const appearance = selectOf(["system", "light", "dark"], prefs().appearance);
     const font = selectOf(["hand", "type"], prefs().fontStyle);
@@ -919,6 +1498,17 @@
     const save = el("button", "ghost-btn", "Save settings");
     save.type = "button";
     box.append(save);
+    if ((ui.data?.boards || []).length > 1) {
+      const remove = el("button", "ghost-btn danger", "Delete this board");
+      remove.type = "button";
+      remove.addEventListener("click", () => {
+        box.remove();
+        if (ui.settings === box) ui.settings = null;
+        deleteBoard().catch((err) => say(err.message));
+      });
+      box.append(remove);
+    }
+    box.append(el("p", "stick-hint", "Light or dark applies to every board. The rest is for this board only."));
     box.addEventListener("submit", (event) => event.preventDefault());
     save.addEventListener("click", async () => {
       const colorMeanings = {};
@@ -935,13 +1525,14 @@
         colorMeanings,
         background: background.value,
         backgroundColor: swatch.value,
+        name: name.value.trim() || board().name,
       };
       // Close first, so the panel is gone even while the save is still finishing.
       box.remove();
       if (ui.settings === box) ui.settings = null;
       try {
         await savePrefs({ prefs: saved.prefs, colorMeanings: saved.colorMeanings });
-        await saveBoard({ background: saved.background, backgroundColor: saved.backgroundColor });
+        await saveBoard({ name: saved.name, background: saved.background, backgroundColor: saved.backgroundColor });
         say("Settings saved.");
       } catch (err) {
         console.error("Failed while saving sticky-note settings:", err);
@@ -951,10 +1542,10 @@
     return box;
   }
 
-  function selectOf(values, current) {
+  function selectOf(values, current, labels = {}) {
     const node = el("select");
     values.forEach((value) => {
-      const option = el("option", "", value || "none");
+      const option = el("option", "", labels[value] || value || "none");
       option.value = value;
       if (value === current) option.selected = true;
       node.append(option);
@@ -978,7 +1569,11 @@
     add.type = "button";
     // No position: the server staggers new notes so they do not stack.
     add.addEventListener("click", () => createAt().catch((err) => say(err.message)));
-    bar.append(el("span", "stick-title", "Stickies"), ui.status, add, el("span", "stick-gap"));
+    const boardBox = el("select", "stick-boards");
+    boardBox.setAttribute("aria-label", "Board");
+    ui.boardBox = boardBox;
+    boardBox.addEventListener("change", () => pickBoard(boardBox.value).catch((err) => say(err.message)));
+    bar.append(el("span", "stick-title", "Stickies"), boardBox, ui.status, add, el("span", "stick-gap"));
     ["In", "Out", "100%", "Fit"].forEach((label) => {
       const button = el("button", "ghost-btn small", label);
       button.type = "button";
@@ -990,6 +1585,42 @@
       });
       bar.append(button);
     });
+    const brainBtn = el("button", "ghost-btn small stick-brainbtn", "💡 Brainstorm");
+    brainBtn.type = "button";
+    brainBtn.title = "When you finish a note, suggest more notes and changes to tick or drop";
+    ui.brainBtn = brainBtn;
+    brainBtn.addEventListener("click", () => {
+      tool("sticky_brainstorm_set", { on: !board().brainstorm?.on })
+        .then((made) => { say(made.status === "brainstorm_on" ? "Brainstorm is on. Finish a note and ideas pop up." : "Brainstorm is off."); return load(); })
+        .catch((err) => say(err.message));
+    });
+    bar.append(brainBtn);
+    const inkBtn = el("button", "ghost-btn small", "✏️ Draw");
+    inkBtn.type = "button";
+    inkBtn.title = "Draw on the board: pen, straight line, arrow, eraser";
+    ui.inkBtn = inkBtn;
+    inkBtn.addEventListener("click", () => {
+      if (!freeform()) return say("Drawing works on the free board. Set Sort to manual first.");
+      ui.ink.on = !ui.ink.on;
+      drawInk();
+    });
+    const exportBtn = el("button", "ghost-btn small", "Export");
+    exportBtn.type = "button";
+    exportBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const rect = exportBtn.getBoundingClientRect();
+      openMenu(rect.left, rect.bottom + 4, exportMenu());
+    });
+    const boardBtn = el("button", "ghost-btn small", "Board ▾");
+    boardBtn.type = "button";
+    boardBtn.title = "Summarize, turn into a plan, ideas from your files, paste a list, templates";
+    boardBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const rect = boardBtn.getBoundingClientRect();
+      ui.menuAt = [rect.left, rect.bottom + 4];
+      openMenu(rect.left, rect.bottom + 4, boardMenu(null));
+    });
+    bar.append(inkBtn, exportBtn, boardBtn);
     const settingsBtn = el("button", "ghost-btn small", "Settings");
     settingsBtn.type = "button";
     const close = el("button", "ghost-btn small", "Close");
@@ -1003,28 +1634,53 @@
     search.placeholder = "Search notes";
     search.setAttribute("aria-label", "Search sticky notes");
     search.addEventListener("input", () => { ui.filter = { ...ui.filter, q: search.value }; draw(); });
-    const sort = selectOf(["manual", "color", "created-desc", "created-asc", "updated", "title-asc", "title-desc", "hashtag", "priority", "due"], "manual");
+    // Only Show and the search box hide notes. Order and Group arrange what is shown.
+    const sort = selectOf(["manual", "color", "created-desc", "created-asc", "updated", "title-asc", "title-desc", "hashtag", "priority", "due"], "manual", {
+      manual: "Order: where I put them", color: "Order: by color", "created-desc": "Order: newest first", "created-asc": "Order: oldest first",
+      updated: "Order: last edited", "title-asc": "Order: title A–Z", "title-desc": "Order: title Z–A", hashtag: "Order: by hashtag",
+      priority: "Order: by priority", due: "Order: by due date",
+    });
     sort.setAttribute("aria-label", "Sort notes");
     ui.sortBox = sort;
     sort.addEventListener("change", () => saveBoard({ sort: sort.value, layout: sort.value === "manual" ? "freeform" : "organized" }));
-    const group = selectOf(["", "color", "hashtag", "priority", "date", "task"], "");
+    const group = selectOf(["", "color", "hashtag", "priority", "date", "task"], "", {
+      "": "No groups", color: "Group by color", hashtag: "Group by hashtag", priority: "Group by priority", date: "Group by day made", task: "Group by to-do status",
+    });
     group.setAttribute("aria-label", "Group notes");
     ui.groupBox = group;
     group.addEventListener("change", () => saveBoard({ group: group.value, layout: group.value ? "organized" : board().layout }));
-    const view = selectOf(["board", "tasks", "today", "upcoming", "overdue", "completed", "high", "archive", "trash"], "board");
+    const view = selectOf(["board", "tasks", "today", "upcoming", "overdue", "completed", "archive", "trash"], "board", {
+      board: "Show: all notes", tasks: "Show: to-do list", today: "Show: due today", upcoming: "Show: due later", overdue: "Show: overdue",
+      completed: "Show: done", archive: "Show: archive", trash: "Show: trash",
+    });
     view.setAttribute("aria-label", "Which notes to show");
     ui.viewBox = view;
     view.addEventListener("change", () => setView(view.value));
     const clear = el("button", "ghost-btn small", "Clear filters");
     clear.type = "button";
-    clear.addEventListener("click", () => { ui.filter = {}; search.value = ""; draw(); });
-    filters.append(search, sort, group, view, clear);
+    clear.hidden = true;
+    ui.clearBtn = clear;
+    // Back to every note on the board: the search, a clicked hashtag, and Show.
+    clear.addEventListener("click", () => {
+      search.value = "";
+      view.value = "board";
+      ui.filter = {};
+      setView("board");
+    });
+    filters.append(view, search, sort, group, clear);
+    ui.brainBar = brainBar();
 
     ui.stage = el("div", "stick-stage");
     ui.world = el("div", "stick-world");
     ui.board = el("div", "stick-board");
-    ui.world.append(ui.board);
-    ui.stage.append(ui.world);
+    ui.inkLayer = document.createElementNS(SVG, "svg");
+    ui.inkLayer.setAttribute("class", "stick-ink");
+    ui.inkLayer.setAttribute("width", "3200");
+    ui.inkLayer.setAttribute("height", "2400");
+    ui.inkLayer.addEventListener("pointerdown", startInk);
+    ui.world.append(ui.board, ui.inkLayer);
+    ui.inkBar = inkBar();
+    ui.stage.append(ui.world, ui.inkBar);
     const mapWrap = el("div", "stick-mapwrap");
     const zoomCol = el("div", "stick-zoomcol");
     const zoomButton = (label, factor, name) => {
@@ -1075,10 +1731,14 @@
     ui.map.addEventListener("pointercancel", endMapDrag);
     mapWrap.append(zoomCol, ui.map);
     ui.stage.append(mapWrap);
+    ui.helper = el("div", "stick-helper");
+    ui.helper.hidden = true;
+    ui.helper.setAttribute("aria-live", "polite");
+    ui.stage.append(ui.helper);
     ui.menu = el("div", "stick-menu");
     ui.menu.hidden = true;
     ui.menu.setAttribute("role", "menu");
-    root.append(bar, filters, ui.stage, ui.menu);
+    root.append(bar, filters, ui.brainBar, ui.stage, ui.menu);
     document.querySelector("main.layout").append(root);
     ui.root = root;
     settingsBtn.addEventListener("click", () => {
@@ -1097,7 +1757,7 @@
       if (event.target !== ui.board) return;
       event.preventDefault();
       const point = boardPoint(event);
-      openMenu(event.clientX, event.clientY, [{ label: "New note", action: () => createAt(point.x, point.y) }]);
+      openMenu(event.clientX, event.clientY, boardMenu(point));
     });
     ui.stage.addEventListener("pointerdown", (event) => {
       if (event.target !== ui.board && event.target !== ui.stage) return;
@@ -1148,6 +1808,21 @@
       stopDrawing();
     }, true);
     document.addEventListener("keydown", onKey);
+    // Pasting a multi-line list onto the board makes one note per line.
+    document.addEventListener("paste", (event) => {
+      if (!ui.root || ui.root.hidden || ui.view !== "board") return;
+      if (event.target.closest?.("input, textarea, [contenteditable=true]")) return;
+      const text = event.clipboardData?.getData("text/plain") || "";
+      if (/^https?:\/\/\S+$/.test(text.trim())) {
+        event.preventDefault();
+        importPage(text.trim()).catch((err) => say(err.message));
+        return;
+      }
+      if (text.split(/\r?\n/).filter((line) => line.trim()).length < 2) return;
+      event.preventDefault();
+      ui.menuAt = [ui.stage.clientWidth / 2, ui.stage.clientHeight / 3];
+      pasteList(null, text).catch((err) => say(err.message));
+    });
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyLook);
   }
 
@@ -1171,7 +1846,10 @@
     }
     if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === "n") createAt().catch((err) => say(err.message));
-    else if (event.key === "Escape") ui.menu.hidden = true;
+    else if (event.key === "Escape") {
+      ui.menu.hidden = true;
+      if (ui.ink.on) { ui.ink.on = false; drawInk(); }
+    }
     else if ((event.key === "Delete" || event.key === "Backspace") && ui.selected) {
       const note = notes().find((item) => item.id === ui.selected);
       const rect = ui.board.querySelector(`[data-id="${ui.selected}"]`)?.getBoundingClientRect();
@@ -1196,8 +1874,10 @@
     window.brainSlides?.close();
     window.brainR?.close();
     window.brainPhoto?.close();
+    window.brainMovie?.close();
     window.brainCalendar?.close();
     window.brainPlans?.close();
+    window.brainScreen?.close();
     show(true);
     load().catch((err) => {
       console.error("Failed while opening sticky notes:", err);
@@ -1219,6 +1899,16 @@
     command,
     apply(data) {
       if (data?.open) open();
+      if (data?.reason === "brainstorming") {
+        ui.thinking = true;
+        ui.thinkingWhat = data.what || "";
+      }
+      if (data?.reason === "ideas") {
+        ui.thinking = false;
+        ui.helperNote = data.error || (data.plan ? `Added “${data.plan}” to Plans.` : "") || (data.count || data.quiet ? "" : "No new ideas this time.");
+        clearTimeout(ui.helperTimer);
+        if (ui.helperNote) ui.helperTimer = setTimeout(() => { ui.helperNote = ""; drawHelper(); }, 4000);
+      }
       if (data?.filter) ui.filter = { ...ui.filter, ...data.filter };
       if (VIEWS.includes(data?.view)) {
         ui.view = data.view;

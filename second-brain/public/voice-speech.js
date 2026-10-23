@@ -591,6 +591,7 @@ function forSpeech(text) {
     .replace(/^\s*#{1,6}\s*/gm, "")                 // headings
     .replace(/^\s*(?:[-*+•]|\d+[.)])\s+/gm, "")     // list markers
     .replace(/^\s*(?:note|source|sources|file)s?\s*:.*$/gim, "") // trailing source lines
+    .replace(/^.*\p{Script=Arabic}.*\n?/gmu, "")       // Arabic verse lines stay on screen; the English voice skips them
     .replace(/[*_`~|>#\[\]]+/g, "")                     // bold, italics, code, tables, quotes, brackets
     .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\s*(a\.?m\.?|p\.?m\.?)?\b/gi, (_all, h, m, ap) => {
       let hour = Number(h);
@@ -627,6 +628,7 @@ function sentenceCut(text, minLen) {
 function clearChatMemory() {
   // The next call starts fresh. The words already on screen stay so you can still read them.
   chatTurns = [];
+  chatFiles = [];
   chatMemory = "";
   compressAbort?.abort();
   compressGen += 1;
